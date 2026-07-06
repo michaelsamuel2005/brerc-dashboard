@@ -1,51 +1,46 @@
-# `web/` — public dashboard front end
+# `web/` — public dashboard front end (Michael's area)
 
 React + TypeScript + Vite, with **MapLibre GL JS** (via `react-map-gl/maplibre`)
-for the map and **React Aria Components** for accessible UI primitives. This is
-the browser half of the primary deliverable.
+for the map and **React Aria Components** for accessible UI primitives.
 
-## Run it
+## You can build all of this with NO backend
 
-Against the full stack (recommended): `make up` from the repository root serves
-the built app behind the proxy at <http://localhost:8080/>.
-
-Standalone dev server (hot reload) against a running API + Martin:
+The data layer ships with **realistic mock data**, so the whole UI runs on its own.
+You don't need PostgreSQL, Docker, or a running API to build and see your work.
 
 ```bash
-cd web
 npm install
-npm run dev            # http://localhost:5173  (proxies /api and /tiles — see vite.config.ts)
+npm run dev            # http://localhost:5173  — runs on MOCK data by default
 ```
 
-Point the dev proxy at non-default upstreams with `VITE_DEV_API_TARGET` and
-`VITE_DEV_TILES_TARGET`.
+- `src/mocks/` holds the fake data (`fixtures.ts`) and a mock API (`mockApi.ts`).
+- `src/api/client.ts` exposes `api` — it returns the mock data by default, and the
+  **real** API when you set `VITE_USE_MOCKS=false` (once a teammate's backend
+  exists). Your components import `api`; they don't change when you switch.
+- For the map while mocking: use `CELLS_GEOJSON` from `src/mocks/fixtures.ts` as a
+  MapLibre **GeoJSON source**, then switch to Martin vector tiles
+  (`tileUrlTemplate`) when the tile server is ready.
+
+## What to build (your part)
+
+The **components** and the **App wiring** are stubs for you to implement — that's
+the learning. Follow **[`../BUILD_PLAN.md`](../BUILD_PLAN.md)** (the front-end
+phase). The contracts (`src/types.ts`), the client, and the mock data are already
+done so you can focus on the UI and accessibility.
 
 ## Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Vite dev server with hot reload. |
-| `npm run build` | Type-check (`tsc -b`) then build to `dist/`. |
-| `npm run typecheck` | Strict TypeScript check, no emit. |
-| `npm run lint` | ESLint, including `jsx-a11y` accessibility rules. |
+| `npm run dev` | Vite dev server (mock data). |
+| `npm run build` | Type-check + production build. |
+| `npm run typecheck` | Strict TypeScript, no emit. |
+| `npm run lint` | ESLint incl. `jsx-a11y` accessibility rules. |
 | `npm run test` | Vitest component + **axe** accessibility tests. |
 | `npm run format` | Prettier. |
 
-## How it stays accessible (WCAG 2.2 AA)
+## Accessibility (WCAG 2.2 AA — a legal requirement)
 
-- The **data table** (`components/DataTable.tsx`) is the accessible equivalent of
-  the map and renders the *same* generalised, counted cells — so a screen-reader
-  user gets the same information without the (exempt) map.
-- Semantic landmarks (`header`, `main`, `aside`), a skip link, an explicit
-  `lang`, a matching `<title>`, visible focus, ≥ 4.5:1 text contrast, and no
-  colour-only encoding (the legend uses text + size; sensitive cells also carry a
-  text badge).
-- `react-aria-components` provides correct combobox ARIA and keyboard handling.
-- Accessibility is linted (`jsx-a11y`) and tested (`jest-axe`) in CI.
-
-## Data contract
-
-Types in `src/types.ts` mirror `api/app/models.py`. If you change one, change the
-other in the same pull request. The front end only ever reads generalised,
-PII-free data — it talks to the API and to Martin, both of which read the
-`public_occurrences` gate.
+Keep the data **table** as the accessible equivalent of the map; semantic
+landmarks, a skip link, visible focus, ≥ 4.5:1 contrast, no colour-only encoding;
+lint with `jsx-a11y` and test with `jest-axe`. See `../docs/ACCESSIBILITY.md`.

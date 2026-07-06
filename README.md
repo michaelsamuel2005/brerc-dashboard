@@ -1,8 +1,8 @@
 # BRERC Dashboard
 
 <!-- Badges: replace `OWNER` with your GitHub username/org at publish time (the publish script does this). -->
-[![CI](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/codeql.yml/badge.svg)](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/codeql.yml)
+[![CI](https://github.com/OWNER/brerc-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/brerc-dashboard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/OWNER/brerc-dashboard/actions/workflows/codeql.yml/badge.svg)](https://github.com/OWNER/brerc-dashboard/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Accessibility: WCAG 2.2 AA](https://img.shields.io/badge/accessibility-WCAG%202.2%20AA-1b5e20.svg)](docs/ACCESSIBILITY.md)
 ![Stack: PostGIS · Martin · FastAPI · React](https://img.shields.io/badge/stack-PostGIS%20%C2%B7%20Martin%20%C2%B7%20FastAPI%20%C2%B7%20React-informational.svg)
@@ -74,12 +74,12 @@ PostgreSQL 16 + PostGIS
 git clone <your-repo-url> brerc-dashboard && cd brerc-dashboard
 cp .env.example .env                 # edit passwords; .env is git-ignored
 
-# The front-end skeleton runs today (placeholders until you build the components):
+# FRONT END — runs on realistic MOCK data by default, so NO backend is needed:
 cd web && npm install && npm run dev # http://localhost:5173
 
-# The full stack starts too; the database + API come alive as you implement them:
+# (Backend teammates) the full stack also starts; it comes alive as the DB/API land:
 make up                              # Postgres/PostGIS, Martin, API, web, proxy
-make db-migrate                      # applies migrations (0001 works; the rest are yours)
+make db-migrate                      # applies migrations (0001 works; the rest are the backend owner's)
 ```
 
 As you complete each part of [`BUILD_PLAN.md`](BUILD_PLAN.md), more of the stack
@@ -120,8 +120,10 @@ badges above turn green once your implementation passes.
 
 - **Client:** BRERC (Manager: Tim Corner). **Consultancy:** 180 Degrees
   Consulting Bristol (Head of Data Science: Jaslyn Leong).
-- **Team (alphabetical):** Aman (Project Leader), Athul, Michael (dashboard +
-  PostgreSQL owner), Ting Ting, Victor.
+- **Team (alphabetical):** Aman (Project Leader), Athul, Michael (**front-end
+  owner**), Ting Ting, Victor. The database + backend (PostgreSQL/PostGIS, tiles,
+  API) are owned by a teammate — to be assigned. This is a **mono-repo**: each
+  area lives in its own folder and everyone works in the same repository.
 
 ## Documentation
 
