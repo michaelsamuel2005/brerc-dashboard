@@ -1,8 +1,0 @@
--- 0100_public_occurrences_mv.sql  (OPTIONAL)  —  TODO (only if you need scale)
--- ===========================================================================
--- WHAT: An OPTIONAL materialised variant of the public aggregation, for very
---   large datasets where computing tiles live is too slow. Not needed to start.
--- BUILD IT: Learning Guide -> 09-make-it-yours-exercises.md (heavyweight).
---   Answer Key: brerc-public-dashboard/db/optional/0100_public_occurrences_mv.sql
--- Intentionally EMPTY until (and unless) you need it.
--- ===========================================================================

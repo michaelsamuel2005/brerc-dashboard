@@ -1,6 +1,0 @@
-# Force use of the structured templates above.
-blank_issues_enabled: false
-contact_links:
-  - name: Security or data-governance concern
-    url: https://github.com/michaelsamuel2005/brerc-dashboard/security/policy
-    about: Do NOT open a public issue for a suspected data leak or vulnerability — follow SECURITY.md.

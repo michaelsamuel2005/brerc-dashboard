@@ -1,66 +1,29 @@
-# ---------------------------------------------------------------------------
-# BRERC Public Dashboard — .gitignore
-#
-# GOVERNANCE-CRITICAL. The provided BRERC record subset is REAL CLIENT DATA and
-# must never be committed (Data_Governance_and_Compliance.md §6). Secrets must
-# never be committed (§6). Do not remove the `data/` or `.env` rules below.
-# ---------------------------------------------------------------------------
-
-# --- Real client data: NEVER COMMIT ----------------------------------------
-# All local datasets live under data/ which is ignored wholesale. Only the
-# synthetic demo seed under db/seed/ (clearly labelled) is version-controlled.
-data/
-*.gpkg
-*.shp
-*.shx
-*.dbf
-*.prj
-# CSV/Parquet exports are ignored by default to avoid accidental client-data
-# commits. The one allow-listed exception is the synthetic demo file.
-*.csv
-*.parquet
-!db/seed/*.csv
-!web/**/*.csv
-
-# --- Secrets: NEVER COMMIT --------------------------------------------------
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-secrets/
-
-# --- Python -----------------------------------------------------------------
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-venv/
-htmlcov/
-.coverage
-.coverage.*
-
-# --- Node / web -------------------------------------------------------------
-node_modules/
-web/dist/
-web/coverage/
-*.tsbuildinfo
-.eslintcache
-
-# --- Build / tooling --------------------------------------------------------
-dist/
-build/
-.cache/
-*.log
-
-# --- OS / editor ------------------------------------------------------------
+# OS / editor
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json.example
+.vscode/
+*.swp
+
+# Secrets / environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Data — do not commit client data
+data/
