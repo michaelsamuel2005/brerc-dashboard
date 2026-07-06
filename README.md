@@ -1,8 +1,8 @@
 # BRERC Dashboard
 
 <!-- Badges: replace `OWNER` with your GitHub username/org at publish time (the publish script does this). -->
-[![CI](https://github.com/OWNER/brerc-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/brerc-dashboard/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/OWNER/brerc-dashboard/actions/workflows/codeql.yml/badge.svg)](https://github.com/OWNER/brerc-dashboard/actions/workflows/codeql.yml)
+[![CI](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/codeql.yml/badge.svg)](https://github.com/michaelsamuel2005/brerc-dashboard/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Accessibility: WCAG 2.2 AA](https://img.shields.io/badge/accessibility-WCAG%202.2%20AA-1b5e20.svg)](docs/ACCESSIBILITY.md)
 ![Stack: PostGIS · Martin · FastAPI · React](https://img.shields.io/badge/stack-PostGIS%20%C2%B7%20Martin%20%C2%B7%20FastAPI%20%C2%B7%20React-informational.svg)
