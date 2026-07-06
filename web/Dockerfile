@@ -4,7 +4,7 @@
 # static assets on :80.
 
 # --- Build stage -----------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 # Install against the lockfile for reproducibility (falls back to install if the
 # lockfile is absent).
