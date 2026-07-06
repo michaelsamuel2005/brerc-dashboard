@@ -1,0 +1,340 @@
+/*
+ * BRERC dashboard styles.
+ *
+ * Accessibility notes (WCAG 2.2 AA):
+ *  - Colours below are chosen for >= 4.5:1 text contrast on their backgrounds
+ *    (1.4.3). Verify with a contrast checker if you change them.
+ *  - Focus is ALWAYS visible with a thick, high-contrast outline (2.4.7 / 2.4.11).
+ *  - Nothing is conveyed by colour alone (1.4.1): the map legend and the
+ *    sensitive-record marker also use text and shape.
+ *  - Respects prefers-reduced-motion (2.3.3 / user comfort).
+ */
+
+:root {
+  --brand-green: #1b5e20; /* 7.6:1 on white */
+  --brand-green-dark: #103d15;
+  --ink: #1a1a1a; /* 16:1 on white */
+  --ink-muted: #4a4a4a; /* 8.9:1 on white */
+  --bg: #ffffff;
+  --bg-subtle: #f2f4f2;
+  --border: #6b6b6b; /* 3:1 non-text contrast for controls (1.4.11) */
+  --focus: #0b5fff;
+  --danger: #8a1c1c; /* used with an icon + text, never colour alone */
+  --sensitive: #7a4f00; /* amber-brown, paired with a text badge */
+  --max-width: 1400px;
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+a {
+  color: #0a4bd1;
+}
+a:hover {
+  color: #073a9e;
+}
+
+/* Visible focus for every interactive element. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Skip link — hidden until focused, then pinned top-left (2.4.1). */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -60px;
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  z-index: 1000;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 8px;
+  color: #fff;
+}
+
+/* Screen-reader-only text (used for table captions, live regions, etc.). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app-header {
+  background: var(--brand-green-dark);
+  color: #fff;
+  padding: 12px 20px;
+}
+.app-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+.app-header p {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  color: #eaf3ea;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 0;
+  height: calc(100% - 62px);
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
+.sidebar {
+  padding: 16px;
+  border-right: 1px solid #d5d5d5;
+  overflow-y: auto;
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 380px;
+}
+
+.panel {
+  background: var(--bg-subtle);
+  border: 1px solid #d5d5d5;
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.panel h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+input,
+select,
+button,
+.rac-Input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+}
+
+button {
+  width: auto;
+  cursor: pointer;
+  background: var(--brand-green);
+  color: #fff;
+  border-color: var(--brand-green-dark);
+  font-weight: 600;
+}
+button.secondary {
+  background: #fff;
+  color: var(--brand-green-dark);
+}
+button:hover {
+  background: var(--brand-green-dark);
+}
+button.secondary:hover {
+  background: var(--bg-subtle);
+}
+
+/* React Aria ComboBox popover list. */
+.rac-ListBox {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  max-height: 260px;
+  overflow: auto;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+.rac-ListBoxItem {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.rac-ListBoxItem[data-focused] {
+  background: var(--brand-green);
+  color: #fff;
+}
+
+/* Data table — the accessible equivalent of the map. */
+.table-scroll {
+  overflow: auto;
+  max-height: 320px;
+  border: 1px solid #d5d5d5;
+  border-radius: var(--radius);
+}
+table.records {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92rem;
+}
+table.records caption {
+  text-align: left;
+  padding: 8px;
+  font-weight: 600;
+}
+table.records th,
+table.records td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+table.records thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  border-bottom: 2px solid var(--border);
+}
+table.records tbody tr:hover {
+  background: #eef5ee;
+}
+
+.badge-sensitive {
+  display: inline-block;
+  border: 1px solid var(--sensitive);
+  color: var(--sensitive);
+  background: #fff7e6;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.legend {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  max-width: 240px;
+}
+.legend h3 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+.legend ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.legend .swatch {
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--brand-green-dark);
+  background: var(--brand-green);
+}
+
+.species-info img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid #d5d5d5;
+}
+.attribution {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin-top: 4px;
+}
+
+.placeholder {
+  background: repeating-linear-gradient(45deg, #eef1ee, #eef1ee 10px, #e4e8e4 10px, #e4e8e4 20px);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.status {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+.status.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 10px 16px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid #d5d5d5;
+}
+.summary-bar b {
+  font-size: 1.1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

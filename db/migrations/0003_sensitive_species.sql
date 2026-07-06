@@ -1,0 +1,15 @@
+-- 0003_sensitive_species.sql  —  TODO (you build this)
+-- ===========================================================================
+-- WHAT: The `sensitive_species` control list — taxon -> coarsest allowed public
+--       resolution (`required_resolution_m`), with `public_blocked` (omit
+--       entirely) and a NULL-resolution "flag for review" state.
+-- WHY:  This list drives the gate's decision about how much to blur each taxon.
+--
+-- BUILD IT: Learning Guide -> 02-database-and-the-gate.md (section 3).
+--   Answer Key: brerc-public-dashboard/db/migrations/0003_sensitive_species.sql
+-- ACCEPTANCE: `make db-migrate` runs clean; a row inserts with a
+--   required_resolution_m of 1000/2000/10000/50000/100000.
+--
+-- NOTE: BRERC supplies the REAL list -> it goes in the database, never in Git.
+-- Intentionally EMPTY until you implement it.
+-- ===========================================================================

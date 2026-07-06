@@ -1,0 +1,5 @@
+-- sensitive_species_demo.sql  —  TODO (you build this)  [SYNTHETIC data only — safe to commit]
+-- WHAT: a small SYNTHETIC sensitive-species list so the gate has something to act on (a few taxa at 10 km, one 'review', one 'blocked').
+-- BUILD IT: Learning Guide -> 02-database-and-the-gate.md
+--   Answer Key: brerc-public-dashboard/db/seed/sensitive_species_demo.sql
+-- Intentionally EMPTY until you implement it.

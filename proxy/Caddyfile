@@ -1,0 +1,46 @@
+# Same-origin reverse proxy for the BRERC public dashboard.
+#
+# Everything is served from ONE origin (http://localhost:8080 locally), which is
+# what lets the dashboard embed cleanly in BRERC's council-hosted site without
+# cross-origin cookie/CSP pain (Architecture_Decision.md §5).
+#
+#   /            -> the static React front end (web service)
+#   /api/*       -> the read-only FastAPI service (prefix stripped)
+#   /tiles/*     -> Martin vector tiles (prefix stripped)
+
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	encode gzip
+
+	# --- Security / embedding headers --------------------------------------
+	header {
+		# Allow embedding ONLY within BRERC / Bristol City Council domains.
+		# Replace these with BRERC's confirmed host(s) before production. Do NOT
+		# also set X-Frame-Options — it conflicts with frame-ancestors (WCAG 4.1.2
+		# / Architecture_Decision.md §5).
+		Content-Security-Policy "frame-ancestors 'self' https://*.brerc.org.uk https://*.bristol.gov.uk"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# --- API: strip /api so FastAPI sees root paths. API_ROOT_PATH=/api keeps
+	#     the OpenAPI docs links correct. ------------------------------------
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# --- Vector tiles: strip /tiles ----------------------------------------
+	handle_path /tiles/* {
+		reverse_proxy martin:3000
+	}
+
+	# --- Everything else: the static front end -----------------------------
+	handle {
+		reverse_proxy web:80
+	}
+}

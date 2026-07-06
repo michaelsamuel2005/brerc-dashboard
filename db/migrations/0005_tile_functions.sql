@@ -1,0 +1,16 @@
+-- 0005_tile_functions.sql  —  TODO (you build this)
+-- ===========================================================================
+-- WHAT: The Martin tile FUNCTION source
+--       `public_occurrences_mvt(z, x, y, query_params json) RETURNS bytea`.
+--       Reads ONLY `public_occurrences`, aggregates to one feature per
+--       (species, cell) with a count, packs an MVT (ST_AsMVT / ST_AsMVTGeom),
+--       and honours optional filters from query_params.
+-- WHY:  Because it reads the gate, precise coordinates can never enter a tile.
+--
+-- BUILD IT: Learning Guide -> 03-tiles-and-the-map-server.md (section 2).
+--   Answer Key: brerc-public-dashboard/db/migrations/0005_tile_functions.sql
+-- ACCEPTANCE: after Martin restarts, GET /tiles/public_occurrences returns
+--   TileJSON and a tile request returns non-empty bytes.
+--
+-- Intentionally EMPTY until you implement it.
+-- ===========================================================================

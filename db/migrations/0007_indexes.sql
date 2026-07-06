@@ -1,0 +1,15 @@
+-- 0007_indexes.sql  —  TODO (you build this, LAST)
+-- ===========================================================================
+-- WHAT: Indexes for speed — a GiST spatial index on `occurrences.geom`, and
+--       btree indexes on the columns the gate/API filter on (scientific_name,
+--       taxon_group, record_year, bliss).
+-- WHY:  The gate + tile function filter by taxon and a spatial envelope on every
+--       request; indexes make that scale to millions of rows.
+--
+-- BUILD IT: Learning Guide -> 02 & 03 (performance). Add indexes to match the
+--   queries you actually run.
+--   Answer Key: brerc-public-dashboard/db/migrations/0007_indexes.sql
+-- ACCEPTANCE: `make db-migrate` clean; EXPLAIN on a tile query uses the index.
+--
+-- Intentionally EMPTY until you implement it.
+-- ===========================================================================

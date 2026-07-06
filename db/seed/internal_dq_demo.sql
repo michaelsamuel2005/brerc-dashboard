@@ -1,0 +1,5 @@
+-- internal_dq_demo.sql  —  TODO (you build this)  [SYNTHETIC data only — safe to commit]
+-- WHAT: a handful of deliberately-broken SYNTHETIC records so the internal data-quality views + test have anomalies to catch.
+-- BUILD IT: Learning Guide -> 07-internal-dashboard.md
+--   Answer Key: brerc-public-dashboard/db/seed/internal_dq_demo.sql
+-- Intentionally EMPTY until you implement it.

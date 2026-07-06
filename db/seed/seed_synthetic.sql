@@ -1,0 +1,5 @@
+-- seed_synthetic.sql  —  TODO (you build this)  [SYNTHETIC data only — safe to commit]
+-- WHAT: the SYNTHETIC demo dataset (fake West-of-England records; never client data). Generate it with scripts/seed_synthetic.py or write INSERTs by hand.
+-- BUILD IT: Learning Guide -> 02 + scripts/seed_synthetic.py
+--   Answer Key: brerc-public-dashboard/db/seed/seed_synthetic.sql
+-- Intentionally EMPTY until you implement it.

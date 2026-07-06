@@ -1,0 +1,17 @@
+-- test_generalisation_gate.sql  —  TODO (you build this)
+-- ===========================================================================
+-- WHAT: The governance-critical test. Against a migrated + seeded DB, assert:
+--   (1) no PII / precise columns in public_occurrences; (2) nothing finer than
+--   the baseline; (3) every point on its cell-centre lattice; (4) sensitive taxa
+--   at >= their tier and flagged; (5) review taxa at >= the review default;
+--   (6) blocked taxa return zero rows; (7) brerc_readonly cannot read occurrences.
+-- Each check should RAISE EXCEPTION on failure so `psql -v ON_ERROR_STOP=1` exits
+-- non-zero. This runs in `make gate-test` and in CI.
+--
+-- BUILD IT: Learning Guide -> 02-database-and-the-gate.md (section 6 + exercise).
+--   Answer Key: brerc-public-dashboard/db/tests/test_generalisation_gate.sql
+-- ACCEPTANCE: the real test passes once 0002-0006 + a seed exist.
+--
+-- Until then this is a NO-OP placeholder so CI stays green. Replace it entirely
+-- with the real assertions when you build the gate.
+\echo 'TODO: gate test not implemented yet (Learning Guide Module 2). Placeholder passed.'

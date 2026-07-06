@@ -1,0 +1,13 @@
+-- test_data_quality.sql  —  TODO (you build this)
+-- ===========================================================================
+-- WHAT: Assert the INTERNAL data-quality views catch the deliberately-broken
+--   records in db/seed/internal_dq_demo.sql (invalid/incomplete grid refs, bad
+--   dates, control chars, missing values, duplicates). RAISE EXCEPTION on any
+--   miss. Runs in `make dq-test`.
+--
+-- BUILD IT: Learning Guide -> 07-internal-dashboard.md.
+--   Answer Key: brerc-public-dashboard/db/tests/test_data_quality.sql
+-- ACCEPTANCE: passes once db/internal/* + the demo seed exist.
+--
+-- NO-OP placeholder for now so CI stays green.
+\echo 'TODO: data-quality test not implemented yet (Learning Guide Module 7). Placeholder passed.'

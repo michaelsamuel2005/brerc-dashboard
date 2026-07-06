@@ -1,0 +1,31 @@
+# CODEOWNERS — who reviews what.
+#
+# ▸ ACTION REQUIRED: replace the placeholder @handles below with the team's real
+#   GitHub usernames (or a GitHub team such as @your-org/brerc-dashboard). Until
+#   then GitHub cannot auto-request these reviewers.
+#
+# Team (alphabetical) and known remits:
+#   Aman  (@aman-PLACEHOLDER)      — Project Leader
+#   Athul (@athul-PLACEHOLDER)     — Consultant
+#   Michael (@michael-PLACEHOLDER) — OWNS the public dashboard + PostgreSQL integration
+#   Ting Ting (@tingting-PLACEHOLDER) — Consultant
+#   Victor (@victor-PLACEHOLDER)   — Consultant
+#
+# Ownership of areas not led by Michael is a team decision — adjust as you agree it.
+
+# Default: any maintainer may review.
+*                       @aman-PLACEHOLDER @athul-PLACEHOLDER @michael-PLACEHOLDER @tingting-PLACEHOLDER @victor-PLACEHOLDER
+
+# Michael owns the dashboard and the PostgreSQL integration (his stated remit).
+/db/                    @michael-PLACEHOLDER
+/api/                   @michael-PLACEHOLDER
+/web/                   @michael-PLACEHOLDER
+/tiles/                 @michael-PLACEHOLDER
+/proxy/                 @michael-PLACEHOLDER
+docker-compose.yml      @michael-PLACEHOLDER
+
+# The governance-critical gate and its tests need an extra, careful review.
+# Add a second reviewer alongside Michael for anything touching the gate.
+/db/migrations/0004_public_occurrences_view.sql  @michael-PLACEHOLDER @aman-PLACEHOLDER
+/db/tests/                                        @michael-PLACEHOLDER @aman-PLACEHOLDER
+/docs/DATA_GOVERNANCE.md                          @michael-PLACEHOLDER @aman-PLACEHOLDER

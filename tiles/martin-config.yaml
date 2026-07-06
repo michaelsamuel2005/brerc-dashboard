@@ -1,0 +1,25 @@
+# Martin vector-tile server configuration.
+# https://maplibre.org/martin/config-file.html
+#
+# Martin connects as the READ-ONLY role (DATABASE_URL points at brerc_readonly),
+# which cannot see the precise `occurrences` table at all — so even Martin's
+# auto-discovery physically cannot expose precise data. As defence in depth we
+# ALSO publish only the explicit tile function below, not auto-published tables.
+
+listen_addresses: "0.0.0.0:3000"
+
+# How long a single tile query may run. Matches the app's statement timeout.
+pool_size: 10
+
+postgres:
+  connection_string: ${DATABASE_URL}
+
+  # Do NOT auto-publish tables; publish only the vetted tile function that reads
+  # the generalised public_occurrences view.
+  auto_publish: false
+
+  functions:
+    # Source id -> the generalised tile function (db/migrations/0005).
+    public_occurrences:
+      schema: public
+      function: public_occurrences_mvt
