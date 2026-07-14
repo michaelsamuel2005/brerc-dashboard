@@ -1,0 +1,1436 @@
+meta:
+  project: "BRERC Public Dashboard — Front-End (web/)"
+  description: >-
+    Public-facing interactive environmental/species-records dashboard for BRERC
+    (Bristol Regional Environmental Records Centre), delivered by 180 Degrees
+    Consulting Bristol. This plan covers ONLY the React public front-end in web/
+    (Michael Samuel's scope). The backend API + PostgreSQL/PostGIS are owned within
+    the 5-person team and appear here as a flagged dependency (assumptions[] +
+    apiContract[]), never as Michael's build. R8 (internal dashboard) is a clearly
+    deferred, secondary shell phase, conditional on team assignment of internal-web/.
+  client: "Bristol Regional Environmental Records Centre (BRERC)"
+  clientContact: "Tim Corner (BRERC Manager)"
+  consultancy: "180 Degrees Consulting Bristol"
+  consultancyReviewer: "Jaslyn Leong (Head of Data Science, 180DC)"
+  owner: "Michael Samuel"
+  ownerScope: >-
+    Public dashboard front-end only (the React app in web/). Not the api/ backend,
+    not internal-web/ (R8) unless the team explicitly assigns it to Michael. Backend
+    API + PostgreSQL/PostGIS are a dependency + flagged assumption. R8 appears only as
+    a deferred, secondary phase whose front-end deliverables are conditional on both
+    (a) R1-R7 Definition of Done being met and (b) the team assigning internal-web/ to
+    Michael; otherwise P8 reduces to a spike + handover note to the internal-web/ owner.
+  team: "5 part-time student consultants"
+  engagementWeeks: 8
+  ownerHoursPerWeek: >-
+    ASSUMED ~10-12 hours/week for one part-time student owner (A15). Phase sizing is
+    back-solved against this: ~5 available working weeks between today (2026-07-08) and
+    the final presentation (w/c 2026-08-10), i.e. roughly 50-60 owner-hours total for
+    P0-P6.5, with P7 hardening + handover in the final-presentation..showcase week. If
+    the real hours differ, phase depth (not the DoD gates) is what flexes — see
+    timeline.deScopeDecisionTree.
+  today: "2026-07-08"
+  milestones:
+    kickoff: "2026-07-01"
+    midReview: "2026-07-24"
+    finalPresentation: "w/c 2026-08-10"
+    showcase: "2026-08-17"
+  sourceDocs:
+    - "CLAUDE.md (Engineering Master Prompt 2 of 2, repo root)"
+    - "BRERC Strategy, Design & Consulting Master Prompt (companion, referenced)"
+    - "varied/reptile sample from main5.xls (19-column dev subset shape) — described in the brief; the file itself is NOT in the repo (A16)"
+    - "180DC Bristol engagement brief (POTENTIAL areas/outcomes — candidates, not commitments)"
+    - "Public Sector Bodies (Websites and Mobile Applications) Accessibility Regulations 2018 (PSBAR)"
+  repoReality: >-
+    Monorepo on branch michael/phase-0-foundations. web/ (Michael), api/ (team),
+    internal-web/ (R8, secondary). GREENFIELD: no web/package.json yet; only scaffold
+    dirs (web/src, web/public, web/tests). CLAUDE.md adopted; stray build artefacts
+    removed. .github/PULL_REQUEST_TEMPLATE.md ALREADY EXISTS (extend, do not recreate).
+    Dependabot is ALREADY ACTIVE with open branches on web/ + api/ (incl. a node-26
+    bump vs ground-truth Node 25) — the first web/package.json commit will trigger a
+    wave of PRs to triage (RK10). Team workflow: feature branches + PRs, Conventional
+    Commits, no direct pushes to main.
+  planningLens: >-
+    Public-first (R1-R7 before R8); every phase/step traceable to a requirement id;
+    dependsOn acyclic; realistic for one part-time front-end owner in ~5 working weeks.
+    Data honesty + C2 (PII / sensitive-species) enforced by types, strict Zod, a CI
+    grep-guard, contract tests, and e2e wire inspection — with server-side enforcement
+    flagged as team-owned assumptions, and client-side checks framed as nets, not fixes.
+  generated: "TBD"
+
+requirements:
+  - id: R1
+    title: "Public-facing interactive live dashboard hosted on BRERC's website"
+    priority: primary
+    source: "brief + CLAUDE.md §15"
+    notes: >-
+      PRIMARY, centre of gravity. Self-contained statically-served SPA / embeddable
+      bundle with a documented build output. Everything else serves this; public-first
+      ordering is mandatory.
+  - id: R2
+    title: "Interactive species distribution maps (grid-reference aware)"
+    priority: primary
+    source: "brief + CLAUDE.md §6, §15"
+    notes: >-
+      Likely centrepiece. MapLibre GL JS via react-map-gl/maplibre. Honest grid/atlas
+      cells at true precision, NOT false-precision pins. Data reprojected 27700->4326
+      server-side; client renders WGS84 (4326) only.
+  - id: R3
+    title: "Species information + attributed/licensed images"
+    priority: primary
+    source: "brief + CLAUDE.md §15"
+    notes: >-
+      e.g. Wikipedia/Wikimedia CC BY-SA / PD imagery, with visible attribution +
+      licence and meaningful alt text. Covers species AND geodiversity where in scope.
+  - id: R4
+    title: "Engaging, user-friendly, visually appealing UX for non-expert public"
+    priority: primary
+    source: "brief + CLAUDE.md §15"
+    notes: >-
+      Colour, fonts, navigation. Design tokens centralise colour so contrast is
+      auditable (ties to R5). Product/UX/visual decisions defer to the Strategy prompt.
+  - id: R5
+    title: "Accessibility WCAG 2.2 AA + published accessibility statement"
+    priority: primary
+    source: "brief + CLAUDE.md §8, §15 (PSBAR 2018)"
+    notes: >-
+      LEGAL build-blocker. Automated axe AND manual keyboard/screen-reader pass.
+      Non-map fallback (accessible table/summary) mandatory. A cross on R5 blocks merge.
+  - id: R6
+    title: "Live PostgreSQL; dev subset now -> prod credential swap, config-only"
+    priority: primary
+    source: "brief + CLAUDE.md §3, §5, §15"
+    notes: >-
+      The credential swap lives entirely in the API environment. The client only knows
+      an API base URL (+ map style/tile URLs) via VITE_* (public). No DB credentials,
+      tokens, or SQL ever in the client. dev->prod is not a client code change.
+  - id: R7
+    title: "Fully documented + commented source + technical docs for handover"
+    priority: primary
+    source: "brief + CLAUDE.md §13, §15"
+    notes: >-
+      README, .env.example, ADRs, handover runbook, accessibility statement,
+      why-not-what comments (esp. grid-ref/projection + sensitivity logic). Deliverable.
+  - id: R8
+    title: "Internal staff monitoring dashboard (summary stats + data-quality checks + reporting)"
+    priority: secondary
+    source: "brief + CLAUDE.md §15"
+    notes: >-
+      SECONDARY. Only if R1-R7 DoD is met, time permits, AND the team assigns
+      internal-web/ to Michael. Summary stats over records/species/Recorder1/years/
+      dates/BLISS; filtering; data-quality checks (invalid grid refs, bad dates,
+      carriage returns, missing values, duplicates); reporting. Lives in internal-web/;
+      represented here only as a deferred shell/spike phase.
+  - id: C1
+    title: "8-week public-first scope, refined with BRERC"
+    priority: constraint
+    source: "brief + CLAUDE.md §15"
+    notes: >-
+      Brief lists POTENTIAL work — candidates, not commitments. Scope refined WITH
+      Tim Corner; never invent requirements; never treat feature ideas as fixed.
+  - id: C2
+    title: "Data ethics — sensitive species + recorder PII/GDPR"
+    priority: constraint
+    source: "brief + CLAUDE.md §3, §6, §15"
+    notes: >-
+      HARD STOP if violated. Sensitive-species precise coords generalised/suppressed
+      server-side and made INDISTINGUISHABLE (no sensitivity marker in public payloads);
+      Recorder1/PII never reach the client; Comments withheld entirely from public;
+      Place suppressed for sensitive taxa; low-count re-identification bucketed
+      server-side. A client-side-only fix = a contract bug to flag. A cross blocks merge.
+  - id: C3
+    title: "Maintainable by BRERC staff post-handover"
+    priority: constraint
+    source: "brief + CLAUDE.md §13, §15"
+    notes: "Boring, well-understood patterns; no hidden magic; documented decisions; docs current in-repo. Partner to R7."
+
+assumptions:
+  - id: A1
+    statement: >-
+      A team-owned backend API exists (or will exist) exposing HTTPS/JSON and/or
+      vector-tile endpoints at a single base URL read from config. The React client
+      never connects to PostgreSQL and holds no DB credentials.
+    why_it_matters: >-
+      The entire front-end data layer (lib/api), the apiContract, and the MSW mock are
+      built against this boundary. If the API is late, the front-end proceeds against the
+      MSW mock and swaps only VITE_API_BASE_URL at integration (P6.5).
+    confirm_with: "Team (backend/API owner) + Tim Corner"
+    status: assumed
+  - id: A2
+    statement: >-
+      The API reprojects EPSG:27700 (Eastings/Northings) -> EPSG:4326 (WGS84) via
+      ST_Transform server-side and returns WGS84 grid-cell geometry + precision, never
+      raw BNG eastings/northings or false-precision points.
+    why_it_matters: >-
+      MapLibre renders Web Mercator and needs 4326; raw BNG is both a rendering bug and
+      (at full precision) a C2 location leak.
+    confirm_with: "Team (backend/API owner)"
+    status: assumed
+  - id: A3
+    statement: >-
+      The API strips Recorder1 and all recorder PII, and WITHHOLDS the free-text Comments
+      field entirely from public responses (no sanitise-and-ship path), server-side,
+      before any public response leaves the API.
+    why_it_matters: >-
+      C2 HARD STOP + GDPR. Recorder1/BLISS are named in the full DB but ABSENT from the
+      sample; the contract must EXPLICITLY exclude them and never assume sample-absence
+      means production-absence. Comments (25-80% populated) may embed PII/site detail and
+      free-text sanitisation is unreliable and client-unverifiable — so public = withheld.
+    confirm_with: "Team (backend/API owner) + Tim Corner (data/GDPR policy)"
+    status: open
+  - id: A4
+    statement: >-
+      The API generalises (coarser grid) OR suppresses precise coordinates for
+      sensitive/protected taxa server-side, blending them INTO the ordinary grid so they
+      are INDISTINGUISHABLE from normal records — enforced in what the tile/GeoJSON
+      endpoint RETURNS, with NO per-feature sensitivity marker in any public payload, and
+      Place suppressed to null for sensitive taxa.
+    why_it_matters: >-
+      C2 HARD STOP. A client-side hide of downloaded precise coords is still a breach, and
+      a 'sensitivity: generalised' label is itself a re-identification vector (an attacker
+      enumerates the flagged cells). NBN Atlas/GBIF practice blends, never labels. A
+      free-text Place defeats grid coarsening.
+    confirm_with: "Team (backend/API owner) + Tim Corner (definitive sensitive-taxa list)"
+    status: open
+  - id: A5
+    statement: >-
+      The definitive list of sensitive/protected taxa and the generalisation resolution
+      per tier (e.g. 1km / 10km) are provided by BRERC and enforced server-side. A global
+      public precision FLOOR is applied so no public cell is finer than the coarsest tier
+      any sensitive taxon could require, so the client need not know which taxa are sensitive.
+    why_it_matters: >-
+      The client cannot decide sensitivity and cannot verify per-taxon precision without
+      knowing the sensitive list; a server-enforced global floor makes correctness
+      server-owned. Drives map max-zoom cap, legend precision language, honesty copy.
+    confirm_with: "Tim Corner / BRERC + team (backend/API owner)"
+    status: open
+  - id: A6
+    statement: >-
+      For large record sets the API serves vector tiles (PostGIS ST_AsMVT via a tile
+      endpoint / pg_tileserv / Martin); for small/filtered sets it serves GeoJSON suitable
+      for MapLibre native clustering. Both are already sensitivity-generalised + reprojected.
+    why_it_matters: >-
+      Determines whether the map source is a vector-tile source or a GeoJSON source and
+      drives payload budgets (CLAUDE.md §6).
+    confirm_with: "Team (backend/API owner)"
+    status: assumed
+  - id: A7
+    statement: >-
+      A map style JSON + basemap tile URLs (self-hostable or licensed) are available and
+      CSP-compatible; the client reads them from non-secret VITE_* config and holds no
+      map-provider secrets; required basemap attribution is available to render.
+    why_it_matters: >-
+      MapLibre needs a style/tile source; CSP must permit those hosts; any provider key
+      must sit server-side, not as a client secret (R6). Basemap attribution is a legal duty.
+    confirm_with: "Team + Tim Corner / BRERC hosting (basemap licensing for a public gov site)"
+    status: open
+  - id: A8
+    statement: >-
+      Species imagery + licence/attribution metadata (author, licence, licenceUrl,
+      sourceUrl) come from an approved, correctly-licensed source (e.g. Wikipedia/Wikimedia
+      CC BY-SA / PD) via the API or a documented CSP-allow-listed origin, returned as data.
+    why_it_matters: >-
+      R3 requires visible attribution; unattributed CC BY-SA use is a licence breach.
+      Attribution must be structured data, not hard-coded; the source path affects CSP.
+    confirm_with: "Tim Corner + team (approved image source + attribution policy)"
+    status: open
+  - id: A9
+    statement: >-
+      The dashboard is embedded/hosted on BRERC's existing website as a static SPA /
+      embeddable bundle; the embedding method (iframe vs mounted bundle vs sub-path),
+      base path, routing mode (hash vs history), and parent-page CSP are provided by BRERC.
+    why_it_matters: >-
+      R1 hosting. The embedding method affects routing, CSP, CORS allow-list, focus
+      management, responsive sizing, and the build output shape.
+    confirm_with: "Tim Corner / BRERC web team"
+    status: open
+  - id: A10
+    statement: >-
+      The dev subset shape (19-column sample below) is representative of the public-facing
+      fields; the production main DB adds Recorder1 and BLISS which the public contract
+      excludes. Temporal precision for public display/filter may be coarsened (prefer year/
+      YearEnd over exact datetime) where it reduces re-identification risk.
+    why_it_matters: >-
+      Fixtures + Zod schemas are drafted from this shape; divergence at prod swap must not
+      break the client. Temporal precision can aid re-identification of recorders/sites.
+    confirm_with: "Team (backend/API owner) + Tim Corner"
+    status: open
+  - id: A11
+    statement: >-
+      Until the real API is ready, the front-end develops against a local MSW mock
+      implementing the proposed apiContract with fixtures shaped from the sample; the mock
+      is a dev/test aid, never shipped, and is converged onto the real contract early. All
+      C2/R6 claims proven against the mock are RE-PROVEN against the real API at integration (P6.5).
+    why_it_matters: >-
+      Decouples the sole front-end owner from the team-backend dependency and keeps R1-R5
+      progressing. But mock-only proof is circular (the mock is built to pass its own
+      contract), so a real-API integration gate is mandatory before showcase.
+    confirm_with: "Team (align mock to real contract)"
+    status: assumed
+  - id: A12
+    statement: >-
+      dev and prod differ ONLY by API environment (DB credentials swapped inside the API).
+      The client's only environment difference is VITE_API_BASE_URL (+ map style/tile URLs);
+      no client code branches on environment.
+    why_it_matters: "R6 — the credential swap must be config-only. Any client env branch would violate this."
+    confirm_with: "Team (backend/API owner)"
+    status: assumed
+  - id: A13
+    statement: >-
+      Geodiversity records (not only species) may be in public scope; if confirmed, they
+      share the records/map contract shape unless the team specifies otherwise.
+    why_it_matters: >-
+      Scientific-honesty note: geodiversity is named in scope. If in scope it needs a
+      layer/type; if not, it stays out to protect C1.
+    confirm_with: "Tim Corner"
+    status: open
+  - id: A14
+    statement: >-
+      The 'group' dimension (e.g. reptiles / geodiversity) used for browse/filter is
+      DERIVED server-side from a taxonomy/classification mapping, NOT a column in the
+      19-column sample (which has only Scientific_Name / Common_Name). The classification
+      source and permitted value set are team-/BRERC-owned.
+    why_it_matters: >-
+      Anti-fabrication: every other derived field (recordCount, firstYear/lastYear,
+      verifiedCount, hasImage) is trivially derivable from sample columns, but 'group'
+      needs an external taxonomy the sample does not contain. Ties to A13/Q9 (geodiversity).
+    confirm_with: "Team (backend/API owner) + Tim Corner"
+    status: open
+  - id: A15
+    statement: >-
+      One part-time student owner has ~10-12 productive hours/week on this front-end, i.e.
+      ~50-60 hours across the ~5 working weeks from today to the final presentation, with the
+      final-presentation..showcase week reserved for hardening/handover.
+    why_it_matters: >-
+      Phase sizing and the mid-review de-scope depend on a real hours budget; without it,
+      'feasible for one part-time owner' is unbacked. Drives the P2 spike de-scope + buffers.
+    confirm_with: "Michael + 180DC project lead"
+    status: assumed
+  - id: A16
+    statement: >-
+      The actual reptile/varied sample export (main5.xls rows) is NOT in the repo. Fixtures
+      and Zod field typing are hand-authored from the documented 19-column schema (varying
+      Grid_Ref precision, sometimes-non-numeric Abundance, en-dash in 'verified', etc.),
+      not read from the file. Access to the real export would improve fixture realism.
+    why_it_matters: >-
+      A handover reader must not hunt for main5.xls in the repo; fixture realism rests on
+      the documented schema. If the real export is obtainable, fixtures should be re-derived.
+    confirm_with: "Team + Tim Corner (share the dev subset export)"
+    status: open
+  - id: A17
+    statement: >-
+      A team member owns internal-web/ (R8). If it is not assigned to Michael, P8 reduces to
+      a spike + a handover note rather than committed internal-web/ front-end files.
+    why_it_matters: >-
+      meta.ownerScope is web/ only; committing internal-web/ files under Michael's name would
+      blur the scope boundary and risk the public-first breach RK7 warns about.
+    confirm_with: "180DC project lead + team"
+    status: open
+
+groundTruthData:
+  sampleTable: "varied / reptile sample from main5.xls (dev subset shape; file not in repo, A16)"
+  rowCountApprox: "~900-1000 rows per sample sheet, 19 columns"
+  fields:
+    - name: Scientific_Name
+      kind: "string (taxon, e.g. 'Anguis fragilis')"
+      sensitivity: public
+      notes: "Species-level key for lookups (R3), search, and map filtering (R2). Public speciesId is derived from this server-side."
+    - name: Common_Name
+      kind: "string (e.g. 'Slow-worm')"
+      sensitivity: public
+      notes: "Public-friendly label (R4)."
+    - name: Grid_Ref
+      kind: "string OS BNG, VARYING precision ('ST6674588734'=1m/10-fig vs 'ST498705'=100m/6-fig)"
+      sensitivity: review
+      notes: >-
+        Precision must be legible as honest grid cells (R2). Fine (1m/10-fig) refs are a
+        location leak — generalise/suppress server-side to the tier floor (C2/A4/A5). Client
+        shows a cell at the RETURNED precision; gridRef string precision MUST equal
+        precisionMetres and is never up-sampled client-side to a false-precision pin.
+    - name: Place
+      kind: "string locality (e.g. 'Woodlands Road, Tytherington')"
+      sensitivity: review
+      notes: >-
+        Free-text locality can pinpoint a sensitive site and DEFEAT grid coarsening. For
+        sensitive taxa it MUST be suppressed (null) server-side; for public it is coarsened
+        to a named-area/parish level, never exact street locality. Not returned finer than
+        the geometry's precision (C2/A4).
+    - name: Date_of_Record
+      kind: "string dd/mm/yyyy"
+      sensitivity: review
+      notes: "Temporal; parse defensively (may be absent/vague/malformed). Coarsen to year for public where it reduces re-identification (A10)."
+    - name: Abundance
+      kind: "string/int (e.g. '13')"
+      sensitivity: public
+      notes: "Count of the record, NOT population size (records != populations caveat). Not always numeric — parse defensively."
+    - name: Sex_Stage
+      kind: "string ('present'/'female')"
+      sensitivity: public
+      notes: ""
+    - name: Record_Type
+      kind: "string ('field record'/'vacuum sampling')"
+      sensitivity: public
+      notes: "Feeds effort-bias caveat context."
+    - name: Precise_Date
+      kind: "datetime"
+      sensitivity: review
+      notes: "Exact datetime — coarsen for public (A10). Handle nulls."
+    - name: Vague_Date
+      kind: "string range, mostly null"
+      sensitivity: public
+      notes: "Nulls are normal; render 'date range' honestly."
+    - name: vitality
+      kind: "string ('alive')"
+      sensitivity: public
+      notes: ""
+    - name: verified
+      kind: "string ('Accepted – correct' — note the non-ASCII en-dash)"
+      sensitivity: public
+      notes: >-
+        Useful for a data-confidence signal (R4). DEFENSIVELY normalise/whitelist (handle the
+        en-dash and unexpected variants) in lib/api and derive a boolean/enum, rather than
+        string-equality against a literal (mirrors the R8 carriage-return/bad-date hazards).
+    - name: YearEnd
+      kind: "int (e.g. 2020)"
+      sensitivity: public
+      notes: "Preferred coarse temporal axis for public filtering/slider (R2/A10)."
+    - name: Comments
+      kind: "FREE TEXT, ~25-80% populated"
+      sensitivity: strip
+      notes: >-
+        MAY EMBED PII/site detail. WITHHELD ENTIRELY from the public client (C2/A3) — no
+        sanitise-and-ship path, since free-text sanitisation is unreliable and
+        client-unverifiable, and no R-requirement displays Comments publicly. Any
+        sanitisation-and-display belongs only to internal-web/ (R8, auth-gated).
+    - name: Source
+      kind: "string ('consultancy'/'recorder')"
+      sensitivity: public
+      notes: "Provenance context (About/provenance page)."
+    - name: unique_No
+      kind: "int record id"
+      sensitivity: public
+      notes: "Stable opaque per-RECORD id for record detail views; not PII. Distinct from the derived per-SPECIES speciesId."
+    - name: licence
+      kind: "string, mostly NULL"
+      sensitivity: public
+      notes: "Data licence for the record (distinct from image licence, R3/A8). Do not assume a licence where absent."
+    - name: Eastings
+      kind: "int EPSG:27700, PRECISE"
+      sensitivity: strip
+      notes: >-
+        PRECISE-LOCATION LEAK. Never sent to the client (A2/C2). API reprojects to 4326
+        and returns only geometry at the permitted precision.
+    - name: Northings
+      kind: "int EPSG:27700, PRECISE"
+      sensitivity: strip
+      notes: "PRECISE-LOCATION LEAK. Same rule as Eastings."
+    - name: Recorder1
+      kind: "string (PII) — NAMED IN BRIEF, ABSENT FROM SAMPLE"
+      sensitivity: strip
+      notes: >-
+        Recorder personal data. Named in the full main DB, not in this sample. The public
+        contract EXPLICITLY excludes it; contract tests assert its absence. Never assume it
+        is already gone (C2/A3).
+    - name: BLISS
+      kind: "source-database field — NAMED IN BRIEF, ABSENT FROM SAMPLE"
+      sensitivity: strip
+      notes: "Internal source-DB metadata; excluded from the public contract. Relevant to R8 internal, not public."
+  sensitivityRules:
+    - "STRIP (never in any public client payload): Recorder1, BLISS, Eastings, Northings, Comments (withheld entirely) — contract-test + CI grep-guard enforced every build."
+    - "NO sensitivity marker: public payloads carry NO per-feature/row 'sensitivity' flag; sensitive records are blended INTO the ordinary grid, indistinguishable from normal ones (A4). 'sensitivity' is on the grep-guard forbidden list for public payloads."
+    - "GENERALISE/SUPPRESS server-side for sensitive/protected taxa: Grid_Ref precision + geometry, Place (suppress to null / coarsen to named-area), Precise_Date — enforced in what the endpoint RETURNS (A4), not by a client hide."
+    - "PRECISION FLOOR (A5): no public cell is finer than the coarsest sensitive tier any sensitive taxon could require; correctness is server-owned (the client cannot verify per-taxon sensitivity). Place is never returned finer than the cell geometry."
+    - "LOW-COUNT SUPPRESSION (k-anonymity): per-cell recordCount/verifiedCount for rare/sensitive taxa are bucketed (e.g. '<5') or suppressed below a threshold server-side, so a generalised cell with count 1 + year + place cannot isolate a single observation."
+    - "COARSEN temporal for public where it reduces re-identification (prefer YearEnd/year over exact datetime) (A10)."
+    - "CONSISTENCY: the records-table gridRef precision EQUALS the map cell precisionMetres for the same taxon/filter; the accessible fallback never leaks finer location than the map; lib/geo never up-samples a coarse ref."
+    - "REVIEW server-side: licence — inspected for correctness; never assume a licence where the field is NULL."
+    - "Client renders WGS84 (4326) honest grid cells at the RETURNED precision — never a false-precision pin; reprojection from 27700 is server-side (A2)."
+    - "PUBLIC: everything else, delivered honestly with precision + verification status. Records != populations; recorder/spatial/temporal effort bias is the central caveat surfaced in UI (R4/§6)."
+
+architecture:
+  stack:
+    framework: "React + TypeScript (strict, no any — use unknown + narrowing)"
+    bundler: "Vite"
+    maps: "MapLibre GL JS via react-map-gl/maplibre (imperative calls isolated behind hooks/refs in features/map)"
+    a11yPrimitives: "React Aria / React Aria Components (menus, dialogs, selects, tabs, sliders, tables)"
+    serverState: "TanStack Query (staleTime, retry, loading/error/empty) — no fetch-in-useEffect scattered in components"
+    boundaryValidation: "Zod at the API boundary — bad data fails loudly"
+    mockLayer: "MSW (Mock Service Worker) implementing the apiContract (A11) — dev/test only, never shipped"
+    unitTest: "Vitest + React Testing Library + jest-axe"
+    e2eTest: "Playwright + @axe-core/playwright"
+    packageManager: "npm (Node 25 per ground truth; no pnpm/yarn; Dependabot pinned to Node 25 not 26)"
+    lintFormat: "ESLint (typescript-eslint + eslint-plugin-jsx-a11y) + Prettier"
+  repoLayout:
+    monorepo:
+      web: "Public front-end — MICHAEL'S SCOPE (this plan)"
+      api: "Team backend (dependency; not built here)"
+      internal-web: "R8 internal dashboard (secondary; deferred; owner TBD per A17)"
+    webSrc:
+      "app/": "app shell, routing, providers (QueryClient, map, a11y, error boundaries)"
+      "features/map/": "species distribution map (R2)"
+      "features/species/": "species info + attributed imagery (R3)"
+      "features/search/": "search & filters"
+      "features/about/": "data provenance, honesty caveats, accessibility statement, attributions (R5/R7/R3)"
+      "features/landing/": "R1 landing dashboard assembly"
+      "components/": "shared, presentational, accessible primitives (React Aria based, R4/R5)"
+      "lib/api/": "the ONLY place that calls the backend (typed client + Zod)"
+      "lib/geo/": "grid-ref precision/label utilities, tile config (tested; display-only, NO client BNG->WGS84 reprojection, never up-samples precision)"
+      "lib/a11y/": "focus, live-region, reduced-motion helpers"
+      "types/": "shared domain types (Species, Record, GridCell...) — reused, not duplicated"
+      "config/": "env-driven config (API base URL, map style, tile URLs) reading import.meta.env"
+      "styles/": "design tokens (colour/type/spacing) — AA-auditable"
+      "test/": "test utils, fixtures, MSW handlers"
+  apiBoundary:
+    rule: >-
+      Exactly ONE API layer (web/src/lib/api). No fetch scattered in components. Client
+      never connects to PostgreSQL, holds no DB credentials, and never assembles SQL.
+    validation: >-
+      Every response parsed through a Zod schema in lib/api before it reaches a component;
+      a parse failure surfaces as an error state, not a silent crash. Domain types live in
+      types/ and are shared/reused.
+    serverStateFetching: "TanStack Query wraps the typed api functions (staleTime/retry/loading/error) — never fetch-in-useEffect."
+    excludedFromEveryResponse: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+    serverAssumptions: [A2, A3, A4, A5, A6]
+  dataDelivery:
+    largeSets: "Server MVT vector tiles (ST_AsMVT) — sensitivity-generalised (blended, unlabelled) + reprojected server-side (A6)."
+    smallFilteredSets: "GeoJSON with MapLibre native clustering (cluster:true) (A6)."
+    honestDefault: "Grid/atlas occupancy polygons at the record's true precision — never coarse records as exact pins."
+    projection: "Data ships in WGS84 (4326); reprojection from EPSG:27700 is server-side (A2). lib/geo holds tested grid-ref precision/label helpers for display only, never to fabricate precision."
+    sensitivity: "Coarsening/suppression enforced in what the tile/GeoJSON endpoint RETURNS (A4); sensitive records blended into the ordinary grid with NO marker; a global precision floor applies (A5)."
+    performance: "Cap max zoom to meaningful precision; debounce viewport-driven fetches; simplify geometry; lazy-load the map bundle; budget payloads."
+  envConfig:
+    source: "import.meta.env (VITE_* is PUBLIC — client knows only non-secret URLs)"
+    clientKnows: [VITE_API_BASE_URL, VITE_MAP_STYLE_URL, VITE_TILE_URL]
+    clientNeverKnows: ["DB credentials", "API secrets", "tokens", "connection strings"]
+    credentialSwap: >-
+      R6 dev->prod is a credential change INSIDE the API environment (A12). The client
+      changes only VITE_API_BASE_URL — never code. Both env sets documented in .env.example
+      + the handover runbook; real values never committed. Proven config-only at P6.5/P7.
+
+apiContract:
+  note: >-
+    PROPOSED and FLAGGED AS ASSUMPTION (A1). This is the contract the FRONT-END needs; the
+    team's API owner confirms/implements/owns it. The front-end develops against MSW mock
+    fixtures of these exact shapes (A11) and converges early; every claim is RE-PROVEN
+    against the real API at integration (P6.5). Every response is Zod-validated in lib/api.
+    Every endpoint EXCLUDES Recorder1, BLISS, Eastings, Northings, Comments, and any
+    'sensitivity' marker from public payloads (C2). Sensitive records are blended into the
+    ordinary grid (no marker). MVT is binary — validated by a contract test on a decoded
+    fixture rather than runtime Zod.
+  endpoints:
+    - endpoint: "GET /api/health"
+      purpose: "Liveness/readiness probe so the client can show a graceful degraded state if the API is down."
+      requestParams: "none"
+      responseShape: "{ status: 'ok', version: string }"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+      requirementIds: [R1, R6]
+    - endpoint: "GET /api/species"
+      purpose: "Searchable, paginated species/taxa index for search/browse and the species index (R3)."
+      requestParams: "q?: string; group?: string (DERIVED server-side, A14); page?: int; pageSize?: int (server-capped); sort?: whitelisted enum"
+      responseShape: "{ items: Array<{ speciesId: string, scientificName, commonName, group, recordCount, firstYear, lastYear, hasImage: boolean }>, page, pageSize, total } — speciesId is a server-derived per-taxon id (A14); recordCount bucketed for rare/sensitive taxa"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+      requirementIds: [R2, R3]
+    - endpoint: "GET /api/species/{speciesId}"
+      purpose: "Species detail: description + attributed/licensed image + honest summary stats (R3)."
+      requestParams: "path: speciesId (server-derived per-taxon id, A14; whitelisted/validated server-side)"
+      responseShape: "{ speciesId, scientificName, commonName, group, description?, image?: { url, author, licence, licenceUrl, sourceUrl, alt }, stats: { recordCount, yearRange: [int,int], verifiedCount } }"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+      requirementIds: [R3, R4]
+    - endpoint: "GET /api/distribution/tiles/{z}/{x}/{y}.mvt"
+      purpose: "Vector tiles of occupancy grid cells for large record sets (R2). Sensitivity generalisation already applied + blended server-side."
+      requestParams: "path z/x/y; query speciesId?, yearFrom?, yearTo? (server-validated/whitelisted; bbox/zoom capped)"
+      responseShape: "MVT layer 'cells' with feature props { cellId, precisionMetres, recordCount (bucketed for rare taxa), speciesId? } — geometry WGS84 cell polygon; NO precise points, NO eastings/northings, NO preciseGridRef, NO sensitivity marker, NO place"
+      zodValidated: false
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity, preciseGridRef, place]
+      requirementIds: [R2, C2, R6]
+    - endpoint: "GET /api/distribution/cells"
+      purpose: "GeoJSON occupancy cells for small/filtered sets — MapLibre clustering + the non-map accessible table (R2/R5)."
+      requestParams: "speciesId?, yearFrom?, yearTo?, bbox? (server-validated/whitelisted + capped)"
+      responseShape: "GeoJSON FeatureCollection; each Feature.properties = { cellId, precisionMetres, recordCount (bucketed for rare taxa), verifiedCount (bucketed) }; geometry = WGS84 cell polygon; NO sensitivity marker; NO place for sensitive taxa (suppressed server-side, A4)"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity, preciseGridRef]
+      requirementIds: [R2, R5, C2]
+    - endpoint: "GET /api/records"
+      purpose: "Paginated, sanitised record rows behind a selected cell/filter/viewport — powers the NON-MAP accessible data table (R5) and cell detail."
+      requestParams: "gridRef or bbox; speciesId?; yearFrom?; yearTo?; page?; pageSize? (server-capped)"
+      responseShape: "{ items: Array<{ id, scientificName, commonName, gridRef (generalised; precision EQUALS precisionMetres), precisionMetres, place? (suppressed/null for sensitive taxa; never finer than geometry), year, abundance?, recordType?, verified (normalised enum), source }>, page, pageSize, total }"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity, preciseDate]
+      requirementIds: [R2, R5, C2]
+    - endpoint: "GET /api/summary"
+      purpose: "Aggregate counts + honest bias framing for the R1 landing dashboard."
+      requestParams: "speciesId?, yearFrom?, yearTo?"
+      responseShape: "{ totalRecords, totalSpecies, yearRange: {min,max}, recordsByYear: Array<{year,count}>, topGroups: Array<{group,count}>, coverageCaveat: string }"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+      requirementIds: [R1, R4]
+    - endpoint: "GET /api/meta/provenance"
+      purpose: "Data provenance, coverage caveats (effort/spatial/temporal bias), sources, last-updated, declared sensitivity policy summary + attributions — for the About/provenance page (R7/R4/C2)."
+      requestParams: "none"
+      responseShape: "{ lastUpdated, recordTotal, sources: string[], coverageCaveats: string[], sensitivityPolicy: { generalisationTiersMetres: number[], appliesToProtectedTaxa: true, note: string }, attributions: Array<{ label, url, licence }> } — a POLICY summary only (transparency), never per-record sensitivity data"
+      zodValidated: true
+      excludesFields: [Recorder1, BLISS, Eastings, Northings, Comments, sensitivity]
+      requirementIds: [R7, R4, C2]
+
+phases:
+  - id: P0
+    name: "Foundations, guardrails, design tokens & green CI"
+    goal: >-
+      Stand up the greenfield web/ Vite+React+TS(strict) app with tooling, env-driven config,
+      design tokens + the shared React Aria primitive library, and the C2/a11y guardrails
+      wired in FIRST, behind a permanently-green CI gate. Pulling tokens + primitives here
+      (not P2) means the mid-review slice is ASSEMBLY, not foundation-building (fixes the
+      P0-P2 compression blocker). No feature logic yet. Critical-path enabler.
+    requirementIds: [R1, R4, R5, R6, R7, C1, C2, C3]
+    dependsOn: []
+    deliverables:
+      - "web/ Vite + React + TypeScript(strict) app that builds and serves"
+      - "CLAUDE.md §4 folder layout with a purpose note per folder"
+      - "ESLint (typescript-eslint + jsx-a11y) + Prettier; strict tsconfig; npm scripts (dev/build/preview/typecheck/lint/test/test:e2e)"
+      - "Vitest + RTL + jest-axe wired (one green smoke); Playwright + @axe-core/playwright installed (one green smoke)"
+      - "CI pipeline (typecheck + lint + unit + jest-axe + C2/secret grep-guard) on every PR; no merge on red"
+      - "config/ env module (Zod-validated) + .env.example documenting VITE_API_BASE_URL/MAP_STYLE_URL/TILE_URL (dev+prod, values omitted)"
+      - "Accessible app shell (skip-link, landmarks, visible focus, reduced-motion helper, per-feature error boundary, QueryClientProvider)"
+      - "Design tokens (colour/type/spacing, AA-auditable) + shared React Aria primitives (Button, Select, Dialog, Tabs, Table) + LoadingState/ErrorState/EmptyState"
+      - "Dependabot config scoped/pinned to Node 25 (not 26), grouped + scheduled to reduce single-owner triage churn"
+      - "README (setup/run/build/test); ADR-0001 (stack + one-API-layer boundary); ADR-0002 (env/config + config-only credential swap); ADR-0004 (design tokens); extended .github/PULL_REQUEST_TEMPLATE.md (requirement ID + a11y note + test evidence)"
+    exitCriteria:
+      - "npm run build, typecheck, lint, test all green locally and in CI; strict TS on, no any; jsx-a11y active"
+      - "No secret/DB credential/SQL string, and no forbidden field (Recorder1/BLISS/Eastings/Northings/Comments/sensitivity), anywhere in web/ or the built bundle — CI grep-guard passes (R6/C2)"
+      - ".env.example present; real .env gitignored; client reads only VITE_* API base + map URLs (R6/A12)"
+      - "App shell renders with skip-link, one <main>, visible focus ring, passing jest-axe smoke (R5 baseline); token pairs meet AA; primitives keyboard-operable"
+      - "README + ADR-0001/0002/0004 + extended PR template committed (R7)"
+    steps:
+      - id: P0-S1
+        title: "Scaffold Vite React-TS strict app + pin the fixed stack + scope Dependabot"
+        requirementIds: [R1, C1, C3]
+        description: >-
+          Initialise web/ (npm) with the react-ts template; enable strict + noUncheckedIndexedAccess;
+          pin exact deps (react-map-gl/maplibre, maplibre-gl, react-aria-components, @tanstack/react-query,
+          zod, react-router, msw) + dev deps (vitest, @testing-library/react, jest-axe, playwright,
+          @axe-core/playwright, eslint, typescript-eslint, eslint-plugin-jsx-a11y, prettier); commit lockfile.
+          Configure Dependabot (grouping, schedule) and PIN Node to 25 per ground truth — Dependabot is
+          already active on this repo, so the first package.json commit will trigger a wave of PRs to triage.
+        files: [web/package.json, web/tsconfig.json, web/tsconfig.app.json, web/vite.config.ts, web/index.html, web/src/main.tsx, .github/dependabot.yml]
+        acceptance: ["npm run build produces a static bundle in web/dist", "tsc --noEmit clean with strict", "no pnpm/yarn artefacts; all named stack libs at pinned versions", "Dependabot scoped + pinned to Node 25"]
+        tests: ["trivial render smoke test (Vitest + RTL) passes"]
+        risks: ["Node 25 vs Dependabot node-26 bump + PR wave the moment package.json lands (RK10); version drift — pin + npm audit in CI"]
+      - id: P0-S2
+        title: "CLAUDE.md §4 folder skeleton + lint/format + a11y lint"
+        requirementIds: [R1, R5, C3, R7]
+        description: >-
+          Materialise app/, features/{map,species,search,about,landing}/, components/, lib/{api,geo,a11y}/,
+          types/, config/, styles/, test/ with index barrels and a purpose note per folder. Configure ESLint
+          (typescript-eslint + jsx-a11y) + Prettier + a lint rule forbidding fetch outside lib/api; fail on
+          warnings in CI. No business logic yet.
+        files: [web/src/app/, web/src/features/, web/src/components/, web/src/lib/, web/src/types/, web/src/config/, web/src/styles/, web/src/test/, web/eslint.config.js, web/.prettierrc]
+        acceptance: ["layout matches §4; each dir has a purpose note", "npm run lint clean; jsx-a11y + no-fetch-outside-lib/api rules active"]
+        tests: ["lint runs in CI on the scaffold"]
+        risks: ["Premature abstraction — keep placeholders minimal; over-strict lint stalling velocity — start pragmatic (RK9)"]
+      - id: P0-S3
+        title: "Env-driven config module + .env.example (the R6 seam)"
+        requirementIds: [R6, R7, C3]
+        description: >-
+          config/ reads import.meta.env for VITE_API_BASE_URL/MAP_STYLE_URL/TILE_URL with a Zod-validated
+          shape; missing/invalid required env fails fast at startup. .env.example documents dev+prod vars
+          (values omitted). This is the whole R6 client surface: dev->prod is an API-env credential swap
+          (A12), not a client code change. No DB credentials — the client knows only the API base URL + map URLs.
+        files: [web/src/config/index.ts, web/.env.example, web/src/config/config.test.ts]
+        acceptance: ["missing/invalid required env fails loudly with a clear message", "no secret/credential var referenced", "VITE_* documented as PUBLIC"]
+        tests: ["config parsing unit test (valid/invalid/missing)"]
+        risks: ["Someone adds a provider/DB secret to VITE_* — CI grep-guard + review catch it (RK7/C2)"]
+      - id: P0-S4
+        title: "Accessible app shell + providers + per-feature error boundary"
+        requirementIds: [R1, R5, R4]
+        description: >-
+          Compose QueryClientProvider + a11y/reduced-motion/live-region providers; header/nav/main/footer
+          landmarks; skip-to-content link; global focus-visible style; per-feature error boundaries so one
+          failure degrades gracefully rather than blanking the page (§7/§10).
+        files: [web/src/app/App.tsx, web/src/app/providers.tsx, web/src/app/ErrorBoundary.tsx, web/src/lib/a11y/, web/src/components/SkipLink.tsx]
+        acceptance: ["keyboard: skip link focuses main; logical focus order; focus always visible", "a feature error shows a boundary, not a blank page"]
+        tests: ["jest-axe smoke on the shell (zero violations)", "RTL: skip-link focuses main; error-boundary render test"]
+        risks: ["Error boundary swallowing a11y/telemetry detail — log without leaking sensitive info (RK6)"]
+      - id: P0-S5
+        title: "Design tokens (AA) + shared React Aria primitives + state components"
+        requirementIds: [R4, R5, C3]
+        description: >-
+          Centralise colour/type/spacing tokens with documented AA contrast and the rule that meaning is never
+          colour-alone (also shape/label/pattern) — critical for the later map legend. Build the reusable React
+          Aria Button/Select/Dialog/Tabs/Table plus LoadingState/ErrorState(retry)/EmptyState ('no records here'
+          is meaningful). Pulled into P0 so P2 assembles rather than builds foundations. Palette/brand defer to
+          the Strategy prompt (placeholder tokens now).
+        files: [web/src/styles/tokens.css, web/src/styles/theme.ts, web/src/components/, web/src/components/states/, web/docs/adr/0004-design-tokens.md]
+        acceptance: ["token pairs meet AA; no colour-only semantics", "primitives keyboard-operable with visible focus; empty/error/loading accessible + plain-language"]
+        tests: ["token contrast unit check", "jest-axe + keyboard-interaction tests per primitive/state"]
+        risks: ["Reinventing accessible widgets instead of React Aria — forbidden (§8); brand palette forcing re-audit — keep tokens single-source (RK9)"]
+      - id: P0-S6
+        title: "CI pipeline + C2/secret grep-guard + PR template + ADRs"
+        requirementIds: [R5, R7, C2, C3]
+        description: >-
+          GitHub Actions on PR runs typecheck + lint + unit + jest-axe; no merge on red. Add a guard job that
+          greps source + built bundle for Recorder1/BLISS/Eastings/Northings/Comments/sensitivity, DB-credential
+          patterns, and SQL keywords, failing on any hit. EXTEND the existing .github/PULL_REQUEST_TEMPLATE.md
+          (do not create a new competing pull_request_template.md) to require requirement ID(s), an a11y note,
+          and test evidence. Write ADR-0001 (stack + boundary + no-SQL/no-secrets) and ADR-0002 (env/config;
+          config-only dev->prod credential swap). Seed README setup/build/run/test.
+        files: [.github/workflows/web-ci.yml, web/scripts/guard-forbidden.mjs, .github/PULL_REQUEST_TEMPLATE.md, web/docs/adr/0001-stack-and-boundary.md, web/docs/adr/0002-env-and-credential-swap.md, web/README.md]
+        acceptance: ["red CI blocks merge", "guard fails if any forbidden field/secret/SQL string (incl. 'sensitivity') appears in web/ or the bundle", "PR template enforces requirement traceability + a11y note", "a new BRERC dev can set up + run web/ from the README alone"]
+        tests: ["guard unit: a seeded fixture containing 'Recorder1' or 'sensitivity' fails the job", "CI dry-run green on the scaffold PR"]
+        risks: ["Guard is a net, not a substitute for a correct server contract — server-side C2 stays A3/A4 (RK1); slow CI discouraging small PRs — cache npm + Playwright browsers"]
+  - id: P1
+    name: "Domain types, Zod-validated API layer & MSW mock contract"
+    goal: >-
+      Build the contract-first spine: shared PII-safe domain types, per-endpoint Zod schemas,
+      the single api layer, TanStack Query hooks, and an MSW mock seeded from the real sample
+      shape (A11) — so the whole UI builds and is testable WITHOUT the team backend, with a
+      contract test that fails CI if any PII/precise-coord/sensitivity field can enter the client.
+    requirementIds: [R2, R3, R6, R7, C2, C3]
+    dependsOn: [P0]
+    deliverables:
+      - "types/ domain types (Species, SpeciesDetail, OccupancyCell/GridCell with precisionMetres, RecordRow, SummaryStats, Provenance) — reused, PII-free by construction"
+      - "lib/api: one network entry point; per-endpoint Zod schemas (single source of truth); typed client with explicit non-200/timeout/empty handling; verified-field normalisation"
+      - "TanStack Query hooks (useSpeciesList, useSpeciesDetail, useDistributionCells, useRecords, useSummary, useProvenance) with staleTime/retry (no retry on 4xx)/discriminated-union state"
+      - "MSW handlers + fixtures from the sample shape, with Recorder1/BLISS/Eastings/Northings/Comments/sensitivity ABSENT by construction and a generalised (blended, unlabelled) sensitive-taxon example"
+      - "Contract tests asserting excluded/PII/sensitivity fields are absent from every parsed payload, that gridRef precision equals precisionMetres, and that malformed data is rejected loudly"
+      - "ADR-0003 (contract-first + Zod boundary validation)"
+    exitCriteria:
+      - "Every apiContract endpoint has a typed hook + Zod schema; a malformed fixture fails loudly in tests"
+      - "Contract test proves Recorder1/BLISS/Eastings/Northings/Comments/sensitivity cannot enter any parsed client type; records gridRef precision == precisionMetres (C2 gate — blocks merge)"
+      - "No fetch outside lib/api (architecture DoD); loading/error/empty modelled as a discriminated union; 'no records here' is meaningful, not an error"
+      - "UI can run entirely against MSW with the real backend absent (A11); mock claims flagged for re-proof at P6.5"
+    steps:
+      - id: P1-S1
+        title: "Shared domain types in types/ from the real sample shape"
+        requirementIds: [R2, R3, C2, C3]
+        description: >-
+          Model the PUBLIC-safe subset of the 19-column sample: no Eastings/Northings/Recorder1/BLISS/Comments/
+          sensitivity. GridCell carries precisionMetres, not a false-precision point; RecordRow gridRef precision
+          is tied to precisionMetres. Discriminated union for async state (loading|error|empty|ready). speciesId
+          is a distinct per-taxon type from the per-record id. Encode C2 in the type system.
+        files: [web/src/types/species.ts, web/src/types/records.ts, web/src/types/geo.ts, web/src/types/async.ts, web/src/types/index.ts]
+        acceptance: ["types exclude all strip-listed fields + any sensitivity marker", "no any", "state modelled as a discriminated union"]
+        tests: ["type-level / tsd compile assertion that excluded fields are not present"]
+        risks: ["Accidentally modelling raw DB shape incl. PII for convenience — forbidden; enforced by C2 grep-guard (C2/RK2)"]
+      - id: P1-S2
+        title: "Zod schemas + single typed api layer with resilient errors + verified normalisation"
+        requirementIds: [R6, C2, C3]
+        description: >-
+          One Zod schema per endpoint (strict, no silent passthrough of unexpected/leaked keys — rejects any
+          sensitivity/PII/precise-coord field); typed api functions fetch + parse before returning; base URL from
+          config only; explicit non-200/timeout (AbortController)/empty outcomes. Normalise the 'verified' value
+          (handle the en-dash + variants) into an enum/boolean rather than literal equality. Decide + document
+          strict-vs-passthrough against real-API drift.
+        files: [web/src/lib/api/schemas.ts, web/src/lib/api/client.ts, web/src/lib/api/endpoints.ts, web/src/lib/api/index.ts, web/docs/adr/0003-contract-first-zod.md]
+        acceptance: ["exactly one network entry point", "parse rejects any payload carrying an excluded/sensitivity field", "timeouts + non-200 surface as typed error states", "verified normalised, not string-equality"]
+        tests: ["Zod schema unit tests (valid/invalid/extra-PII-or-sensitivity-field rejected)", "500/timeout/empty each produce the right typed outcome", "en-dash verified value normalises correctly"]
+        risks: ["Silent coercion hiding bad data — Zod strict; real API may add fields (RK13) — document strip vs passthrough"]
+      - id: P1-S3
+        title: "TanStack Query hooks (loading/error/empty/retry)"
+        requirementIds: [R2, R3, R6]
+        description: >-
+          Wrap endpoints in query hooks with staleTime, bounded retry disabled on 4xx, and explicit empty
+          handling. Hooks expose the async discriminated union, never raw undefined.
+        files: [web/src/lib/api/queries.ts]
+        acceptance: ["hooks expose the discriminated-union state; empty != error; retry bounded and off for client errors"]
+        tests: ["RTL/Vitest: loading->ready, loading->error(+retry), empty, ready paths each covered against the mock"]
+        risks: ["Retry storms hammering a rate-limited API — bounded retry, no retry on 4xx (RK5)"]
+      - id: P1-S4
+        title: "MSW mock + sample-derived fixtures (PII/sensitivity-free by construction)"
+        requirementIds: [R6, C2, C3]
+        description: >-
+          MSW handlers for every endpoint; fixtures hand-authored from the documented reptile-sample shape (A16)
+          with varying Grid_Ref precision and a generalised sensitive-taxon example blended into the ordinary
+          grid (NO marker) to exercise C2 rendering. Recorder1/BLISS/Eastings/Northings/Comments/sensitivity
+          intentionally ABSENT to mirror the required public contract; recordCount bucketed for the rare example.
+        files: [web/src/test/msw/handlers.ts, web/src/test/msw/browser.ts, web/src/test/msw/server.ts, web/src/test/fixtures/]
+        acceptance: ["dev + tests run fully against MSW without a backend (A11)", "fixtures contain zero excluded/sensitivity fields; a generalised (unlabelled) sensitive record exists"]
+        tests: ["every fixture passes its Zod schema and the forbidden-field assertion"]
+        risks: ["Mock drifting from the real API — flag A1/A11; converge early; re-prove at P6.5 (RK1/RK13)"]
+      - id: P1-S5
+        title: "Contract test — C2 PII/precise-coord/sensitivity absence + precision-consistency gate"
+        requirementIds: [C2, R7]
+        description: >-
+          Dedicated suite asserting parsed client payloads carry NO Recorder1/BLISS/Eastings/Northings/Comments/
+          sensitivity marker, that grid geometry carries a precision, that records gridRef precision EQUALS
+          precisionMetres (fallback never finer than the map), and that schemas reject malformed/hostile payloads.
+          Wired into CI as a C2 regression gate.
+        files: [web/src/lib/api/contract.test.ts]
+        acceptance: ["introducing an excluded field or a 'sensitivity' key to a fixture/schema fails CI (C2 hard stop)", "gridRef finer than precisionMetres fails"]
+        tests: ["forbidden-field absence + sensitivity-absence + precision-consistency + malformed-rejection suites green"]
+        risks: ["Client-only enforcement is a net, not the fix — a leak here means a server-contract bug; escalate + re-prove at P6.5 (A3/A4, RK2)"]
+  - id: P2
+    name: "Thin vertical slice — the mid-review demoable SPIKE (map + species + accessible fallback)"
+    goal: >-
+      Ship ONE honest end-to-end slice demoable at mid-review (2026-07-24) as a DELIBERATELY
+      ROUGH SPIKE, exempt from the full per-phase DoD: one hardcoded species, GeoJSON grid cells
+      at true precision, the non-map accessible table (the R5 fallback), and one attributed image,
+      with the effort-bias caveat — on MSW mock data. Reuses P0 tokens + primitives (assembly, not
+      foundation). Full polish (design depth, keyboard-only e2e) is deferred to P3+. This resolves
+      the P0-P2 compression: minimum honest slice now, DoD depth later.
+    requirementIds: [R1, R2, R3, R4, R5, C2]
+    dependsOn: [P1]
+    deliverables:
+      - "Lazy-loaded MapLibre map rendering GeoJSON grid/atlas cells at true precision (not pins) for ONE hardcoded species, with a colour-safe legend (reusing P0 tokens)"
+      - "Non-map accessible data table equivalent (reusing the P0 React Aria Table) with the same records — the mandated R5 fallback"
+      - "Species info panel (name, description, ONE attributed/licensed image, honest stats) driven by useSpeciesDetail"
+      - "Effort-bias caveat banner ('records != populations; grid resolution') from provenance/summary"
+      - "Loading/error/empty states across map, panel, and table (reusing P0 state components)"
+      - "A navigable, keyboard-operable demo journey (home -> map -> species -> table) for the review"
+    exitCriteria:
+      - "SPIKE EXEMPTION: this slice may carry KNOWN ISSUES; full DoD (design polish, keyboard-only e2e, full manual SR sweep) is deferred to P3+ and tracked as debt — but the two hard gates below still hold"
+      - "HARD GATE (C2): cells honest (polygons at returned precision, not pins); no PII/Comments/precise coords/sensitivity marker rendered; the one image shows licence + attribution"
+      - "HARD GATE (R5 core): the non-map fallback conveys all map information and is keyboard-operable; jest-axe clean on the slice (deeper manual SR pass may be deferred to P3-S3/P7-S1)"
+      - "End-to-end slice works on mock data: the hardcoded species -> map cells + info panel + table render together; something concrete + honest is demoable for Tim Corner + Jaslyn Leong at mid-review"
+    steps:
+      - id: P2-S1
+        title: "Assemble lazy MapLibre map + honest grid-cell GeoJSON layer + legend (one species)"
+        requirementIds: [R2, R1, C2]
+        description: >-
+          react-map-gl/maplibre behind a route-level lazy import + error boundary; style/tile URLs from config
+          (A7). Render the distribution FeatureCollection for ONE hardcoded species as fill/line grid cells at
+          precisionMetres — coarse ref => large cell, never a centre-point pin. Cap max zoom to meaningful
+          precision. Legend keyed by shape/label/pattern + colour (never colour alone), using P0 tokens.
+          Imperative MapLibre calls isolated in hooks.
+        files: [web/src/features/map/DistributionMap.tsx, web/src/features/map/mapConfig.ts, web/src/features/map/Legend.tsx, web/src/app/routes.tsx]
+        acceptance: ["cells drawn at true precision; no false-precision pins; map bundle lazy-loaded; max zoom capped", "legend readable without colour; map failure caught by its boundary"]
+        tests: ["mapConfig/zoom-cap unit test; component test with mock map", "jest-axe on legend"]
+        risks: ["Plotting coarse refs as pins (dishonest) — forbidden (§6); CSP/tile host under embed unresolved (A7/A9) — flag (RK3/RK5)"]
+      - id: P2-S2
+        title: "Non-map accessible data table fallback (mandatory R5)"
+        requirementIds: [R5, R2, C2]
+        description: >-
+          Reuse the P0 React Aria Table to render the same records the map represents (from useRecords), so no
+          information is map-only. Labelled, keyboard-operable; gridRef shown at precisionMetres; no finer coords,
+          no Comments/PII/sensitivity. Binds the same query source as the map so they cannot drift.
+        files: [web/src/features/map/RecordsTable.tsx]
+        acceptance: ["all map-conveyed info available in the table; full keyboard operability", "no excluded fields shown; gridRef at stated precision only (== precisionMetres)"]
+        tests: ["RTL roles/names + keyboard navigation test", "jest-axe; contract-consistency with map data"]
+        risks: ["Table drifting from map filters — share the same query hook (RK-consistency)"]
+      - id: P2-S3
+        title: "Species info panel with ONE attributed/licensed image"
+        requirementIds: [R3, R4, R5, C2]
+        description: >-
+          features/species panel: common/scientific name, description, honest stats, and one image with VISIBLE
+          licence + author attribution (A8) and meaningful alt. Attribution required by the component API — an
+          image is not shown without it. Missing image/description is a graceful empty state, not a crash. The
+          'records != populations' caveat renders near counts. No image from a non-allow-listed origin (CSP).
+        files: [web/src/features/species/SpeciesPanel.tsx, web/src/components/AttributedImage.tsx, web/docs/adr/0005-image-attribution.md]
+        acceptance: ["attribution + licence always visible when an image is shown; alt meaningful; missing image degrades gracefully", "counts labelled as record counts, not populations"]
+        tests: ["render asserts attribution present whenever an image is present; missing-image empty path", "jest-axe"]
+        risks: ["Unattributed CC BY-SA = licence breach; image source/policy unconfirmed (A8) — flag to Tim Corner (RK8)"]
+      - id: P2-S4
+        title: "Effort-bias caveat banner + wire the slice into a demo journey"
+        requirementIds: [R1, R4, C2]
+        description: >-
+          Plain-language banner surfacing the effort/spatial/temporal-bias + records!=populations + grid-
+          resolution caveats (from provenance/summary; wording owned by the Strategy prompt). Assemble the
+          home -> map -> species -> table journey into one navigable route; routing mode chosen per embedding (A9).
+          A single Playwright happy-path (mouse) smoke; the keyboard-only e2e is deferred to P3-S3/P7-S1.
+        files: [web/src/features/about/CaveatBanner.tsx, web/src/app/routes.tsx, web/src/app/Layout.tsx]
+        acceptance: ["caveats visible near the map; full journey navigable end-to-end on mock data"]
+        tests: ["RTL + jest-axe on banner", "Playwright happy-path (mouse) smoke through the slice"]
+        risks: ["Caveat treated as boilerplate — defer copy to Strategy prompt; routing mode wrong for embedding — confirm A9 before hardening (RK9/RK5)"]
+  - id: P3
+    name: "Species distribution map — deepen the centrepiece (R2)"
+    goal: >-
+      Take the slice map to full R2 depth AND clear the deferred P2 a11y debt: MVT vector-tile
+      source for large sets alongside GeoJSON+clustering, thorough tested lib/geo grid helpers,
+      full keyboard operability + reduced-motion + the deferred keyboard-only + manual SR pass,
+      map<->table sync, and a wire-level C2 verification that sensitive taxa arrive pre-generalised
+      (blended, unlabelled) and no BNG/precise coords are ever downloaded.
+    requirementIds: [R2, R4, R5, R6, C2]
+    dependsOn: [P2]
+    deliverables:
+      - "lib/geo tested grid-ref precision/label + tile helpers (NO client BNG->WGS84 reprojection; never up-samples precision)"
+      - "MVT vector-tile source path (config-gated) for large sets; GeoJSON + native clustering for small/filtered"
+      - "Debounced viewport-driven fetches; geometry simplification; payload budget checks"
+      - "Fully keyboard-operable map controls + labelled controls + prefers-reduced-motion fly-to + the deferred manual keyboard/SR pass on the map"
+      - "Map <-> non-map table sync so the fallback stays authoritative"
+      - "e2e network-inspection test proving no Eastings/Northings/precise coords hit the wire, no 'sensitivity' marker is present, and public precision never exceeds the tier floor"
+      - "ADR-0006 (data-delivery choice: tiles vs GeoJSON vs grid polygons, justified)"
+    exitCriteria:
+      - "Map fully keyboard-operable end-to-end; controls labelled; non-map equivalent present; deferred manual SR pass completed (R5 gate — blocks merge)"
+      - "Records render as cells at true precision — NO false-precision pins for coarse refs (R2 honesty)"
+      - "e2e network inspection confirms no Eastings/Northings/precise coords ever downloaded, NO 'sensitivity' marker present, and every returned precisionMetres >= the agreed tier floor (A5); precision-tier CORRECTNESS per sensitive taxon is a server-owned test (client cannot know the sensitive list) (C2 gate — blocks merge)"
+      - "prefers-reduced-motion respected; viewport fetches debounced; max zoom capped; map bundle lazy-loaded; within payload budget"
+    steps:
+      - id: P3-S1
+        title: "lib/geo grid-ref & tile helpers (thoroughly tested)"
+        requirementIds: [R2, R6]
+        description: >-
+          Grid-ref precision parsing/labelling (10-fig=1m vs 6-fig=100m -> precisionMetres), tile URL/template
+          config, bbox helpers. NO 27700->4326 in the client — that is server-side (A2); the client only labels/
+          consumes returned WGS84 and NEVER up-samples a coarse ref to a finer box. Cover lib/geo thoroughly (§11).
+        files: [web/src/lib/geo/gridref.ts, web/src/lib/geo/tileConfig.ts, web/src/lib/geo/__tests__/gridref.test.ts]
+        acceptance: ["precision labelling correct across varying grid refs; a 100m ref maps to a 100m cell; never up-samples", "no client reprojection of BNG"]
+        tests: ["thorough unit tests on grid-ref precision cases (varying-precision fixtures); up-sampling attempt rejected"]
+        risks: ["Misreading precision => false-precision map (scientific-honesty breach); temptation to reproject client-side — forbidden (A2/RK3)"]
+      - id: P3-S2
+        title: "MVT tile source + GeoJSON/clustering + debounced viewport fetching"
+        requirementIds: [R2, R6]
+        description: >-
+          Config-gated MVT source (tile URL template from env) for large distributions; GeoJSON + MapLibre
+          native clustering for small/filtered as the fallback; debounce bbox/zoom-driven queries; cap max zoom.
+          Sensitivity still enforced server-side (A4). ADR-0006 justifies the delivery choice.
+        files: [web/src/features/map/tileSource.ts, web/src/features/map/useMapViewport.ts, web/src/config/index.ts, web/docs/adr/0006-map-data-delivery.md]
+        acceptance: ["small filtered set uses GeoJSON+clustering; large set uses MVT; GeoJSON fallback intact", "rapid pan/zoom issues bounded, debounced requests"]
+        tests: ["tile URL templating unit test; smoke test tile layer mounts; debounce unit test"]
+        risks: ["Tile endpoint not ready (A6) — keep GeoJSON path fully functional; over-fetch on pan/zoom — debounce + bbox/zoom caps (RK5)"]
+      - id: P3-S3
+        title: "Map accessibility — keyboard, labelled controls, reduced-motion, table sync + deferred SR pass"
+        requirementIds: [R5, R2, R4]
+        description: >-
+          Make zoom/pan/reset/layer controls keyboard-operable + labelled with visible focus; fly-to respects
+          prefers-reduced-motion; announce map state changes via live region. Keep the non-map records table in
+          sync with map filters/viewport so nothing is map-only. Complete the manual keyboard/screen-reader pass
+          that P2 deferred (the canvas-a11y safety net).
+        files: [web/src/features/map/MapControls.tsx, web/src/features/map/useKeyboardMap.ts, web/src/features/map/RecordsTable.tsx]
+        acceptance: ["every map control reachable + operable by keyboard with a visible focus ring", "filtering the map updates the table and vice versa; reduced-motion honoured; manual SR pass recorded"]
+        tests: ["@axe-core/playwright zero violations on the map route; keyboard-only pan/zoom/layer test", "e2e: map filter reflected in table"]
+        risks: ["Canvas/WebGL maps are keyboard-hostile — non-map fallback is the safety net; this is an R5 build-blocker (RK4)"]
+      - id: P3-S4
+        title: "Wire-level C2 sensitivity verification (hard gate)"
+        requirementIds: [C2, R2]
+        description: >-
+          Playwright e2e inspecting map network payloads to PROVE no Eastings/Northings/precise coords are ever
+          downloaded, that NO 'sensitivity' marker appears in any response, and that every returned precisionMetres
+          meets or exceeds the agreed global tier floor (A5). Per-taxon precision-tier CORRECTNESS is a server-owned
+          test (the client must not know which taxa are sensitive). A leak here is a C2 hard stop + server-contract
+          bug to escalate.
+        files: [web/tests/e2e/map-sensitivity.spec.ts]
+        acceptance: ["no response contains precise coords or a 'sensitivity' key", "no Eastings/Northings on the wire ever", "every precisionMetres >= the agreed floor (A5)"]
+        tests: ["e2e: assert network bodies free of precise coords, BNG, and any 'sensitivity' marker; precision-floor check"]
+        risks: ["A leak = C2 hard stop + server-contract bug — escalate to team immediately; per-taxon correctness re-proven server-side + at P6.5 (RK2)"]
+  - id: P4
+    name: "Species info + attributed images (deepen R3)"
+    goal: >-
+      Take species pages to full R3 depth beyond the slice panel: a searchable species index,
+      full detail pages with correctly-attributed/licensed imagery and honest stats, and a
+      species-scoped entry into the map. On the P0->P1->P2->P4->P6->P7 critical chain (feeds P5+P6).
+    requirementIds: [R1, R3, R4, R5, C2]
+    dependsOn: [P2]
+    deliverables:
+      - "features/species index (from useSpeciesList) + full detail page (from useSpeciesDetail), keyed on the server-derived speciesId"
+      - "AttributedImage used across species pages (licence + author + source visible, meaningful alt)"
+      - "Species-scoped entry into the map (filter by speciesId)"
+      - "Honest stats with the records!=populations caveat"
+    exitCriteria:
+      - "Every image shows licence + author + source and has meaningful alt; no unattributed image ships (R3/A8)"
+      - "Index + detail keyboard-operable, axe clean, loading/error/empty handled; manual SR pass logged (R5)"
+      - "No PII/Comments/sensitivity surfaced; stats labelled as record counts, not populations (C2/honesty)"
+    steps:
+      - id: P4-S1
+        title: "Species index + full detail page"
+        requirementIds: [R3, R4, R1]
+        description: >-
+          features/species index (search-linked, fed by useSpeciesList) and detail page: name, description,
+          honest stats, effort caveat, and a species-scoped map link. Keyed on the server-derived speciesId
+          (A14). Wires into search (P5).
+        files: [web/src/features/species/SpeciesIndex.tsx, web/src/features/species/SpeciesPage.tsx, web/src/features/species/useSpecies.ts]
+        acceptance: ["index + detail render from typed hooks; scoped map link works", "counts labelled as record counts, not populations"]
+        tests: ["RTL render + role/name tests; jest-axe; loading/error/empty states tested"]
+        risks: ["Overstating abundance as population — scientific-honesty violation; description source/licence unknown (A8) — flag; 'group' derived not sourced (A14)"]
+      - id: P4-S2
+        title: "AttributedImage across species pages (R3 compliance)"
+        requirementIds: [R3, R5, C2]
+        description: >-
+          Reuse the AttributedImage component (structured author/licence/licenceUrl/sourceUrl from A8) with
+          meaningful alt, lazy-loading, dimensions set (CLS). Attribution never strippable; an image is not
+          rendered without licence + attribution. Missing image => accessible placeholder, not a crash.
+        files: [web/src/components/AttributedImage.tsx, web/src/features/species/SpeciesPage.tsx]
+        acceptance: ["licence + attribution + alt always present or the image is not shown; missing-image handled"]
+        tests: ["render asserts attribution present whenever an image is present; missing-attribution fixture hides image or flags; jest-axe"]
+        risks: ["Unattributed / mis-licensed imagery = licence breach; image host blocked by CSP (A7/A8) — flag (RK8)"]
+  - id: P5
+    name: "Search & filters (species / temporal / spatial)"
+    goal: >-
+      Let non-expert users find and narrow records by species, year (YearEnd), group (derived,
+      A14), and viewport, driving the map, species index, and non-map table from a shared,
+      accessible, server-validated filter state — with whitelisted params and no client-assembled
+      SQL. DE-SCOPABLE: for the final presentation this may reduce to a single species+year filter,
+      deferring group/spatial/URL-sync depth to post-showcase (see timeline.deScopeDecisionTree).
+    requirementIds: [R2, R3, R4, R5, C2]
+    dependsOn: [P3, P4]
+    deliverables:
+      - "features/search: accessible search + filter controls (React Aria combobox/select/slider)"
+      - "Shared filter state (URL-synced for shareable, embed-safe views) feeding map, species index, and table"
+      - "Filters mapped to whitelisted API params (validated client-side; re-validated server-side per assumption)"
+      - "ARIA live-region announcements on results/filter changes"
+    exitCriteria:
+      - "Filters keyboard-operable + labelled; result changes announced via live region (R5 gate)"
+      - "All filter params whitelisted client-side AND (assumed) re-validated server-side; no client-assembled SQL (C2/§12 gate)"
+      - "Map, species index, and table stay in sync; empty results render the meaningful empty state, not an error"
+    steps:
+      - id: P5-S1
+        title: "Accessible search + filter controls with shared state"
+        requirementIds: [R4, R5, R2]
+        description: >-
+          React Aria search combobox, species/group select (group DERIVED server-side, A14), and year-range
+          slider (YearEnd, A10). A single filter state (URL-synced, embed-safe per A9) drives map + species +
+          table via the existing query hooks; result-count changes announced via live-region. No localStorage for
+          anything security-relevant.
+        files: [web/src/features/search/SearchBar.tsx, web/src/features/search/Filters.tsx, web/src/features/search/useFilterState.ts]
+        acceptance: ["controls keyboard-operable + labelled; changes announced; state shared across views"]
+        tests: ["RTL interaction tests; jest-axe; empty-result state test"]
+        risks: ["localStorage misuse for security-relevant state — forbidden (§7); temporal precision (A10) + group source (A14) unsettled — flag (RK9)"]
+      - id: P5-S2
+        title: "Whitelisted param mapping (no client SQL) + view sync"
+        requirementIds: [C2, R2, R3]
+        description: >-
+          Map filters to the apiContract's whitelisted query params only; validate values client-side before the
+          request; the client never assembles SQL or free-form query fragments. Flag to the team that the server
+          must validate/whitelist all client-supplied params (§12). Single source of truth flows filters into map
+          layers + records table + species index.
+        files: [web/src/lib/api/params.ts, web/src/features/search/toQuery.ts, web/src/features/search/filterContext.tsx]
+        acceptance: ["only whitelisted params leave the client; invalid values rejected client-side", "map + table + index reflect the same filters"]
+        tests: ["param-mapping unit tests (valid/invalid/injection-attempt rejected)", "e2e: filter -> map + table update together"]
+        risks: ["Assuming server validation exists — flag as assumption to confirm (A1/§12/RK2)"]
+  - id: P6
+    name: "Landing dashboard, About / provenance / accessibility statement & attributions"
+    goal: >-
+      Assemble the R1 landing dashboard and publish the mandatory accessibility statement, the
+      data-provenance + effort-bias caveats page, and consolidated attributions — the LEGAL and
+      scientific-honesty deliverables that complete the public dashboard's surface. On the critical
+      chain into P7 (P0->P1->P2->P4->P6->P7); the accessibility statement (P6-S2) is legally gating.
+    requirementIds: [R1, R3, R4, R5, R7, C2]
+    dependsOn: [P2, P4]
+    deliverables:
+      - "features/landing: landing dashboard (summary + entry points to map/species/search) — R1 assembled"
+      - "features/about: accessibility statement page (public-sector legal duty, PSBAR 2018)"
+      - "Data provenance page: sources, last-updated, effort/spatial/temporal-bias + records!=populations caveats (from useProvenance)"
+      - "Consolidated attributions (image licences, basemap, data licence) + declared sensitivity-POLICY summary (transparency, not per-record enforcement)"
+      - "ADR-0007 (accessibility statement + attribution as legal/ethical deliverables)"
+    exitCriteria:
+      - "Landing renders from the summary endpoint and is navigable end-to-end; honest bias framing present (R1/R4)"
+      - "Accessibility statement published and reachable from every page (R5 legal gate — on the critical path)"
+      - "Bias caveat (records != populations; effort bias) surfaced honestly (C2/scientific-honesty gate)"
+      - "All third-party attributions present and correct — no unattributed asset (R3/A7/A8 gate); the sensitivity summary is POLICY-level only (no per-record sensitivity data); pages axe clean + manual pass"
+    steps:
+      - id: P6-S1
+        title: "Landing dashboard assembly (R1)"
+        requirementIds: [R1, R4]
+        description: >-
+          Compose summary (useSummary), map entry, search, and species entry into the public landing view with
+          honest bias framing. Keep to confirmed scope (C1).
+        files: [web/src/features/landing/LandingPage.tsx]
+        acceptance: ["landing renders from the summary endpoint; navigable end-to-end; entry points work"]
+        tests: ["e2e: landing loads and links work; jest-axe"]
+        risks: ["Feature creep from POTENTIAL outcomes treated as commitments — keep to confirmed scope (C1/RK9)"]
+      - id: P6-S2
+        title: "Accessibility statement page (LEGAL — critical path)"
+        requirementIds: [R5, R7]
+        description: >-
+          Author and route the WCAG 2.2 AA accessibility statement (scope, conformance, known issues, contact,
+          enforcement) per PSBAR 2018, linked from global nav/footer. Kept current as features land; content
+          matches actual conformance. Drafted with Strategy-prompt input. Scheduled EARLY (see timeline) because
+          it legally gates merge and is on the critical path.
+        files: [web/src/features/about/AccessibilityStatement.tsx, web/docs/accessibility-statement.md]
+        acceptance: ["statement reachable from every page; content matches actual conformance"]
+        tests: ["route + a11y test; link-presence/reachability e2e"]
+        risks: ["Stale/overstated conformance claim = legal risk — keep synced to audit reality; legal wording — confirm with BRERC (RK4/RK9)"]
+      - id: P6-S3
+        title: "Provenance + bias caveats + attributions + sensitivity-policy summary"
+        requirementIds: [R7, C2, R4, R3]
+        description: >-
+          Provenance page from useProvenance: sources, last-updated, and the central effort/spatial/temporal-bias
+          + records!=populations caveats; geodiversity-inclusive if in scope (A13). Consolidated attributions for
+          imagery, basemap, and data licences; a declared sensitivity-POLICY summary (generalisation tiers +
+          transparency note) — NOT per-record sensitivity data and NOT a client enforcement mechanism. Do not
+          assume a licence where absent (licence col mostly NULL).
+        files: [web/src/features/about/Provenance.tsx, web/src/features/about/Attributions.tsx, web/docs/adr/0007-accessibility-and-attribution.md]
+        acceptance: ["bias caveats visible; all attributions correct + licensed; no PII/sensitive per-record detail surfaced; sensitivity summary is policy-level only"]
+        tests: ["render + a11y test; attribution-presence test"]
+        risks: ["Missing an attribution = licence breach; geodiversity scope + caveat wording unconfirmed — flag to Tim Corner (A8/A13/RK8)"]
+  - id: P6.5
+    name: "Real-API integration & C2 re-proof against real backend"
+    goal: >-
+      Close the mock-only circularity: point the client at the REAL team API (or staging), reconcile
+      Zod schema drift, RE-PROVE the C2 wire gates against REAL responses (no PII/precise-coords/
+      sensitivity marker; precision floor met; Place suppressed for sensitive taxa; Comments absent),
+      and confirm the R6 dev->prod swap was code-free. This is the one place the 'config-only swap' and
+      'no precise coords on the wire' claims are validated against reality rather than the self-built mock.
+    requirementIds: [R2, R6, R7, C2]
+    dependsOn: [P3, P5, P6]
+    deliverables:
+      - "Client pointed at the real/staging API via VITE_API_BASE_URL only (no code change) — swap evidence recorded"
+      - "Zod schema drift reconciled against real responses; strict-vs-passthrough decision confirmed"
+      - "C2 wire-inspection e2e RE-RUN against REAL responses (PII/precise-coords/sensitivity-marker absence; precision floor; Place suppression; Comments absence)"
+      - "A dated dependency note: the real (or staging) API must exist by this integration date for it to complete before showcase"
+    exitCriteria:
+      - "The dev->prod repoint proven CONFIG-ONLY: only VITE_API_BASE_URL changed, no client code diff (R6 gate)"
+      - "C2 wire gates PASS against REAL API responses, not just the mock (C2 gate — blocks merge); any leak escalated to the team as a server-contract bug (HARD STOP)"
+      - "Zod schemas reconciled with the real contract; no silent coercion of unexpected/leaked keys"
+      - "If the real/staging API is unavailable by the integration date, this is flagged as the top schedule risk (RK1) and a fallback slice + contingency stated"
+    steps:
+      - id: P6.5-S1
+        title: "Point at real API, reconcile Zod drift, re-prove C2 wire gates"
+        requirementIds: [R6, R2, C2, R7]
+        description: >-
+          Swap VITE_API_BASE_URL to the real/staging endpoint (no code change), run the full suite, reconcile any
+          Zod schema drift (RK13), and RE-RUN the C2 wire-inspection e2e against REAL responses. Record swap
+          evidence (git diff shows only env change) in the handover runbook. Escalate any real-response C2 leak
+          immediately as a server-contract bug.
+        files: [web/tests/e2e/real-api-integration.spec.ts, web/.env.example, web/docs/handover-runbook.md]
+        acceptance: ["only VITE_API_BASE_URL changed for the repoint (config-only, R6)", "C2 wire gates green against REAL responses; drift reconciled"]
+        tests: ["integration e2e against real/staging API; env-only-diff assertion"]
+        risks: ["Backend late/divergent (RK1, high) — keep MSW path working, state the required API-ready date, fall back to mock demo if unavailable; real-response C2 leak = HARD STOP (RK2)"]
+  - id: P7
+    name: "Hardening — perf budget, E2E + a11y automation, resilience, docs & handover"
+    goal: >-
+      Bring the public dashboard to full Definition of Done for the final presentation and showcase:
+      perf budgets met, Playwright + axe journeys (incl. keyboard-only) in CI, resilient error/
+      telemetry handling, a documented static build + CSP/embed guidance, and the complete handover
+      pack — so R1-R7 are demonstrably shipped before any R8 work is considered.
+    requirementIds: [R1, R4, R5, R6, R7, C1, C2, C3]
+    dependsOn: [P6.5]
+    deliverables:
+      - "Playwright + @axe-core/playwright E2E for core journeys (load -> map -> species -> filter) incl. keyboard-only; wired as a CI gate"
+      - "Completed per-feature manual keyboard/screen-reader audit checklist (incl. the mid-review spike's deferred items)"
+      - "Bundle + payload budgets set + checked in CI; code-splitting/lazy-map verified; Core Web Vitals (LCP/INP/CLS) measured on a modest-device profile; long lists/tables virtualised"
+      - "Resilient error/telemetry handling: per-feature boundaries; a client-error hook that never leaks PII/sensitive detail"
+      - "Documented static build output + CSP guidance compatible with MapLibre style/tile/image sources; CORS + rate-limit recommendations flagged as server-owned"
+      - "Handover pack: README, .env.example (dev+prod), ADR index, handover runbook (prod repoint, tile/API config, publishing the accessibility statement)"
+    exitCriteria:
+      - "E2E journey load->map->species->filter passes in CI, including keyboard-only; axe clean across routes; manual a11y checklist complete incl. deferred spike items (R5 gate — no cross)"
+      - "Within perf/bundle budget on modest devices; map + heavy libs lazy-loaded; CWV measured (perf DoD)"
+      - "e2e network inspection confirms zero PII/precise-coords/BNG/sensitivity-marker on the wire (C2 gate); error logs carry no sensitive detail"
+      - "Handover runbook proves the R6 dev->prod repoint is config-only (apiBaseUrl swap, no client code change), consistent with P6.5 evidence (R6/C3/R7 gate)"
+      - "Documented static build embeds on a BRERC-like host; CSP permits map sources; routing works when embedded (A9)"
+    steps:
+      - id: P7-S1
+        title: "E2E + a11y automation + manual checklist (incl. deferred spike items)"
+        requirementIds: [R5, R1, R4]
+        description: >-
+          Playwright covers load -> explore map -> open species -> filter, with a keyboard-only variant, plus
+          @axe-core/playwright scans across key routes; assert no keyboard traps + logical focus order. Complete
+          and record the per-feature manual keyboard + screen-reader pass, INCLUDING any items the mid-review
+          spike (P2) deferred (axe catches ~1/3; manual is mandatory).
+        files: [web/tests/e2e/journeys.spec.ts, web/tests/e2e/keyboard.spec.ts, web/tests/e2e/a11y.spec.ts, web/docs/a11y-manual-checklist.md]
+        acceptance: ["core journey + keyboard-only journey green in CI; axe clean on key routes; manual SR pass recorded incl. deferred items", "no keyboard trap on any route"]
+        tests: ["the Playwright + axe specs themselves"]
+        risks: ["Automated axe catches ~1/3 — manual pass is non-negotiable (§8); flaky map e2e — stabilise with deterministic fixtures (RK4/RK14)"]
+      - id: P7-S2
+        title: "Performance budgets + code-splitting + resilience/telemetry"
+        requirementIds: [R4, R1, C2]
+        description: >-
+          Set bundle/payload budgets checked in CI; verify route/feature code-splitting and the lazy map load;
+          analyse the bundle; measure LCP/INP/CLS on a throttled modest-device profile; virtualise long tables.
+          Harden loading/error/empty/partial-data paths; per-feature boundaries; a client-error logging hook that
+          redacts by default and never leaks PII/sensitive detail.
+        files: [web/vite.config.ts, web/docs/perf-budget.md, web/src/lib/telemetry.ts, web/src/app/ErrorBoundary.tsx, .github/workflows/web-ci.yml]
+        acceptance: ["budgets defined + checked; map + heavy libs not in the initial chunk; CWV within target", "one feature failing never blanks the page; error logs carry no PII/sensitive detail"]
+        tests: ["bundle-size check + lazy-load assertion in CI; Lighthouse/CWV spot check", "fault-injection e2e; telemetry-redaction unit test"]
+        risks: ["MapLibre is heavy — must stay lazy or it blows LCP (RK6); telemetry leaking detail — redact by default (RK6)"]
+      - id: P7-S3
+        title: "Handover pack + static build + CSP/embed guidance (R6 repoint)"
+        requirementIds: [R7, R6, C3]
+        description: >-
+          Complete the handover for a BRERC dev who has never met the team: README (setup/env/run/build/deploy/
+          embed/test), .env.example (dev+prod, values omitted), ADR index, and a runbook covering the config-only
+          dev->prod repoint (apiBaseUrl swap, no code change; consistent with P6.5 evidence), tile/API config, and
+          publishing the accessibility statement. Finalise the self-contained static bundle; document a CSP
+          compatible with MapLibre style/tile/image sources; note CORS (known origins) + rate-limit recommendations
+          as server-owned. Confirm embed model + routing (A9).
+        files: [web/README.md, web/.env.example, web/docs/adr/, web/docs/handover-runbook.md, web/docs/deploy-and-embed.md, web/vite.config.ts]
+        acceptance: ["a fresh dev can build/run/point-at-prod/deploy from docs alone; the prod repoint is config-only (no code change)", "static build embeds on a BRERC-like host; CSP permits map sources; routing works when embedded"]
+        tests: ["docs lint / link check; clean-checkout build-from-README smoke", "build + serve static output; verify map + CSP in a staging embed"]
+        risks: ["Stale docs are worse than none — keep in-repo and current (§13/RK8); embedding constraints unknown — resolve A9 before final (RK5)"]
+  - id: P8
+    name: "SECONDARY / DEFERRED — internal staff monitoring dashboard shell (R8)"
+    goal: >-
+      ONLY after R1-R7 DoD is fully met (P7 exit criteria all green), time remains, AND the team assigns
+      internal-web/ to Michael (A17): begin a minimal internal-web/ shell (summary stats + one data-quality
+      check) reusing web/ patterns. If not assigned, this reduces to a spike + handover note to the
+      internal-web/ owner. Explicitly deferred; never at the expense of the public dashboard.
+    requirementIds: [R8, C1, C2, C3]
+    dependsOn: [P7]
+    deliverables:
+      - "IF assigned (A17): internal-web/ shell reusing web/ toolchain + shared components + a11y where safe (same DoD gates); OTHERWISE: a spike + handover note to the internal-web/ owner"
+      - "Read-only summary stats (records/species/years/dates/BLISS internal context) + filtering, against a team-owned auth-gated internal endpoint"
+      - "Data-quality checks surface (invalid grid refs, bad dates, carriage returns, missing values, duplicates), access-controlled by the team"
+    exitCriteria:
+      - "Entered ONLY if P7 exit criteria (R1-R7 DoD) are fully green AND internal-web/ is assigned to Michael (A17) — otherwise reduces to a spike/handover note (C1/R1 gate)"
+      - "No public-dashboard regression caused by starting this; still no client DB access; internal PII (Recorder1/BLISS/Comments) handled per team auth policy, NOT inherited from the public contract, never leaking to the public build (C2)"
+      - "Same DoD gates (typed/accessible/tested/documented) apply to any internal-web/ code committed"
+    steps:
+      - id: P8-S1
+        title: "Internal shell scaffold + summary stats + one data-quality check (gated on R1-R7 done + assignment)"
+        requirementIds: [R8, C1, C3]
+        description: >-
+          IF internal-web/ is assigned to Michael (A17) and P7 is green: scaffold internal-web/ reusing public
+          toolchain/components; do NOT reuse the public PII-stripping contract blindly — internal views may need
+          different (authorised, auth-gated) fields. Render read-only summary stats + one data-quality check (e.g.
+          invalid grid refs) against a flagged internal API. Data-quality logic is team-owned. OTHERWISE: produce
+          a spike + handover note for the internal-web/ owner. Explicitly deferred: no work here until the public
+          dashboard's DoD is met.
+        files: [internal-web/package.json, internal-web/src/App.tsx, internal-web/src/features/quality/QualityDashboard.tsx]
+        acceptance: ["only started after P7 is green AND assigned (A17); reuses web/ patterns; does not touch the public build", "internal data access is auth-gated (server-owned, flagged); data-quality checks present"]
+        tests: ["smoke build + a11y baseline; data-quality rule detection unit test"]
+        risks: ["R8 cannibalising public-dashboard time — hard stop per C1/R1; internal dashboard may expose Recorder1/Comments to staff — must be explicitly authorised, access-controlled, logged (RK7/C2); scope boundary — reduce to handover note if unassigned (A17)"]
+
+crossCuttingGates:
+  accessibility:
+    - "WCAG 2.2 AA is a build-blocker on every phase (except the explicitly-exempt mid-review spike P2, whose deferred items are cleared in P3-S3/P7-S1): semantic HTML, keyboard operability (incl. the map), visible focus, correct ARIA, non-map fallback (R5)."
+    - "Build on React Aria / React Aria Components for interactive widgets; keep native semantics, add ARIA only to fill gaps — never reinvent accessible widgets."
+    - "jest-axe in component tests + @axe-core/playwright in E2E + a MANUAL keyboard/screen-reader pass per feature (automated catches ~1/3)."
+    - "Never encode meaning by colour alone (map legend + status): also shape/label/pattern; AA contrast from documented tokens; resizable text; no info lost at 200% zoom."
+    - "Non-map equivalent (accessible table/summary) so no information is map-only; meaningful alt on species images; ARIA live regions for async updates; respect prefers-reduced-motion."
+    - "A cross on R5 blocks merge (legal, PSBAR 2018); the accessibility statement (P6-S2) is on the critical path."
+  securityC2:
+    - "Recorder1, BLISS, Eastings, Northings, Comments (withheld entirely), AND any per-record 'sensitivity' marker NEVER reach the public client — enforced by strict Zod schemas, a contract test, and a CI grep-guard on source + built bundle, every build (C2)."
+    - "Sensitive-taxa precise coords generalised/suppressed SERVER-SIDE and BLENDED into the ordinary grid (indistinguishable, no marker) in what the endpoint RETURNS (A4); Place suppressed/coarsened for sensitive taxa (A4); low-count counts bucketed server-side (k-anonymity); a global precision floor applies (A5). Verified by e2e wire inspection AND re-proven against the real API at P6.5."
+    - "Client renders WGS84 honest cells at returned precision only — never raw BNG, never false-precision pins, never up-sampled; records gridRef precision == map precisionMetres; reprojection is server-side (A2)."
+    - "No secrets/DB credentials/tokens/SQL in the client; VITE_* is public (API base + map style/tile URLs only); dev->prod is an API-env credential swap (R6/A12), proven config-only at P6.5/P7."
+    - "No client-assembled SQL; only whitelisted params leave the client; the server validates/whitelists all params (§12, flagged). HTTPS only; known-origin CORS; CSP compatible with MapLibre; sanitise any user-facing HTML."
+    - "A confirmed leak of PII/precise-sensitive-coords/sensitivity-marker is a HARD STOP: block merge, escalate to the team as a server-contract bug. A cross on C2 blocks merge. Client checks are nets; server enforcement (A3/A4/A5) is the fix."
+  performance:
+    - "Code-split by route/feature; lazy-load the map + heavy libs; tree-shake; analyse the bundle; set + check payload/bundle budgets in CI."
+    - "Push data-heavy work server-side (tiles/aggregation/pagination); cap max zoom to meaningful precision; debounce viewport-driven fetches; simplify geometry."
+    - "Cache via TanStack Query (staleTime) + HTTP caching; virtualise long lists/tables; optimise images (dimensions/formats/lazy, attribution intact)."
+    - "Measure Core Web Vitals (LCP/INP/CLS) on a modest-device/connection profile."
+  testing:
+    - "Vitest + RTL for behaviour and accessible roles/names, not implementation details; cover lib/geo (grid-ref/precision) thoroughly."
+    - "Contract tests validate Zod parsing against fixtures AND assert PII/precise-coord/sensitivity fields are ABSENT and gridRef precision == precisionMetres (C2 regression guard)."
+    - "Playwright E2E for core journeys including keyboard-only paths; @axe-core/playwright across routes; e2e network inspection for the C2 wire gate, RE-RUN against the real API at P6.5."
+    - "CI: typecheck + lint + unit + a11y + C2/secret grep-guard on every PR; no merge on red."
+  documentation:
+    - "README (setup/env/run/build/deploy/embed/test) kept current; .env.example documents every dev+prod variable (values omitted)."
+    - "ADRs (decision/why/alternatives/trade-offs) mirroring the Strategy decision log — stack/boundary, env/credential-swap, contract-first/Zod, design tokens, image attribution, map data-delivery, accessibility/attribution."
+    - "Comments explain WHY not WHAT, especially grid-ref/projection + sensitivity logic; handover runbook (prod PostgreSQL repoint config-only, tile/API config, publishing the accessibility statement)."
+    - "Every non-trivial PR cites requirement ID(s) and appends the §17 Requirement Verification block; stale docs are treated as worse than none; docs current at merge time."
+
+risks:
+  - id: RK1
+    description: "Backend API + PostGIS (team-owned) not ready or contract diverges when the sole front-end owner needs it, stalling data-dependent phases and the P6.5 real-API C2 re-proof."
+    likelihood: high
+    impact: high
+    mitigation: "Develop against the MSW mock implementing the proposed apiContract (A11); Zod schemas are the single source of truth; integrate by swapping VITE_API_BASE_URL; converge the mock to the real contract early; STATE the date by which the real/staging API must exist for P6.5 to complete before showcase (Q14); if unavailable, fall back to a mock demo and flag as the top schedule risk; flag the dependency at mid-review."
+    owner: "Michael + team API owner"
+    requirementIds: [R1, R2, R3, R6]
+  - id: RK2
+    description: "Sensitive-species precise coordinates, a sensitivity marker, or Recorder1/BLISS/Comments PII leak to the public client (C2 HARD STOP / GDPR breach)."
+    likelihood: med
+    impact: high
+    mitigation: "Types + strict Zod exclude forbidden fields AND any 'sensitivity' marker; contract test + CI grep-guard fail on any excluded field; e2e network inspection verifies the wire and re-runs against the real API (P6.5); generalisation blended server-side (A4); precision floor + low-count bucketing + Place suppression server-side (A4/A5); any client-only mitigation is a contract bug to flag; a cross on C2 blocks merge."
+    owner: "Michael (client guards) + team API owner (server enforcement)"
+    requirementIds: [C2, R2, R6]
+  - id: RK3
+    description: "Coarse grid records plotted as false-precision pins, client-side reprojection of BNG, or up-sampling a coarse ref, implying exact locations (scientific dishonesty + C2)."
+    likelihood: med
+    impact: high
+    mitigation: "Grid/atlas occupancy polygons at true precision are the honest default; lib/geo helpers unit-tested against varying-precision fixtures and forbidden from up-sampling; records gridRef precision == precisionMetres; cap zoom to meaningful precision; no client BNG->WGS84; surface records!=populations + effort-bias caveats (P6)."
+    owner: "Michael"
+    requirementIds: [R2, C2]
+  - id: RK4
+    description: "Map fails WCAG 2.2 AA (keyboard operability / non-map fallback) — an R5 legal build-blocker; canvas maps are a classic a11y gap."
+    likelihood: med
+    impact: high
+    mitigation: "Build the non-map accessible table in the same slice as the map (P2-S2); keyboard operability + labelled controls + deferred manual SR pass in P3-S3; axe + manual SR pass before merge; a cross on R5 blocks merge."
+    owner: "Michael"
+    requirementIds: [R5, R2]
+  - id: RK5
+    description: "Embedding method / parent-page CSP / tile host unknown (A7/A9), breaking MapLibre tile/style loading, routing, or focus management once embedded on BRERC's site."
+    likelihood: med
+    impact: med
+    mitigation: "Build routing + CSP behind config flags; confirm embed method + CSP + basemap host with Tim Corner/BRERC IT early (A7/A9/Q6); verify in a staging embed during P7."
+    owner: "Michael + BRERC IT (via Tim Corner)"
+    requirementIds: [R1, R2, R5]
+  - id: RK6
+    description: "MapLibre + heavy libs blow the performance/bundle budget on modest devices; or error/telemetry logs leak sensitive detail."
+    likelihood: med
+    impact: med
+    mitigation: "Route-level lazy-load of the map + heavy libs; code-split; set/measure budgets in CI; push tiles/aggregation server-side; telemetry redacts by default and never receives PII."
+    owner: "Michael"
+    requirementIds: [R4, R1, C2]
+  - id: RK7
+    description: "R8 internal dashboard pulls effort away from the public dashboard, breaching public-first (R1/C1); or a stray secret ships in a VITE_* var."
+    likelihood: med
+    impact: high
+    mitigation: "R8 is a single clearly-deferred phase (P8) gated on P7/R1-R7 DoD being green AND team assignment (A17); reduce to a handover note if unassigned; drop R8 before compromising R1-R7. Client knows only apiBaseUrl + public map URLs; .env.example documents VITE_* as PUBLIC; grep-guard + config validation catch stray secrets."
+    owner: "Michael + team"
+    requirementIds: [R1, R8, C1, R6]
+  - id: RK8
+    description: "Unattributed / mis-licensed species imagery or basemap (licence breach); or an assumed licence where the licence field is NULL."
+    likelihood: med
+    impact: med
+    mitigation: "Attribution is structured data required by the AttributedImage API — no image without licence + author + source (P2-S3/P4-S2); consolidated attributions page (P6-S3); never assume a licence where absent; confirm approved image source + basemap licence with Tim Corner (A7/A8)."
+    owner: "Michael + Tim Corner"
+    requirementIds: [R3, R5]
+  - id: RK9
+    description: "Scope creep from the brief's POTENTIAL outcomes treated as commitments, or product/UX/ethics/copy decisions (palette, caveat wording, statement text, geodiversity scope, group taxonomy) made silently in code."
+    likelihood: med
+    impact: med
+    mitigation: "Every phase/step cites a real requirement ID; candidates stay candidates until refined with BRERC; defer product/UX/copy to the Strategy prompt / Tim Corner; implement against flagged placeholders (A13/A14); open questions tracked (§15/C1)."
+    owner: "Michael + Tim Corner + Strategy owner"
+    requirementIds: [C1, R1, R4]
+  - id: RK10
+    description: "Fetch calls scatter into components (breaking the single-API-layer rule); or Dependabot PR churn (already active, incl. node-26 vs Node 25) + dependency drift overload the single owner in the tight P0 window."
+    likelihood: med
+    impact: med
+    mitigation: "Lint rule forbidding fetch outside lib/api + CI guard + review checklist; pin versions; Dependabot scoped/grouped/scheduled + Node pinned to 25 in P0-S1; npm audit in CI."
+    owner: "Michael"
+    requirementIds: [R1, C3, R6]
+  - id: RK11
+    description: "Sparse ecological data makes empty results common; a naive UI reads empty as an error/bug."
+    likelihood: high
+    impact: low
+    mitigation: "First-class accessible empty state ('no records here' is meaningful, built in P0); test empty paths explicitly across every data view (§10)."
+    owner: "Michael"
+    requirementIds: [R4, R5]
+  - id: RK12
+    description: "Single part-time front-end owner over-scopes and misses the mid-review demo or final DoD."
+    likelihood: high
+    impact: high
+    mitigation: "One deliberately-rough honest vertical SPIKE for mid-review (P2, DoD-exempt except C2/R5 core); tokens + primitives pulled into P0 so P2 assembles; stated hours budget (A15) back-solves phase sizes; named buffer + de-scope decision tree (timeline); MSW unblocks parallelism; small reviewable PRs; R8 hard-deferred (P8); scope refined with BRERC (C1)."
+    owner: "Michael"
+    requirementIds: [C1, R1]
+  - id: RK13
+    description: "Front-end fixtures / Zod schemas drift from the eventual real API, causing late rework at the credential swap."
+    likelihood: med
+    impact: med
+    mitigation: "Keep fixtures strictly contract-shaped (A10/A11/A16); Zod schemas as single source; decide/document strict-vs-passthrough; share the proposed apiContract with the backend owner for early convergence; contract tests catch divergence; reconcile at the P6.5 integration gate."
+    owner: "Michael + team API owner"
+    requirementIds: [R1, R6]
+  - id: RK14
+    description: "Map e2e tests flake, eroding CI trust."
+    likelihood: med
+    impact: low
+    mitigation: "Deterministic fixtures, stable selectors, mock tiles; retry-with-backoff only in the e2e harness, never the app."
+    owner: "Michael"
+    requirementIds: [R5, C1]
+
+timeline:
+  phaseToMilestone:
+    - phaseId: P0
+      targetMilestone: "kickoff -> ~2026-07-14 (week 1 of the ~5 working weeks)"
+      rationale: "Foundations + guardrails + design tokens + primitives + green CI are the critical-path enabler; pulling tokens/primitives here makes P2 assembly. Started immediately on branch michael/phase-0-foundations."
+    - phaseId: P1
+      targetMilestone: "~2026-07-14 .. ~2026-07-18 (before midReview)"
+      rationale: "The typed, PII/sensitivity-safe, Zod-validated api layer + MSW mock unblocks all UI work independent of the team backend (RK1)."
+    - phaseId: P2
+      targetMilestone: "mid-project review 2026-07-24 (DoD-exempt SPIKE)"
+      rationale: "The deliberately-rough honest vertical slice (one species: map + species + accessible fallback) IS the mid-review deliverable — concrete + honest for Tim Corner + Jaslyn Leong, with full DoD deferred to P3+."
+    - phaseId: P3
+      targetMilestone: "midReview -> ~2026-08-03 (deepen the R2 centrepiece + clear P2 a11y debt)"
+      rationale: "Deepen the R2 centrepiece (MVT, keyboard, wire-level C2) — the largest single risk (map a11y + honesty), given runway before final."
+    - phaseId: P4
+      targetMilestone: "~2026-07-28 .. ~2026-08-03 (parallelisable with P3 after P2)"
+      rationale: "Species index + full detail + images round out the public R3 story; a self-contained slice; ON THE CRITICAL CHAIN into P6->P7."
+    - phaseId: P5
+      targetMilestone: "~2026-08-04 .. ~2026-08-06 (after P3+P4; de-scopable)"
+      rationale: "Search/filters tie map + species + table into an explorable journey; de-scopable to species+year for the final presentation (deScopeDecisionTree)."
+    - phaseId: P6
+      targetMilestone: "P6-S2 (accessibility statement) EARLY ~2026-07-31; rest ~2026-08-04 .. 2026-08-06"
+      rationale: "Landing + LEGAL accessibility statement (pulled early, critical path) + provenance + attributions complete the public DoD surface."
+    - phaseId: P6.5
+      targetMilestone: "~2026-08-06 .. 2026-08-08 (integration buffer before finalPresentation)"
+      rationale: "Real-API integration + C2 re-proof against real responses; the one non-circular validation of the config-only swap and no-precise-coords claims (RK1/Q14)."
+    - phaseId: P7
+      targetMilestone: "finalPresentation (w/c 2026-08-10) -> showcase 2026-08-17"
+      rationale: "Hardening, E2E/a11y automation, perf budgets, resilience, and the handover pack land the deliverable for showcase + BRERC handover."
+    - phaseId: P8
+      targetMilestone: "only if slack remains before showcase (2026-08-17) AND internal-web/ assigned (A17)"
+      rationale: "SECONDARY R8, strictly gated on R1-R7 DoD + assignment; likely out of scope for 8 weeks and dropped (or reduced to a handover note) before compromising the public dashboard."
+  buffers:
+    - "A named integration/slippage buffer of ~2-3 working days (P6.5, ~2026-08-06..08) sits before the 2026-08-10 final presentation."
+    - "The accessibility statement (P6-S2) and the manual a11y checklist (P7-S1) are pulled as early as their dependencies allow because they legally gate merge (R5)."
+  deScopeDecisionTree:
+    - "IF P3 (hardest phase) overruns past ~2026-08-03: freeze P3 at 'GeoJSON+clustering + keyboard + wire-C2' depth and DEFER the MVT tile-source path (P3-S2) to post-showcase; GeoJSON alone satisfies R2 for the demo."
+    - "IF the schedule compresses before 2026-08-10: cut P5 to a single species+year filter (defer group/spatial/URL-sync); reduce P4 species-index breadth to the demo species set; NEVER cut P6-S2 (legal) or any C2/R5 gate."
+    - "IF the real/staging API is unavailable by ~2026-08-06 (RK1/Q14): keep the MSW demo, mark the P6.5 real-API C2 re-proof as an open handover item + top risk, and do NOT claim the config-only swap as verified."
+    - "R8 (P8) is the first thing dropped; it never displaces any R1-R7 DoD work."
+  criticalPath: [P0, P1, P2, P4, P6, P6.5, P7]
+  criticalPathNote: >-
+    P7 transitively depends on P3, P5, and P6; P6 depends on P4; P5 depends on P3+P4. The LONGEST
+    chain into the final deliverable is P0->P1->P2->P4->P6->P6.5->P7 (carrying the LEGAL accessibility
+    statement at P6-S2), which is the declared critical path. The parallel chain
+    P0->P1->P2->P3->P5->P6.5->P7 runs alongside it; P3 (hardest phase) and P5 have limited slack, not
+    zero — if either overruns, apply deScopeDecisionTree. Neither P4 nor P6 has slack (both are on the
+    critical path), so P6-S2 is explicitly NOT treated as slack.
+
+openQuestions:
+  - id: Q1
+    question: "Which taxa/groups does BRERC classify as sensitive/protected; what generalisation resolution (e.g. 1km/10km) or suppression rule must the API apply; must Place be suppressed and low counts bucketed for these taxa before anything leaves the server?"
+    blocks: [R2, C2]
+  - id: Q2
+    question: "Confirm the API strips Recorder1 and all recorder PII, WITHHOLDS Comments entirely, excludes BLISS + Eastings/Northings + any per-record sensitivity marker from every public response, and that dev-subset absence is not relied upon in production."
+    blocks: [C2, R6]
+  - id: Q3
+    question: "Does the server reproject EPSG:27700 -> EPSG:4326 and return honest grid-cell geometry + precision (not raw eastings/northings or false-precision points), using parameterised PostGIS queries? Confirm ownership."
+    blocks: [R2, R6, C2]
+  - id: Q4
+    question: "What is the map data-delivery mode per volume — vector tiles (ST_AsMVT / pg_tileserv / Martin) vs GeoJSON — and what are the tile/style URLs and their timeline?"
+    blocks: [R2]
+  - id: Q5
+    question: "What basemap style/tiles are licensed for a public UK gov site, are they CSP-compatible without a client-held provider secret, and what attribution must render?"
+    blocks: [R2, R1]
+  - id: Q6
+    question: "How will the SPA be embedded on BRERC's website (iframe vs mounted bundle vs sub-path), and what parent-page CSP / CORS / base-path / routing (hash vs history) constraints apply?"
+    blocks: [R1, R5]
+  - id: Q7
+    question: "What is the approved species-image source and attribution policy (e.g. Wikipedia/Wikimedia CC BY-SA / PD), and does it return author + licence as structured data?"
+    blocks: [R3]
+  - id: Q8
+    question: "What temporal precision is acceptable for public filtering/display (exact dates vs year/YearEnd) given re-identification risk?"
+    blocks: [R2, C2]
+  - id: Q9
+    question: "Is geodiversity (not only species) in the public scope; and is the 'group' browse/filter dimension derived from a taxonomy the team maintains — if so, what is the classification source + value set?"
+    blocks: [R2, R3, C1]
+  - id: Q10
+    question: "Confirm dev->prod is purely an API-environment credential swap with no client change, and provide the dev + prod API base + map/tile URLs for .env.example."
+    blocks: [R6, C3]
+  - id: Q11
+    question: "What is the priority order / must-haves among the brief's POTENTIAL outcomes, so scope is refined public-first with BRERC and nothing is over-built?"
+    blocks: [R1, C1]
+  - id: Q12
+    question: "For R8 (if reached): who owns internal-web/, which internal endpoints and access controls exist for Recorder1/BLISS and data-quality flags, what audit/logging is required, and is it in scope within 8 weeks?"
+    blocks: [R8, C2]
+  - id: Q13
+    question: "Is there a preferred client-error/telemetry destination, and confirm it must never receive PII/sensitive detail?"
+    blocks: [R5, C2]
+  - id: Q14
+    question: "By what date will a real or staging API exist so the P6.5 real-API integration + C2 re-proof can complete before the 2026-08-17 showcase?"
+    blocks: [R6, C2]
+  - id: Q15
+    question: "Can BRERC/the team share the actual dev subset export (main5.xls rows) so fixtures are derived from real data rather than the documented schema alone?"
+    blocks: [R2, R3]
+
+validationContract:
+  coverageMap:
+    R1: [P0, P2, P4, P6, P7]
+    R2: [P1, P2, P3, P5, P6.5]
+    R3: [P1, P2, P4, P5, P6]
+    R4: [P0, P2, P3, P4, P5, P6, P7]
+    R5: [P0, P2, P3, P4, P5, P6, P7]
+    R6: [P0, P1, P3, P6.5, P7]
+    R7: [P0, P1, P6, P6.5, P7]
+    R8: [P8]
+    C1: [P0, P7, P8]
+    C2: [P0, P1, P2, P3, P4, P5, P6, P6.5, P7, P8]
+    C3: [P0, P1, P7, P8]
+  rules:
+    - "requirements[] MUST contain exactly the ids R1,R2,R3,R4,R5,R6,R7,R8,C1,C2,C3."
+    - "Every phases[].requirementIds and phases[].steps[].requirementIds value MUST be a member of requirements[].id."
+    - "Every risks[].requirementIds, apiContract[].requirementIds, and openQuestions[].blocks value MUST be a member of requirements[].id."
+    - "For EVERY phase, union(steps[].requirementIds) MUST be a subset of that phase.requirementIds (phase-vs-step consistency)."
+    - "validationContract.coverageMap MUST be machine-derived-equal to the actual coverage computed from phases: for each requirement id, coverageMap[id] == the set of phase ids where the id appears in phase.requirementIds OR any of its steps[].requirementIds. (This replaces the prior prose coverage line, eliminating drift.)"
+    - "Every id in R1..R8 MUST appear in >=1 phase (via phase or step requirementIds), i.e. coverageMap[R1..R8] each non-empty."
+    - "R1 MUST NOT appear in P8 (public-first: the deferred R8 shell carries no public R1 work)."
+    - "Each of C1,C2,C3 MUST appear in >=1 phases[].requirementIds or a crossCuttingGates entry."
+    - "phases[].dependsOn MUST reference only defined phase ids and MUST form a DAG (acyclic): P0<-[]; P1<-P0; P2<-P1; P3<-P2; P4<-P2; P5<-{P3,P4}; P6<-{P2,P4}; P6.5<-{P3,P5,P6}; P7<-P6.5; P8<-P7."
+    - "criticalPath entries MUST all be valid phase ids and form a linear suborder of the dependency DAG; criticalPath [P0,P1,P2,P4,P6,P6.5,P7] is the longest chain into the final deliverable and MUST include every phase P7 transitively depends on that lies on that longest chain (P4 and P6 included)."
+    - "R8 MUST be priority=secondary and MUST appear only in the final phase P8, which MUST dependOn the phase carrying R1-R7 DoD (P7); P8 MUST come after every phase carrying R1-R7 in the ordered list and be gated on P7 exit criteria + team assignment (A17) (public-first)."
+    - "P2 (thin vertical slice) MUST be mapped to the midReview milestone in timeline.phaseToMilestone and MUST be marked DoD-exempt except its C2 + R5-core hard gates."
+    - "A real-API integration phase (P6.5) MUST exist, MUST re-prove the C2 wire gates against real responses, and MUST verify the R6 dev->prod swap is config-only; its start is contingent on Q14/RK1."
+    - "No phases[].steps[] files[]/deliverables, and no apiContract[].responseShape/excludesFields, may surface Recorder1, BLISS, Eastings, Northings, Comments, or any 'sensitivity' marker to the client; apiContract[].excludesFields MUST include Recorder1, BLISS, Eastings, Northings, Comments, and sensitivity on every endpoint."
+    - "No phases[].steps[] may describe the client connecting to PostgreSQL, holding DB credentials, assembling SQL, reprojecting BNG client-side, up-sampling grid-ref precision, or placing a fetch/network call outside web/src/lib/api."
+    - "Every apiContract[] entry MUST define zodValidated and a non-empty excludesFields containing Recorder1/BLISS/Eastings/Northings/Comments/sensitivity (MVT excepted from runtime Zod but not from exclusion)."
+    - "Every apiContract[] path-parameter identifier MUST resolve to a defined field: {speciesId} is the server-derived per-taxon id documented in groundTruthData (derived from Scientific_Name, A14) and appears in the species responseShape; no undefined identifier is used."
+    - "groundTruthData.fields MUST mark Eastings, Northings, Recorder1, BLISS, Comments with sensitivity == strip and Place/Grid_Ref with sensitivity == review, and none of the five strip fields as public."
+    - "Place MUST NOT appear in any public responseShape for sensitive taxa (suppressed server-side, A4); /api/records and /api/distribution/cells place is nullable + suppressed for sensitive taxa; MVT excludes place entirely."
+    - "Every assumptions[].id (A1..A17) and openQuestions[].id (Q1..Q15) referenced in text MUST exist in its list; every assumption touching API/data/BRERC-policy MUST name confirm_with and a status in {open,assumed}; every openQuestion MUST name blocks."
+    - "Every phase MUST have non-empty exitCriteria restating the relevant DoD gate; phases rendering data or UI MUST include the relevant C2 and/or R5 gate (P2 explicitly retains its C2 + R5-core hard gates despite the DoD spike exemption)."
+    - "crossCuttingGates.accessibility MUST assert a cross on R5 blocks merge; crossCuttingGates.securityC2 MUST assert a cross on C2 blocks merge, that client env exposes only VITE_* non-secret values, that Comments are withheld entirely, and that no per-record 'sensitivity' marker reaches the public client."

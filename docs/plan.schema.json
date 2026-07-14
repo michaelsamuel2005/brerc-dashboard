@@ -1,0 +1,650 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BRERC Public Dashboard Front-End Plan",
+  "type": "object",
+  "required": [
+    "meta",
+    "requirements",
+    "assumptions",
+    "groundTruthData",
+    "architecture",
+    "apiContract",
+    "phases",
+    "crossCuttingGates",
+    "risks",
+    "timeline",
+    "openQuestions",
+    "validationContract"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "project",
+        "client",
+        "consultancy",
+        "owner",
+        "ownerScope",
+        "engagementWeeks",
+        "today",
+        "milestones",
+        "sourceDocs",
+        "generated"
+      ],
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "client": {
+          "type": "string"
+        },
+        "consultancy": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "ownerScope": {
+          "type": "string"
+        },
+        "engagementWeeks": {
+          "type": "integer"
+        },
+        "today": {
+          "type": "string"
+        },
+        "milestones": {
+          "type": "object",
+          "required": [
+            "kickoff",
+            "midReview",
+            "finalPresentation",
+            "showcase"
+          ],
+          "properties": {
+            "kickoff": {
+              "type": "string"
+            },
+            "midReview": {
+              "type": "string"
+            },
+            "finalPresentation": {
+              "type": "string"
+            },
+            "showcase": {
+              "type": "string"
+            }
+          }
+        },
+        "sourceDocs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "generated": {
+          "type": "string"
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 11,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "priority",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(R[1-8]|C[1-3])$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "priority": {
+            "enum": [
+              "primary",
+              "secondary",
+              "constraint"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "statement",
+          "why_it_matters",
+          "confirm_with",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^A[0-9]+$"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "why_it_matters": {
+            "type": "string"
+          },
+          "confirm_with": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "assumed"
+            ]
+          }
+        }
+      }
+    },
+    "groundTruthData": {
+      "type": "object",
+      "required": [
+        "sampleTable",
+        "rowCountApprox",
+        "fields",
+        "sensitivityRules"
+      ],
+      "properties": {
+        "sampleTable": {
+          "type": "string"
+        },
+        "rowCountApprox": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "kind",
+              "sensitivity"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "sensitivity": {
+                "enum": [
+                  "public",
+                  "generalise",
+                  "strip",
+                  "review"
+                ]
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "sensitivityRules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "required": [
+        "stack",
+        "repoLayout",
+        "apiBoundary",
+        "dataDelivery",
+        "envConfig"
+      ],
+      "properties": {
+        "stack": {
+          "type": "object"
+        },
+        "repoLayout": {
+          "type": "object"
+        },
+        "apiBoundary": {
+          "type": "object"
+        },
+        "dataDelivery": {
+          "type": "object"
+        },
+        "envConfig": {
+          "type": "object"
+        }
+      }
+    },
+    "apiContract": {
+      "type": "object",
+      "required": [
+        "endpoints"
+      ],
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "endpoint",
+              "purpose",
+              "requestParams",
+              "responseShape",
+              "zodValidated",
+              "excludesFields",
+              "requirementIds"
+            ],
+            "properties": {
+              "endpoint": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "requestParams": {
+                "type": "string"
+              },
+              "responseShape": {
+                "type": "string"
+              },
+              "zodValidated": {
+                "type": "boolean"
+              },
+              "excludesFields": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                },
+                "allOf": [
+                  {
+                    "contains": {
+                      "const": "Recorder1"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "BLISS"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "Eastings"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "Northings"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "Comments"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "sensitivity"
+                    }
+                  }
+                ]
+              },
+              "requirementIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(R[1-8]|C[1-3])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "goal",
+          "requirementIds",
+          "dependsOn",
+          "deliverables",
+          "exitCriteria",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^P[0-9]+(\\.[0-9]+)?$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "requirementIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^(R[1-8]|C[1-3])$"
+            }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^P[0-9]+(\\.[0-9]+)?$"
+            }
+          },
+          "deliverables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exitCriteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "title",
+                "requirementIds",
+                "description",
+                "files",
+                "acceptance",
+                "tests",
+                "risks"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "requirementIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(R[1-8]|C[1-3])$"
+                  }
+                },
+                "description": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "acceptance": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tests": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "risks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "crossCuttingGates": {
+      "type": "object",
+      "required": [
+        "accessibility",
+        "securityC2",
+        "performance",
+        "testing",
+        "documentation"
+      ],
+      "properties": {
+        "accessibility": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "securityC2": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "performance": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "testing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documentation": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "description",
+          "likelihood",
+          "impact",
+          "mitigation",
+          "owner",
+          "requirementIds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^RK[0-9]+$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "likelihood": {
+            "enum": [
+              "low",
+              "med",
+              "high"
+            ]
+          },
+          "impact": {
+            "enum": [
+              "low",
+              "med",
+              "high"
+            ]
+          },
+          "mitigation": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "requirementIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(R[1-8]|C[1-3])$"
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "required": [
+        "phaseToMilestone",
+        "criticalPath"
+      ],
+      "properties": {
+        "phaseToMilestone": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "phaseId",
+              "targetMilestone",
+              "rationale"
+            ],
+            "properties": {
+              "phaseId": {
+                "type": "string",
+                "pattern": "^P[0-9]+(\\.[0-9]+)?$"
+              },
+              "targetMilestone": {
+                "type": "string"
+              },
+              "rationale": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "buffers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deScopeDecisionTree": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "criticalPath": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^P[0-9]+(\\.[0-9]+)?$"
+          }
+        },
+        "criticalPathNote": {
+          "type": "string"
+        }
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "question",
+          "blocks"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^Q[0-9]+$"
+          },
+          "question": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(R[1-8]|C[1-3])$"
+            }
+          }
+        }
+      }
+    },
+    "validationContract": {
+      "type": "object",
+      "required": [
+        "coverageMap",
+        "rules"
+      ],
+      "properties": {
+        "coverageMap": {
+          "type": "object",
+          "patternProperties": {
+            "^(R[1-8]|C[1-3])$": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^P[0-9]+(\\.[0-9]+)?$"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

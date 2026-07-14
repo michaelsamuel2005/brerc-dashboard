@@ -25,5 +25,12 @@ build/
 coverage/
 *.log
 
+# Build caches / tooling output (machine-specific, regenerated — never commit)
+*.tsbuildinfo
+.eslintcache
+playwright-report/
+test-results/
+.vite/
+
 # Data — do not commit client data
 data/
