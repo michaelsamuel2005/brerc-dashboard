@@ -1,0 +1,31 @@
+/**
+ * Design tokens — the single source of truth for colour, spacing and type.
+ * Colour pairs are chosen to meet WCAG 2.2 AA contrast against their backgrounds,
+ * so contrast is auditable in one place (CLAUDE.md §8, R5). Never use raw hex in
+ * components — reference these variables.
+ */
+:root {
+  /* Colour */
+  --color-bg: #ffffff;
+  --color-surface: #f4f8f6;
+  --color-text: #14251c; /* on --color-bg: ~15:1 */
+  --color-text-muted: #45564d; /* on --color-bg: ~7:1 */
+  --color-primary: #14503a; /* on white: ~8:1 */
+  --color-primary-contrast: #ffffff;
+  --color-border: #cfe0d8;
+  --color-focus: #0b5cad; /* visible focus ring, high contrast */
+  --color-danger: #9a1f28; /* on white: ~7:1 */
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Type & shape */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --radius: 6px;
+  --content-max: 900px;
+}
