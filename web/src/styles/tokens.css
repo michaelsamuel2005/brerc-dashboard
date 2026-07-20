@@ -1,0 +1,23 @@
+/* Design tokens — single source for colour/type/spacing (AA-auditable). Placeholder
+   palette until the Strategy prompt sets brand. Meaning is never colour-alone. */
+:root {
+  --c-ink: #12402c;
+  --c-body: #1c2b24;
+  --c-muted: #4a5a52;
+  --c-line: #d7e0da;
+  --c-bg: #ffffff;
+  --c-accent: #0f6e56;
+  --c-focus: #185fa5;
+  --space-1: 0.5rem; --space-2: 1rem; --space-3: 1.5rem;
+  --font: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font); color: var(--c-body); background: var(--c-bg); line-height: 1.5; }
+:focus-visible { outline: 3px solid var(--c-focus); outline-offset: 2px; }
+.skip-link { position: absolute; left: -999px; top: 0; background: var(--c-ink); color: #fff; padding: var(--space-1) var(--space-2); z-index: 10; }
+.skip-link:focus { left: var(--space-2); }
+main { padding: var(--space-3); max-width: 70rem; margin: 0 auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid var(--c-line); padding: 0.4rem 0.6rem; text-align: left; }
+caption { text-align: left; font-weight: 600; margin-bottom: var(--space-1); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
