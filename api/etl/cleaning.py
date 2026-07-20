@@ -29,7 +29,6 @@ def validate_dates(df: pd.DataFrame) -> pd.DataFrame:
 
     return invalid_rows
 
-
 def duplicate_data(df: pd.DataFrame) -> None:
     print("\n===== DUPLICATE VALUES PER COLUMN =====")
 
@@ -44,6 +43,7 @@ def duplicate_species(df: pd.DataFrame) -> None:
     print(f"\n===== DUPLICATES IN {column} =====")
 
     duplicate_values = (
+        # Selects given column, counts the amount of times each value appears, keep values where count is greater than 1
         df[column]
         .value_counts()
         .loc[lambda x: x > 1]
@@ -51,6 +51,25 @@ def duplicate_species(df: pd.DataFrame) -> None:
     
     pd.set_option("display.max_rows", None)
     print(duplicate_values)
+
+def total_species(df: pd.DataFrame) -> None:
+
+    # converting obj -> num for summing
+    df["abundance"] = pd.to_numeric(
+        df["abundance"],
+        errors="coerce"
+    )
+
+    species_totals = (
+        # Groups rows with same value in same group (looks at values in column, creates group for every unique value)
+        # For each group, look at abundance
+        # Sum together values in abundance
+        df.groupby("scientific_name")["abundance"]
+        .sum()
+    )
+
+    print("\n===== TOTAL COUNT PER SPECIES =====")
+    print(species_totals)
 
 # Takes in df (dataset) which is pandas and returns pandas dataframe (run via python test_cleaning.py)
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -106,5 +125,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     duplicate_data(df)
     duplicate_species(df)
+    total_species(df)
 
     return df
