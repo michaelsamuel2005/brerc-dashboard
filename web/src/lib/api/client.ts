@@ -17,6 +17,27 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 export type QueryParams = Record<string, string | number | undefined>;
 
+// Abortable request for a real timeout. Some runtimes (notably jsdom under Node in
+// tests) ship an AbortSignal that Node's fetch rejects — in that case we fall back to
+// a plain, non-abortable request so behaviour is correct in every environment.
+async function fetchWithTimeout(url: URL, timeoutMs: number): Promise<Response> {
+  const headers = { Accept: "application/json" };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal, headers });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    if (err instanceof Error && /abortsignal/i.test(err.message)) {
+      return await fetch(url, { headers });
+    }
+    throw err;
+  }
+}
+
 export async function getJson<S extends z.ZodTypeAny>(
   path: string,
   schema: S,
@@ -31,10 +52,8 @@ export async function getJson<S extends z.ZodTypeAny>(
     }
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+    const res = await fetchWithTimeout(url, timeoutMs);
     if (!res.ok) throw new ApiError(`Request failed (${res.status})`, res.status);
     const body: unknown = await res.json();
     return schema.parse(body) as z.output<S>;
@@ -45,7 +64,5 @@ export async function getJson<S extends z.ZodTypeAny>(
     }
     if (err instanceof DOMException && err.name === "AbortError") throw new ApiError("Request timed out");
     throw new ApiError(err instanceof Error ? err.message : "Network error");
-  } finally {
-    clearTimeout(timer);
   }
 }
