@@ -1,5 +1,6 @@
 import pandas as pd
 from cleaning import clean_data
+from cleaning import calculate_dictionary_match
 
 print("========== dropdown.csv ==========")
 
@@ -25,3 +26,9 @@ print("========== varied.csv ==========")
 
 varied_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/varied_sample.csv")
 cleaned_varied = clean_data(varied_sample)
+
+calculate_dictionary_match(
+    cleaned_reptile,
+    cleaned_dictionary
+)
+

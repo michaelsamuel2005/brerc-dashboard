@@ -134,8 +134,51 @@ def validate_record_type (df: pd.DataFrame) -> None:
     print("\nMissing values:")
     print(df[column].isna().sum())
 
-def dictionary_match (df: pd.DataFrame) -> None:
-    
+def calculate_dictionary_match (
+    records_df: pd.DataFrame,
+    dictionary_df: pd.DataFrame
+) -> None:
+
+    records_column = "scientific_name"
+    dictionary_column = "scientific"
+
+    # Get distinct names from records
+    record_names = set(
+        records_df[records_column]
+        .dropna()
+        .str.strip()
+        .unique()
+    )
+
+     # Get distinct names from dictionary
+    dictionary_names = set(
+        dictionary_df[dictionary_column]
+        .dropna()
+        .str.strip()
+        .unique()
+    )
+
+    # Find matches
+    matched_names = record_names.intersection(dictionary_names)
+
+       # Find unmatched names
+    unmatched_names = record_names - dictionary_names
+
+    # Calculate match rate
+    match_rate = (
+        len(matched_names)
+        / len(record_names)
+        * 100
+    )
+
+    print(f"Distinct record names: {len(record_names)}")
+    print(f"Matched names: {len(matched_names)}")
+    print(f"Unmatched names: {len(unmatched_names)}")
+    print(f"Match rate: {match_rate:.2f}%")
+
+    print("\nSample unmatched names:")
+    print(list(unmatched_names)[:20])
+
 
 """
 Overall cleaning/standardisation
