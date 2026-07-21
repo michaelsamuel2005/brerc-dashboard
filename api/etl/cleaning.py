@@ -93,6 +93,50 @@ def validate_species_name(df: pd.DataFrame) -> None:
     
 def validate_avon_flag (df: pd.DataFrame) -> None:
 
+    # If it doesn't exist, skip db
+    if "outofavon" not in df.columns:
+        print("outofavon column does not exist")
+        return
+
+    print(df["outofavon"].unique())
+
+    print(df["outofavon"].value_counts(dropna=False))
+
+    allowed_values = {"Yes", "No"}
+
+    invalid_values = df[
+        ~df["outofavon"].isin(allowed_values)
+    ]
+
+    print(f"Invalid values: {len(invalid_values)}")
+
+    valid_count = df["outofavon"].isin(["Yes", "No"]).sum()
+
+    print(f"Valid values: {valid_count}")
+    print(f"Total rows: {len(df)}")
+
+def validate_record_type (df: pd.DataFrame) -> None:
+
+    if "record_type" not in df.columns:
+        print("record_type column does not exist")
+        return
+
+    column = "record_type"
+
+    print("\n===== RECORD_TYPE VALIDATION =====")
+
+    print("\nDistinct values:")
+    print(df[column].unique())
+
+    print("\nValue counts:")
+    print(df[column].value_counts(dropna=False))
+
+    print("\nMissing values:")
+    print(df[column].isna().sum())
+
+def dictionary_match (df: pd.DataFrame) -> None:
+    
+
 """
 Overall cleaning/standardisation
 """
@@ -114,10 +158,14 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Unique_No
 
-    validate_unique_no(df)
+    #validate_unique_no(df)
 
     print("\n===== SPECIES NAME VALIDATION =====")
 
-    validate_species_name(df)
+    #validate_species_name(df)
+
+    #validate_avon_flag(df)
+
+    validate_record_type(df)
 
     return df
