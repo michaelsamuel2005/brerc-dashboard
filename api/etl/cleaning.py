@@ -1,14 +1,11 @@
-import pandas as pd
+import pandas as pd 
 
+# Cleaning column names:
 def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Standardise column names.
-    """
 
     df = df.copy()
 
     df.columns = (df.columns
-        # Removes whitespace, lowercases + adding underscores
         .str.strip()
         .str.lower()
         .str.replace(" ", "_")
@@ -16,115 +13,111 @@ def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+# Checking Unique_No (For reptile & sample)
+# Checks all unique + no null 
 
-def validate_dates(df: pd.DataFrame) -> pd.DataFrame:
+def validate_unique_no(df: pd.DataFrame) -> None:
+
+    # If it doesn't exist, skip db
+    if "unique_no" not in df.columns:
+        print("unique_no column does not exist")
+        return
+
+    # Checks for duplicate values 
+    # Checks if values appeared earlier (T = 1, F = 0) 
+    duplicate_count = df["unique_no"].duplicated().sum()
+
+    # Checks for missing values 
+    # (T = 1, F = 0) -> sums all values together
+    missing_count = df["unique_no"].isna().sum()
+
+    # Checks the number of different none missing values
+    print(f"Unique values: {df['unique_no'].nunique()}")
+    print(f"Duplicate values: {duplicate_count}")
+    print(f"Missing values: {missing_count}")
+
+# Checks species name
+
+def validate_species_name(df: pd.DataFrame) -> None:
+
+    columns = ["scientific_name", 'scientific']
+    scientific_column = None 
+
+    # Loops through each column in columns array 
+    # If found set as scientific column
+    for column in columns:
+        if column in df.columns:
+            scientific_column = column
+            break
+
+    if scientific_column is None:
+        print("No scientific name column exists")
+        return
+
     """
-    Function to check if theres any rows where both dates are missing
+    Missing species name
     """
+    # Checks missing species name
+    missing_count = df[scientific_column].isna().sum()
+    print(f"Missing species names: {missing_count}")
 
-    invalid_rows = df[
-        df["precise_date"].isna() &
-        df["vague_date"].isna()
-    ]
+    """
+    Checking scientific species name format
+    """
+    # Basic scientific-name format (REGEX - Genus species)
+    pattern = r"^[A-Z][a-z-]+ [a-z-]+$"
 
-    return invalid_rows
+    # Convert values to strings and handle missing values
+    # Removes whitespaces from beg and end
+    names = df[column].fillna("").astype(str).str.strip()
 
-def duplicate_data(df: pd.DataFrame) -> None:
-    print("\n===== DUPLICATE VALUES PER COLUMN =====")
+    # Check which values match the basic scientific-name pattern
+    scientific_pattern = names.str.match(pattern)
 
-    for column in df.columns:
-        duplicate_count = df[column].dropna().duplicated().sum()
+    # Returns potentially invalid names (Don't match pattern)
+    invalid_names = df[~scientific_pattern]
 
-        print(f"{column}: {duplicate_count} duplicate values")
+    # Counts num of rows in invalid_names
+    print(f"Potentially invalid names: {len(invalid_names)}")
 
-def duplicate_species(df: pd.DataFrame) -> None:
-    column = "scientific_name"
+    print("\nPotentially invalid values:")
+    print(invalid_names[column].unique())
 
-    print(f"\n===== DUPLICATES IN {column} =====")
+    print("\nLooks like scientific names:", scientific_pattern.sum())
 
-    duplicate_values = (
-        # Selects given column, counts the amount of times each value appears, keep values where count is greater than 1
-        df[column]
-        .value_counts()
-        .loc[lambda x: x > 1]
+    print(
+        "Percentage:",
+        round(scientific_pattern.mean() * 100, 2),
+        "%"
     )
     
-    pd.set_option("display.max_rows", None)
-    print(duplicate_values)
+def validate_avon_flag (df: pd.DataFrame) -> None:
 
-def total_species(df: pd.DataFrame) -> None:
-
-    # converting obj -> num for summing
-    df["abundance"] = pd.to_numeric(
-        df["abundance"],
-        errors="coerce"
-    )
-
-    species_totals = (
-        # Groups rows with same value in same group (looks at values in column, creates group for every unique value)
-        # For each group, look at abundance
-        # Sum together values in abundance
-        df.groupby("scientific_name")["abundance"]
-        .sum()
-    )
-
-    print("\n===== TOTAL COUNT PER SPECIES =====")
-    print(species_totals)
-
-# Takes in df (dataset) which is pandas and returns pandas dataframe (run via python test_cleaning.py)
+"""
+Overall cleaning/standardisation
+"""
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Clean and standardise dataset.
-    """
 
-    # Make a copy so we don't accidentally modify the original dataframe
-    df = df.copy()
-
-    print("===== FIRST 5 ROWS =====")
-    print(df.head())
+    df = df.copy() 
 
     print("\n===== DATASET SHAPE =====")
     print(df.shape)
 
+    # COLUMN NAMES
     print("\n===== COLUMN NAMES BEFORE CLEANING =====")
     print(df.columns.tolist())
 
-    # Actual cleaning
     df = clean_column_names(df)
 
     print("\n===== COLUMN NAMES AFTER CLEANING =====")
     print(df.columns.tolist())
 
-    print("\n===== DATA TYPES AND MISSING VALUES =====")
-    df.info()
+    # Unique_No
 
-    print("\n===== MISSING VALUES =====")
-    print(df.isna().sum())
+    validate_unique_no(df)
 
-    print("\n===== MISSING PERCENTAGE =====")
-    print((df.isna().mean() * 100).round(2))
+    print("\n===== SPECIES NAME VALIDATION =====")
 
-    print("\n===== DUPLICATE ROWS =====")
-    print(df.duplicated().sum())
-
-    print("\n===== DATA TYPES =====")
-    print(df.dtypes)
-
-    print("\n===== DATE VALIDATION =====")
-
-    print(
-        df[["precise_date", "vague_date"]]
-        .isna()
-        .value_counts()
-    )
-
-    invalid_dates = validate_dates(df)
-
-    print("\nRows with both dates missing:")
-    print(len(invalid_dates))
-
-    duplicate_data(df)
-    duplicate_species(df)
-    total_species(df)
+    validate_species_name(df)
 
     return df
