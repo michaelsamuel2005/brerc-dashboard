@@ -1,6 +1,7 @@
+# Run via python -m etl.tests.test_cleaning
+
 import pandas as pd
-from cleaning import clean_data
-from cleaning import calculate_dictionary_match
+from etl.cleaning import clean_data,calculate_dictionary_match
 
 print("========== dropdown.csv ==========")
 
