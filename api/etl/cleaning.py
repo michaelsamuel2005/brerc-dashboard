@@ -179,6 +179,20 @@ def calculate_dictionary_match (
     print("\nSample unmatched names:")
     print(list(unmatched_names)[:20])
 
+# Checking for unique record_tyoe column
+def check_unique(df: pd.DataFrame) -> None:
+    if "recordtype" not in df.columns:
+        print("recordtype column does not exist")
+        return
+
+    sensitive_record_types = (
+        df.loc[df["sensitive"] == "yes", "recordtype"]
+        .dropna()
+        .unique()
+    )
+
+    print(sensitive_record_types)
+    print(f"Distinct record names: {len(sensitive_record_types)}")
 
 """
 Overall cleaning/standardisation
@@ -210,5 +224,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     #validate_avon_flag(df)
 
     validate_record_type(df)
+
+    check_unique(df)
 
     return df
