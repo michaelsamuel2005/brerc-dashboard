@@ -2,6 +2,8 @@
 
 import pandas as pd
 from etl.cleaning import clean_data,calculate_dictionary_match
+from etl.filtering import filter_sensitive_species
+from etl.cleaning import resolve_species_numbers
 
 print("========== dropdown.csv ==========")
 
@@ -15,8 +17,8 @@ cleaned_dictionary = clean_data(full_dictionary)
 
 print("========== reptile.csv ==========")
 
-repile_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/reptile_sample.csv")
-cleaned_reptile = clean_data(repile_sample)
+reptile_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/reptile_sample.csv")
+cleaned_reptile = clean_data(reptile_sample)
 
 print("========== sensitive.csv ==========")
 
@@ -28,8 +30,19 @@ print("========== varied.csv ==========")
 varied_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/varied_sample.csv")
 cleaned_varied = clean_data(varied_sample)
 
+resolved_varied = resolve_species_numbers(
+    cleaned_varied,
+    cleaned_dictionary
+)
+
 calculate_dictionary_match(
     cleaned_reptile,
     cleaned_dictionary
 )
+
+safe_varied = filter_sensitive_species(
+    resolved_varied
+)
+print(f"Original rows: {len(varied_sample)}")
+print(f"Safe rows: {len(safe_varied)}")
 

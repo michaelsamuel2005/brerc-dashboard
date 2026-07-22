@@ -1,5 +1,6 @@
 import pandas as pd
 from etl.cleaning import clean_data
+from etl.rules import SENSITIVE_SPECIES_NOS
 from etl.cleaning import resolve_species_numbers
 
 # Load dictionary
@@ -45,4 +46,22 @@ print(
             "species_no"
         ]
     ].head(20).to_string(index=False)
+)
+
+species_in_dataset = set(
+    resolved_varied["species_no"].dropna()
+)
+
+sensitive_species_found = (
+    species_in_dataset
+    & SENSITIVE_SPECIES_NOS
+)
+
+print(
+    "Sensitive species found:",
+    len(sensitive_species_found)
+)
+
+print(
+    sensitive_species_found
 )
