@@ -194,6 +194,34 @@ def check_unique(df: pd.DataFrame) -> None:
     print(sensitive_record_types)
     print(f"Distinct record names: {len(sensitive_record_types)}")
 
+# Resolving the species name to its number
+def resolve_species_numbers(
+    records_df: pd.DataFrame,
+    dictionary_df: pd.DataFrame
+) -> pd.DataFrame:
+
+    records_df = records_df.copy()
+
+    species_lookup = (
+        dictionary_df[
+            ["scientific", "species_no"]
+        ]
+        .drop_duplicates(
+            subset="scientific"
+        )
+    )
+
+    records_df = records_df.merge(
+        species_lookup,
+        left_on="scientific_name",
+        right_on="scientific",
+        how="left"
+    )
+
+    print("Records after merge:", len(records_df))
+
+    return records_df
+
 """
 Overall cleaning/standardisation
 """
