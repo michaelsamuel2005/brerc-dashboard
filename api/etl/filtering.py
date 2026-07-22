@@ -4,7 +4,6 @@ from etl.rules import (
     FLAGGED_RECORD_TYPES
 )
 
-
 def filter_sensitive_species(
     df: pd.DataFrame
 ) -> pd.DataFrame:
@@ -51,4 +50,5 @@ def filter_sensitive_species(
         "Total sensitive records:",
         sensitive_mask.sum()
     )
-    return df[~sensitive_mask].copy()
+    df["is_sensitive"] = sensitive_mask
+    return df

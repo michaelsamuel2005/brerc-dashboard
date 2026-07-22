@@ -1,48 +1,49 @@
 # Run via python -m etl.tests.test_cleaning
 
+from pathlib import Path
 import pandas as pd
-from etl.cleaning import clean_data,calculate_dictionary_match
-from etl.filtering import filter_sensitive_species
-from etl.cleaning import resolve_species_numbers
+from etl.cleaning import clean_data 
 
-print("========== dropdown.csv ==========")
-
-drop_down = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/drop_down.csv")
-cleaned_drop_down = clean_data(drop_down)
-
-print("========== dictionary.csv ==========")
-
-full_dictionary = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/full_dictionary.csv")
-cleaned_dictionary = clean_data(full_dictionary)
-
-print("========== reptile.csv ==========")
-
-reptile_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/reptile_sample.csv")
-cleaned_reptile = clean_data(reptile_sample)
-
-print("========== sensitive.csv ==========")
-
-sensitive_species = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/sensitive_species.csv")
-cleaned_sensitive = clean_data(sensitive_species)
-
-print("========== varied.csv ==========")
-
-varied_sample = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/varied_sample.csv")
-cleaned_varied = clean_data(varied_sample)
-
-resolved_varied = resolve_species_numbers(
-    cleaned_varied,
-    cleaned_dictionary
+DATA_DIR = Path(
+    "/Users/tingtinghe/Documents/brerc-dashboard/data"
 )
 
-calculate_dictionary_match(
-    cleaned_reptile,
-    cleaned_dictionary
-)
+# Takes in a filename
+def test_dataset(filename: str) -> None:
+    """
+    Load a CSV, clean it, and display its columns.
+    """
 
-safe_varied = filter_sensitive_species(
-    resolved_varied
-)
-print(f"Original rows: {len(varied_sample)}")
-print(f"Safe rows: {len(safe_varied)}")
+    print(f"\n===== {filename} =====")
 
+    filepath = DATA_DIR / filename
+
+    df = pd.read_csv(filepath)
+
+    print("Original columns:")
+    print(df.columns.tolist())
+
+    cleaned_df = clean_data(df)
+
+    print("Cleaned columns:")
+    print(cleaned_df.columns.tolist())
+
+    print("Rows:", len(cleaned_df))
+
+def main() -> None:
+
+    test_dataset("drop_down.csv")
+    test_dataset("full_dictionary.csv")
+    test_dataset("reptile_sample.csv")
+    test_dataset("sensitive_species.csv")
+    test_dataset("varied_sample.csv")
+
+# If this file is being run directly:
+# __name__ == "__main__"
+# Therefore, main() runs.
+
+# If another file is being run and imports this file:
+# this file's __name__ is its module name, not "__main__".
+# Therefore, main() does not run.
+if __name__ == "__main__":
+    main()
