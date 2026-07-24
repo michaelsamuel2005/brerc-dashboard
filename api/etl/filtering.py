@@ -1,29 +1,27 @@
 import pandas as pd
 from etl.rules import (
     SENSITIVE_SPECIES_NOS,
-    FLAGGED_RECORD_TYPES
+    SENSITIVE_NBN_NUMBERS,
+    FLAGGED_RECORD_TYPES,
 )
 
 def filter_sensitive_species(
-    df: pd.DataFrame
-) -> pd.DataFrame:
+        df: pd.DataFrame
+    ) -> pd.DataFrame:
 
-    sensitive_species_mask = (
-        df["species_no"]
-        .isin(SENSITIVE_SPECIES_NOS)
-    )
+    df = df.copy()
 
-    flagged_record_type_mask = (
-        df["record_type"]
-        .isin(FLAGGED_RECORD_TYPES)
-    )
-
+    sensitive_species_mask = df["species_no"].isin(SENSITIVE_SPECIES_NOS)
+    sensitive_nbn_mask = df["nbn_number"].isin(SENSITIVE_NBN_NUMBERS)
+    flagged_record_type_mask = df["record_type"].isin(FLAGGED_RECORD_TYPES)
+    unresolved_mask = df["species_unresolved"]
+ 
     sensitive_mask = (
         sensitive_species_mask
-        |
-        flagged_record_type_mask
+        | sensitive_nbn_mask
+        | flagged_record_type_mask
+        | unresolved_mask
     )
-
     print("\n===== SENSITIVE RECORDS =====")
 
     sensitive_record_types = (
@@ -33,22 +31,24 @@ def filter_sensitive_species(
         ]
         .value_counts()
     )
-
     print(sensitive_record_types)
 
-    print(
-        "Sensitive species records:",
-        sensitive_species_mask.sum()
-    )
-
-    print(
-        "Flagged record type records:",
-        flagged_record_type_mask.sum()
-    )
-
-    print(
-        "Total sensitive records:",
-        sensitive_mask.sum()
-    )
+    print("Sensitive via species_no:", sensitive_species_mask.sum())
+    print("Sensitive via nbn_number:", sensitive_nbn_mask.sum())
+    print("Sensitive via record_type:", flagged_record_type_mask.sum())
+    print("Sensitive via unresolved species (fail-closed):", unresolved_mask.sum())
+    print("Total sensitive records:", sensitive_mask.sum())
+ 
+    # Sanity check: species_no and nbn_number should agree on
+    # sensitivity. Any mismatch suggests an error in how species_no
+    # was assigned upstream and is worth investigating manually.
+    mismatch = df[sensitive_species_mask != sensitive_nbn_mask]
+    if len(mismatch) > 0:
+        print(f"\n {len(mismatch)} records where species_no and nbn_number "
+              f"sensitivity checks disagree:")
+        print(mismatch[["scientific_name", "species_no", "nbn_number"]].drop_duplicates())
+    else:
+        print("\nspecies_no and nbn_number sensitivity checks agree on all records.")
+ 
     df["is_sensitive"] = sensitive_mask
     return df

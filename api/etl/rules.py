@@ -1,74 +1,17 @@
-# Contains the static rules: 
+import pandas as pd
 
-# IDS of all the sensitive species
+from etl.cleaning import clean_data
 
-SENSITIVE_SPECIES_NOS = frozenset({
-    16957,
-    2028,
-    2169,
-    2724,
-    2991,
-    33009,
-    3685,
-    5262,
-    5865,
-    6058,
-    6499,
-    2195,
-    2319,
-    2404,
-    2720,
-    2891,
-    2975,
-    3012,
-    3439,
-    3637,
-    4106,
-    4173,
-    4435,
-    4519,
-    4521,
-    4582,
-    2183,
-    2285,
-    2288,
-    2292,
-    2293,
-    2306,
-    2313,
-    2320,
-    2343,
-    2345,
-    2374,
-    2525,
-    2622,
-    2648,
-    2746,
-    2840,
-    3073,
-    3103,
-    3166,
-    3262,
-    3306,
-    3337,
-    33430,
-    33996,
-    3530,
-    3928,
-    39527,
-    4015,
-    4105,
-    4213,
-    4220,
-    4226,
-    4266,
-    4289,
-    5107,
-    5192,
-    5699,
-    5745,
-    6470,
-})
+sensitive_species_df = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/sensitive_species.csv")
+sensitive_species_df_clean = clean_data(sensitive_species_df)
+
+SENSITIVE_SPECIES_NOS = set(
+    sensitive_species_df_clean["species_no"].dropna()
+)
+
+SENSITIVE_NBN_NUMBERS = set(
+    sensitive_species_df_clean["nbn_number"].dropna()
+)
 
 FLAGGED_RECORD_TYPES = frozenset({
     "trapped at actinic light",
