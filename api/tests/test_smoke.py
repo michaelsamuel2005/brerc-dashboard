@@ -4,11 +4,17 @@ Minimal smoke test (for CI, B0).
 Confirms the app starts and every stub endpoint returns HTTP 200 with JSON in
 the contract shape (validated by the Pydantic response_model). This is the
 "does it start + do stubs respond" check — not the full C2 audit (that's B10).
+
+These tests must run WITHOUT a database. The one endpoint that is already wired
+to real data — /api/species — therefore carries the `needs_db` marker so it
+SKIPS (instead of failing) when no database is reachable, e.g. on a clean CI
+runner. Its real-data behaviour is covered by tests/test_b0_integration.py.
 """
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from conftest import needs_db
 
 client = TestClient(app)
 
@@ -27,6 +33,7 @@ def test_summary():
     assert len(body["yearRange"]) == 2
 
 
+@needs_db
 def test_species_list():
     r = client.get("/api/species")
     assert r.status_code == 200

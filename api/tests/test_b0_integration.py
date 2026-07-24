@@ -10,30 +10,13 @@ when it is silently still returning hardcoded values. These assertions check the
 counts that only the real sample data produces.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.db import get_connection
+from conftest import needs_db  # shared skip-when-no-database marker
 
 client = TestClient(app)
-
-
-def _database_available() -> bool:
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1 AS ok;")
-                cur.fetchone()
-        return True
-    except Exception:
-        return False
-
-
-needs_db = pytest.mark.skipif(
-    not _database_available(),
-    reason="No database reachable — set DATABASE_URL and run db/b0_staging_setup.sql",
-)
 
 
 @needs_db

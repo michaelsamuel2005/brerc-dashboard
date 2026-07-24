@@ -1,0 +1,7 @@
+# Development + test dependencies. Installs everything the app needs, plus the
+# test tools. Use this locally and in CI:
+#     python -m pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0        # test runner
+httpx>=0.27        # required by FastAPI's TestClient to call the app in tests
