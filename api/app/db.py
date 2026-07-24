@@ -15,9 +15,16 @@ SAFETY RULES enforced here and in every query:
 """
 
 import os
+from pathlib import Path
 
 import psycopg
+from dotenv import load_dotenv
 from psycopg.rows import dict_row
+
+# Load api/.env (if it exists) so DATABASE_URL can live in a git-ignored file
+# instead of being typed into the shell every time. We point at the .env next to
+# the api/ folder explicitly, so it is found no matter which folder you run from.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # Read the connection string from the environment. The fallback is a local
 # development default — it contains no real secret.
