@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 // The distribution map needs WebGL, which jsdom lacks, so we stub the lazy-loaded map
-// module. The accessible records table is the a11y + data target here; the map's visual
-// render is verified in a real browser (see the P2 run notes).
+// module. The two accessible tables are the a11y + data target here; the map's visual
+// render and keyboard behaviour are verified in a real browser (Playwright, pending).
 vi.mock("../features/map/DistributionMap", () => ({
   default: function DistributionMapStub() {
     return null;
@@ -23,15 +23,18 @@ function renderApp(ui: ReactNode) {
 
 describe("App — P2 slice (integration, against MSW mock)", () => {
   it(
-    "renders the species and the accessible records table with no accessibility violations",
+    "renders the scoped species and BOTH the cell-summary and sample tables with no accessibility violations",
     async () => {
       const { container } = renderApp(<App />);
-      // Species panel + records table both resolve from the mock API.
       expect(await screen.findByText(/Slow-worm/, undefined, { timeout: 8000 })).toBeInTheDocument();
-      expect(await screen.findByRole("table")).toBeInTheDocument();
+      // the map's accessible equivalent + the individual-records sample
+      expect(await screen.findByText(/Distribution by grid square/)).toBeInTheDocument();
+      expect(await screen.findByText(/Sample of individual records/)).toBeInTheDocument();
+      const tables = await screen.findAllByRole("table");
+      expect(tables.length).toBeGreaterThanOrEqual(2);
       const results = await axe(container);
       expect(results).toHaveNoViolations();
     },
-    15000,
+    20000,
   );
 });

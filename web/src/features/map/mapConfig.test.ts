@@ -13,7 +13,8 @@ describe("mapConfig", () => {
   });
 
   it("colours cells by record count using a step expression", () => {
-    const fillColor = cellsFillLayer.paint?.["fill-color"];
+    const paint = cellsFillLayer.paint as Record<string, unknown> | undefined;
+    const fillColor = paint?.["fill-color"];
     expect(Array.isArray(fillColor)).toBe(true);
     expect((fillColor as unknown[])[0]).toBe("step");
   });

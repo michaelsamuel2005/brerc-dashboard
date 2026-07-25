@@ -33,7 +33,7 @@ export function SpeciesPanel({ speciesId }: { speciesId: string }) {
           </div>
           <div className="stat">
             <div className="v">
-              {s.stats.yearRange[0]}–{String(s.stats.yearRange[1]).slice(2)}
+              {s.stats.yearRange[0]}–{s.stats.yearRange[1]}
             </div>
             <div className="k">Years</div>
           </div>

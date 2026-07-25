@@ -2,30 +2,32 @@ import { toAsyncState, useRecords } from "../../lib/api";
 import { precisionLabel } from "../../lib/geo/gridref";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
 
-// The mandatory R5 non-map fallback: everything the map conveys, in an accessible table.
-// Shows each grid reference at its stated precision only — no precise coordinates, no
-// Comments, no recorder names. This is the equal-access path to the map's data.
-export function RecordsTable() {
-  const query = useRecords();
+// A SAMPLE of individual records for ONE species — NOT the map's equivalent (that is the
+// grid-square table above). Grid references show at their true resolution, never finer
+// than the 100 m public floor; no coordinates, no personal data.
+export function RecordsTable({ speciesId }: { speciesId: string }) {
+  const query = useRecords({ species: speciesId });
   const state = toAsyncState(query, (d) => d.items.length === 0);
 
   return (
     <section className="table-section" aria-labelledby="records-heading">
-      <h2 id="records-heading">Records — accessible table</h2>
+      <h2 id="records-heading">Sample of individual records</h2>
       <p className="map-note">
-        The same data the map shows, as a table. Nothing here is available only by using the map.
+        {state.status === "ready"
+          ? `A sample of ${state.data.items.length} of ${state.data.total.toLocaleString("en-GB")} records for this species.`
+          : "Individual records behind the distribution shown above."}
       </p>
       {state.status === "loading" ? (
         <div className="state"><LoadingState label="records" /></div>
       ) : state.status === "error" ? (
         <ErrorState message={state.error.message} onRetry={() => void query.refetch()} />
       ) : state.status === "empty" ? (
-        <EmptyState message="No records to list." />
+        <EmptyState message="No records to list for this species." />
       ) : (
         <div className="tablewrap">
-          <div className="tscroll">
+          <div className="tscroll" tabIndex={0} role="group" aria-label="Sample of individual records, scrollable">
             <table className="data">
-              <caption>Species records, shown at their true grid resolution — no precise coordinates or personal data.</caption>
+              <caption>Individual records at their true grid resolution (100 m or coarser) — no exact coordinates or personal data.</caption>
               <thead>
                 <tr>
                   <th scope="col">Species</th>

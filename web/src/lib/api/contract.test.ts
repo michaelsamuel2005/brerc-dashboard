@@ -87,4 +87,31 @@ describe("C2 contract gate", () => {
   it("REJECTS malformed data loudly (missing required fields)", () => {
     expect(() => SpeciesListPageSchema.parse({ items: [], page: 1 })).toThrow();
   });
+
+  it("REJECTS a record finer than the 100 m public floor (runtime, not just fixture)", () => {
+    const hostile = structuredClone(recordsFixture) as Record<string, unknown>;
+    const items = hostile.items as Array<Record<string, unknown>>;
+    if (items[0]) {
+      items[0].gridRef = "ST59722885"; // 10 m reference
+      items[0].precisionMetres = 10;
+    }
+    expect(() => RecordPageSchema.parse(hostile)).toThrow();
+  });
+
+  it("REJECTS a record whose gridRef precision disagrees with precisionMetres", () => {
+    const hostile = structuredClone(recordsFixture) as Record<string, unknown>;
+    const items = hostile.items as Array<Record<string, unknown>>;
+    if (items[0]) {
+      items[0].gridRef = "ST597728"; // 100 m
+      items[0].precisionMetres = 1000; // claims 1 km — inconsistent
+    }
+    expect(() => RecordPageSchema.parse(hostile)).toThrow();
+  });
+
+  it("REJECTS a non-https (javascript:) attribution URL", () => {
+    const hostile = structuredClone(provenanceFixture) as Record<string, unknown>;
+    const attrs = hostile.attributions as Array<Record<string, unknown>>;
+    if (attrs[0]) attrs[0].url = "javascript:alert(1)";
+    expect(() => ProvenanceSchema.parse(hostile)).toThrow();
+  });
 });

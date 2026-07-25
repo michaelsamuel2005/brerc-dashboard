@@ -11,5 +11,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // Unit/integration tests live in src/. The Playwright e2e specs (e2e/) run under a
+    // real browser via `npm run e2e`, not Vitest.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });

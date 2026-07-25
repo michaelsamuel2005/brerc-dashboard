@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SpeciesImage } from "../lib/api/schemas";
 
-// R3: an image is shown only WITH a visible licence + attribution. If the image is
-// missing or fails to load, we degrade gracefully to a labelled placeholder (never a
-// broken-image icon). Production supplies verified, licensed photographs.
+// R3: an image is shown only WITH a visible licence + attribution. If it is missing or
+// fails to load, we degrade gracefully to a labelled placeholder (never a broken-image
+// icon). Production supplies verified, licensed photographs.
 export function AttributedImage({ image, name }: { image?: SpeciesImage; name: string }) {
   const [failed, setFailed] = useState(false);
+
+  // Reset the failure state whenever the image source changes (e.g. switching species),
+  // so a previously-failed image does not suppress a new, valid one.
+  useEffect(() => {
+    setFailed(false);
+  }, [image?.url]);
+
   if (!image || failed) {
     return (
       <div className="attr-fallback" role="img" aria-label={`No photograph is currently available for ${name}.`}>

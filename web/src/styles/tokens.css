@@ -83,3 +83,10 @@ table.data tbody tr:hover { background:var(--panel-2); }
 
 .app-footer { border-top:1px solid var(--line); margin-top:var(--sp-3); }
 .app-footer .row { max-width:1100px; margin:0 auto; padding:1.4rem clamp(1rem,4vw,2rem); font-size:.82rem; color:var(--muted); }
+
+/* Map controls sized to the 44px minimum touch target (WCAG 2.5.8). */
+.maplibregl-ctrl-group button { width: 44px; height: 44px; }
+.map-popup { font-family: var(--sans); font-size: .85rem; color: var(--ink); line-height: 1.35; }
+.map-popup strong { color: var(--ink); }
+/* Scrollable table regions are focusable (tabIndex) so keyboard users can scroll them. */
+.tscroll:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }

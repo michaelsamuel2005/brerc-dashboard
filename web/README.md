@@ -8,40 +8,59 @@ contract, so it runs with **no backend**.
 ## Quick start
 ```bash
 cd web
-rm -rf node_modules dist *.tsbuildinfo   # clear stale scaffold artefacts
 npm install
 npm run dev          # runs against the MSW mock — no backend needed
 npm run typecheck    # strict TS, no `any`
-npm run test:run     # unit + C2 contract + accessibility tests
+npm run lint         # ESLint + typescript-eslint + jsx-a11y
+npm run guard        # C2 forbidden-field / secret source guard
+npm run test:run     # unit + C2 contract + accessibility (jest-axe) tests
+npm run build        # production build
 ```
-> Dev mocking uses a service worker: run `npx msw init public/ --save` once so
-> `npm run dev` can serve the mock in the browser. (Tests use the Node mock and need nothing.)
+> Dev mocking uses a service worker (`public/mockServiceWorker.js`, already committed).
+> Browser end-to-end + axe (`npm run e2e`) needs a real browser: `npm run e2e:install` once, then `npm run e2e`.
 
-## What's here — Phase 0 (foundations) + Phase 1 (contract-first spine)
+## What's here — Phase 0 + Phase 1 + Phase 2
+**P0 (foundations):** strict TS, accessible shell (skip link, landmarks, per-feature error
+boundaries), design tokens (AA), ESLint + `jsx-a11y`, the `guard` script, and a CI workflow
+(`.github/workflows/ci.yml`).
+
+**P1 (contract-first spine):**
 - **`lib/api/`** — the ONLY network layer: per-endpoint **Zod schemas** (contract source of
-  truth), typed `client`, `endpoints`, and **TanStack Query** hooks. Nothing else calls `fetch`.
-- **`lib/api/contract.test.ts`** — the **C2 gate**: fails if any forbidden field
-  (`Recorder1/BLISS/Eastings/Northings/Comments/sensitivity`) could enter a parsed payload,
-  or if a record's `gridRef` is finer than its stated `precisionMetres`.
-- **`test/msw/`** — mock implementing the API contract + PII/sensitivity-free fixtures
-  (incl. a generalised, unlabelled sensitive-taxon example blended into the ordinary grid).
+  truth), typed `client`, `endpoints`, **TanStack Query** hooks. Nothing else calls `fetch`.
+- **`test/msw/`** — mock implementing the contract; PII/sensitivity-free fixtures. The
+  distribution + records endpoints honour the `?species=` filter.
 - **`types/`** — PII-free domain types, **inferred from Zod** so they can't drift.
 - **`lib/geo/`** — grid-ref precision/label helpers (display-only; never upsamples precision).
-- **`config/`** — Zod-validated env (`VITE_*` only; dev→prod is a base-URL swap, no code change).
-- **`app/` + `features/`** — accessible shell (skip link, landmarks, per-feature error boundaries)
-  and a first slice (overview, species list, R5 records table) rendering live from the mock.
 
-## C2 (data safety) in one line
-Sensitive-location generalisation is enforced **server-side**; the client's job is to make it
-**impossible** for precise coords/PII to appear. Strict Zod `.strict()` schemas + the contract
-test are the client-side net (the server contract is the fix — see assumptions A3/A4).
+**P2 (one-species vertical slice — Slow-worm):**
+- **`features/map/DistributionMap.tsx`** — the distribution map on **`react-map-gl/maplibre`**,
+  honest grid cells at their true 1 km extent (never pins), colour-safe legend, ≥44 px controls,
+  a secure React-children popup (no `innerHTML`), and a graceful error surface.
+- **`features/species/CellSummaryTable.tsx`** — the map's **accessible equivalent**: the SAME
+  `CellCollection`, as a table (grid square, resolution, records, verified).
+- **`features/species/RecordsTable.tsx`** — a labelled SAMPLE of individual records.
+- **`features/species/SpeciesPanel.tsx`** + **`components/AttributedImage.tsx`** — species info
+  with a licence/attribution-safe image slot and a graceful "photograph pending" fallback.
+- Every panel is scoped by the same `speciesId`.
+
+## C2 (data safety)
+Sensitive-location generalisation is enforced **server-side**; the client makes it **impossible**
+for precise coords/PII to appear. The client net is now a **runtime gate**, not just a fixture test:
+- `.strict()` Zod schemas reject any unexpected key (`Recorder1/BLISS/Eastings/Northings/Comments/sensitivity`).
+- Each record's grid reference must resolve to **exactly** its `precisionMetres`, and everything
+  must be **≥ 100 m** (the public floor) — enforced in the schema, on every parsed response.
+- URLs must be **https** (no `javascript:`/`data:` attribution links).
+- `contract.test.ts` + `npm run guard` back this in CI.
+
+## Verification gates
+`typecheck`, `lint`, `guard`, `test:run` (unit + contract + jest-axe), and `build` all pass and
+run in CI. **Browser checks (WebGL render, tiles, keyboard, responsive) run via Playwright + axe
+(`npm run e2e`) and are the remaining gate — run them in a browser before sign-off.**
 
 ## API endpoints (all mocked here)
 `/api/summary` · `/api/species` · `/api/species/{id}` · `/api/distribution/cells` ·
 `/api/records` · `/api/meta/provenance` · `/api/health`
 
-## Next steps
-- **Finish P0:** React Aria primitives, design-token depth, ESLint + `jsx-a11y`,
-  CI + forbidden-field build guard, ADRs.
-- **P2:** the MapLibre distribution map (`react-map-gl/maplibre`) + colour-safe legend,
-  reusing this exact data layer — plus the `/api/distribution/tiles` MVT path.
+## Next steps (P3)
+Deepen the map: all species (not one), MVT tiles (`/api/distribution/tiles`), full keyboard
+operability of cells with the table kept in sync, and the wire-level C2 re-proof against the real API.
