@@ -237,4 +237,21 @@ def get_sensitive_record_types(df: pd.DataFrame) -> None:
     print(sensitive_record_types)
     print(f"Distinct record names: {len(sensitive_record_types)}")
 
+def get_verified_types(df: pd.DataFrame) -> None:
+
+    if "verified" not in df.columns:
+        print("verified column does not exist")
+        return
+
+    verified_type = df["verified"]
+
+    print("\nDistinct values:")
+    print(verified_type.unique())
+
+    print("\nValue counts:")
+    print(verified_type.value_counts(dropna=False))
+
+    print("\nMissing values:")
+    print(verified_type.isna().sum())
+
 
