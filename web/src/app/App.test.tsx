@@ -2,11 +2,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { axe } from "jest-axe";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-// A dedicated test QueryClient: no retries, no cache carry-over, so the test is
-// deterministic and doesn't hang on retry back-off regardless of machine speed.
+// The distribution map needs WebGL, which jsdom lacks, so we stub the lazy-loaded map
+// module. The accessible records table is the a11y + data target here; the map's visual
+// render is verified in a real browser (see the P2 run notes).
+vi.mock("../features/map/DistributionMap", () => ({
+  default: function DistributionMapStub() {
+    return null;
+  },
+}));
+
 function renderApp(ui: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
@@ -14,14 +21,13 @@ function renderApp(ui: ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
-describe("App (integration, against MSW mock)", () => {
+describe("App — P2 slice (integration, against MSW mock)", () => {
   it(
-    "renders live data from the mock and has no accessibility violations",
+    "renders the species and the accessible records table with no accessibility violations",
     async () => {
       const { container } = renderApp(<App />);
-      // Data flows from the mock API. Generous timeout for a cold first run.
+      // Species panel + records table both resolve from the mock API.
       expect(await screen.findByText(/Slow-worm/, undefined, { timeout: 8000 })).toBeInTheDocument();
-      // Records table (the R5 non-map fallback) renders the same source.
       expect(await screen.findByRole("table")).toBeInTheDocument();
       const results = await axe(container);
       expect(results).toHaveNoViolations();
