@@ -1,13 +1,31 @@
+import { useEffect, useRef } from "react";
 import { toAsyncState, useDistributionCells } from "../../lib/api";
 import { precisionLabel } from "../../lib/geo/gridref";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
+import { usePrefersReducedMotion } from "../../lib/hooks/usePrefersReducedMotion";
 
-// The map's ACCESSIBLE EQUIVALENT (R5): the SAME CellCollection the map draws, rendered
-// as a table — grid square, resolution, record count, verified count. Keyboard and
-// screen-reader users obtain exactly what map users see. Scoped to one species.
-export function CellSummaryTable({ speciesId }: { speciesId: string }) {
+interface Props {
+  speciesId: string;
+  selectedCellId?: string | null;
+  onSelectCell?: (cellId: string | null) => void;
+}
+
+// The map's ACCESSIBLE EQUIVALENT (R5) AND its keyboard control surface (R2): the SAME
+// CellCollection the map draws, as a table. Each row's grid-square button highlights that
+// square on the map; the selected row is highlighted and scrolled into view. Scoped to
+// one species.
+export function CellSummaryTable({ speciesId, selectedCellId = null, onSelectCell }: Props) {
   const query = useDistributionCells({ species: speciesId });
   const state = toAsyncState(query, (d) => d.features.length === 0);
+  const reduced = usePrefersReducedMotion();
+  const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Bring the selected row into view when selection changes (e.g. chosen on the map).
+  useEffect(() => {
+    if (selectedCellId && selectedRowRef.current) {
+      selectedRowRef.current.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    }
+  }, [selectedCellId, reduced]);
 
   const total = state.status === "ready" ? state.data.features.reduce((n, f) => n + f.properties.recordCount, 0) : 0;
 
@@ -17,6 +35,7 @@ export function CellSummaryTable({ speciesId }: { speciesId: string }) {
       <p className="map-note">
         The same information the map shows above, as a table — one row per grid square
         {state.status === "ready" ? ` (${state.data.features.length} squares, ${total.toLocaleString("en-GB")} records)` : ""}.
+        Select a square to highlight it on the map.
       </p>
       {state.status === "loading" ? (
         <div className="state"><LoadingState label="the distribution" /></div>
@@ -38,14 +57,27 @@ export function CellSummaryTable({ speciesId }: { speciesId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {state.data.features.map((f) => (
-                  <tr key={f.properties.cellId}>
-                    <td>{f.properties.cellId}</td>
-                    <td>{precisionLabel(f.properties.precisionMetres)}</td>
-                    <td className="num">{f.properties.recordCount.toLocaleString("en-GB")}</td>
-                    <td className="num">{f.properties.verifiedCount?.toLocaleString("en-GB") ?? "—"}</td>
-                  </tr>
-                ))}
+                {state.data.features.map((f) => {
+                  const sel = f.properties.cellId === selectedCellId;
+                  return (
+                    <tr key={f.properties.cellId} ref={sel ? selectedRowRef : undefined} className={sel ? "selected" : undefined}>
+                      <td>
+                        <button
+                          type="button"
+                          className="cell-select"
+                          aria-pressed={sel}
+                          onClick={() => onSelectCell?.(sel ? null : f.properties.cellId)}
+                        >
+                          {f.properties.cellId}
+                          <span className="visually-hidden"> — {sel ? "highlighted on the map; activate to clear" : "highlight on the map"}</span>
+                        </button>
+                      </td>
+                      <td>{precisionLabel(f.properties.precisionMetres)}</td>
+                      <td className="num">{f.properties.recordCount.toLocaleString("en-GB")}</td>
+                      <td className="num">{f.properties.verifiedCount?.toLocaleString("en-GB") ?? "—"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

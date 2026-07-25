@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useState } from "react";
 import { SkipLink } from "../components/SkipLink";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Caveat } from "../components/Caveat";
@@ -11,10 +11,13 @@ import { LoadingState } from "../components/states/States";
 const DistributionMap = lazy(() => import("../features/map/DistributionMap"));
 
 // P2 vertical slice: ONE species (Slow-worm) end-to-end — every panel is scoped by the
-// SAME speciesId, so nothing silently shows all-species data. Runs against the MSW mock.
+// SAME speciesId. P3 slice 1: the map and the cell table share a selected-cell state, so
+// selecting a square in either place highlights it in the other.
 const SPECIES_ID = "anguis-fragilis";
 
 export function App() {
+  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
+
   return (
     <>
       <SkipLink />
@@ -49,13 +52,13 @@ export function App() {
                 </div>
               }
             >
-              <DistributionMap speciesId={SPECIES_ID} />
+              <DistributionMap speciesId={SPECIES_ID} selectedCellId={selectedCellId} onSelectCell={setSelectedCellId} />
             </Suspense>
           </ErrorBoundary>
         </div>
 
         <ErrorBoundary label="the distribution table">
-          <CellSummaryTable speciesId={SPECIES_ID} />
+          <CellSummaryTable speciesId={SPECIES_ID} selectedCellId={selectedCellId} onSelectCell={setSelectedCellId} />
         </ErrorBoundary>
         <ErrorBoundary label="the records table">
           <RecordsTable speciesId={SPECIES_ID} />

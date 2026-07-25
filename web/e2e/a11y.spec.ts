@@ -22,4 +22,13 @@ test.describe("BRERC P2 slice", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: /skip/i })).toBeFocused();
   });
+
+  test("keyboard: selecting a grid square highlights it (map + table stay in sync)", async ({ page }) => {
+    await page.goto("/");
+    const button = page.getByRole("button", { name: /ST5872/ });
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("tr.selected")).toContainText("ST5872");
+  });
 });

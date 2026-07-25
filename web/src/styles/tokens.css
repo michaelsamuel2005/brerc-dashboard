@@ -90,3 +90,11 @@ table.data tbody tr:hover { background:var(--panel-2); }
 .map-popup strong { color: var(--ink); }
 /* Scrollable table regions are focusable (tabIndex) so keyboard users can scroll them. */
 .tscroll:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+/* Visually-hidden but screen-reader-available text. */
+.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+/* The per-row "highlight on map" control in the cell table. */
+.cell-select { font:inherit; font-weight:600; color:var(--green-d); background:none; border:0; padding:.15rem .3rem; margin:-.15rem -.3rem; border-radius:6px; cursor:pointer; text-align:left; }
+.cell-select:hover { text-decoration:underline; }
+.cell-select[aria-pressed="true"] { color:var(--accent-d); }
+table.data tr.selected td { background:var(--accent-bg); box-shadow:inset 3px 0 0 var(--accent); }

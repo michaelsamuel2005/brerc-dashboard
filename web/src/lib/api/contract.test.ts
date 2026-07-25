@@ -114,4 +114,20 @@ describe("C2 contract gate", () => {
     if (attrs[0]) attrs[0].url = "javascript:alert(1)";
     expect(() => ProvenanceSchema.parse(hostile)).toThrow();
   });
+
+  // Wire-level C2 gate for the MAP data path: the CellCollection the map renders must
+  // reject any forbidden field or sub-floor precision before it can reach the browser.
+  it("REJECTS a grid cell carrying a forbidden property (map path)", () => {
+    const hostile = structuredClone(cellsFixture) as Record<string, unknown>;
+    const feats = hostile.features as Array<{ properties: Record<string, unknown> }>;
+    if (feats[0]) feats[0].properties.Eastings = 359000;
+    expect(() => CellCollectionSchema.parse(hostile)).toThrow();
+  });
+
+  it("REJECTS a grid cell finer than the 100 m public floor (map path)", () => {
+    const hostile = structuredClone(cellsFixture) as Record<string, unknown>;
+    const feats = hostile.features as Array<{ properties: Record<string, unknown> }>;
+    if (feats[0]) feats[0].properties.precisionMetres = 10;
+    expect(() => CellCollectionSchema.parse(hostile)).toThrow();
+  });
 });
