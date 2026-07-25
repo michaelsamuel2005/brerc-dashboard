@@ -2,8 +2,10 @@ import { useDistributionCells } from "../../lib/api";
 import { precisionLabel } from "../../lib/geo/gridref";
 
 // The single, stable readout of the selected cell — beside the map. Derived from ONE
-// authoritative selectedCellId (shared with the map + table), so nothing can disagree.
-// aria-live announces the selection to screen-reader users. No auto-scroll, no popup.
+// authoritative selectedCellId (shared with map + table). Identical DOM structure whether
+// or not a cell is selected (values become "—"), so selecting never changes the card's
+// height and cannot reflow the page. Stable "Selected square" heading (correct outline);
+// aria-live announces the change.
 export function SelectedCellCard({
   speciesId,
   selectedCellId,
@@ -14,41 +16,40 @@ export function SelectedCellCard({
   onClear: () => void;
 }) {
   const query = useDistributionCells({ species: speciesId });
-  const cell = query.data?.cells.find((c) => c.cellId === selectedCellId) ?? null;
-
-  if (!selectedCellId || !cell) {
-    return (
-      <div className="cell-card cell-card--empty" aria-live="polite">
-        Select a grid square — on the map or in the table below — to see its details here.
-      </div>
-    );
-  }
-
+  const cell = selectedCellId ? query.data?.cells.find((c) => c.cellId === selectedCellId) ?? null : null;
   const verifiedPct =
-    cell.recordCount > 0 && cell.verifiedCount !== undefined ? Math.round((cell.verifiedCount / cell.recordCount) * 100) : null;
+    cell && cell.verifiedCount !== undefined && cell.recordCount > 0
+      ? Math.round((cell.verifiedCount / cell.recordCount) * 100)
+      : null;
 
   return (
-    <div className="cell-card" aria-live="polite">
+    <div className={cell ? "cell-card" : "cell-card cell-card--empty"} aria-live="polite">
       <div className="cell-card__head">
-        <h3>{cell.cellId}</h3>
-        <button type="button" className="btn-ghost" onClick={onClear}>
+        <h2>Selected square</h2>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onClear}
+          disabled={!cell}
+          style={{ visibility: cell ? "visible" : "hidden" }}
+        >
           Clear selection
         </button>
       </div>
+      <p className="cell-card__id">{cell ? cell.cellId : "None selected"}</p>
       <dl className="cell-card__stats">
         <div>
           <dt>Resolution</dt>
-          <dd>{precisionLabel(cell.precisionMetres)}</dd>
+          <dd>{cell ? precisionLabel(cell.precisionMetres) : "—"}</dd>
         </div>
         <div>
           <dt>Records</dt>
-          <dd>{cell.recordCount.toLocaleString("en-GB")}</dd>
+          <dd>{cell ? cell.recordCount.toLocaleString("en-GB") : "—"}</dd>
         </div>
         <div>
           <dt>Verified</dt>
           <dd>
-            {cell.verifiedCount?.toLocaleString("en-GB") ?? "—"}
-            {verifiedPct !== null ? ` (${verifiedPct}%)` : ""}
+            {cell ? `${cell.verifiedCount?.toLocaleString("en-GB") ?? "—"}${verifiedPct !== null ? ` (${verifiedPct}%)` : ""}` : "—"}
           </dd>
         </div>
       </dl>
