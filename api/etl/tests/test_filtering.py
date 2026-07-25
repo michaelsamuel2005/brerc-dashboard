@@ -47,7 +47,7 @@ resolved_varied = resolve_species_numbers(
 # FILTER SENSITIVE RECORDS
 # =========================
 
-filtered_varied = filter_sensitive_species(
+filtered_varied = classify_sensitive_species(
     resolved_varied
 )
 

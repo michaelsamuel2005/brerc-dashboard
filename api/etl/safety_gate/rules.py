@@ -5,6 +5,15 @@ from etl.cleaning import clean_data
 sensitive_species_df = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/sensitive_species.csv")
 sensitive_species_df_clean = clean_data(sensitive_species_df)
 
+D0_FLOOR_M = 100
+
+DEFAULT_SENSITIVE_RESOLUTION_M = 10000
+
+SPECIES_RESOLUTIONS_M = {
+    # Empty since BRERC hasn't provided
+    # For D2 
+}
+
 SENSITIVE_SPECIES_NOS = set(
     sensitive_species_df_clean["species_no"].dropna()
 )

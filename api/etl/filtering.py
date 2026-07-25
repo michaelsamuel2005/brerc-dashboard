@@ -5,7 +5,7 @@ from etl.rules import (
     FLAGGED_RECORD_TYPES,
 )
 
-def filter_sensitive_species(
+def classify_sensitive_species(
         df: pd.DataFrame
     ) -> pd.DataFrame:
 
