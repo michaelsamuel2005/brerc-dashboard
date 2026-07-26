@@ -1,5 +1,6 @@
 import pandas as pd
-from OSGridConverter import OSGridReference
+
+from etl.safety_gate.locality import os_grid_square
 
 PUBLIC_COLUMNS = [
     "unique_no",
@@ -25,6 +26,7 @@ FORBIDDEN_COLUMNS = {
     "effective_resolution_m",
 }
 
+
 def _validate_public_columns() -> None:
     forbidden = set(PUBLIC_COLUMNS) & FORBIDDEN_COLUMNS
 
@@ -33,17 +35,9 @@ def _validate_public_columns() -> None:
             f"Forbidden columns found in PUBLIC_COLUMNS: {forbidden}"
         )
 
+
 _validate_public_columns()
 
-def _grid_square(easting, northing, square_size_m=10_000):
-    # 10km square, e.g. "TQ 2 7". Just truncate the digit part.
-    if pd.isna(easting) or pd.isna(northing):
-        return pd.NA
-    digits = 1 if square_size_m == 10_000 else 2
-    letters, e, n = str(
-        OSGridReference(int(easting), int(northing))
-    ).split(" ")
-    return f"{letters} {e[:digits]} {n[:digits]}"
 
 def add_coarse_locality(
     df: pd.DataFrame,
@@ -59,12 +53,15 @@ def add_coarse_locality(
     # NOTE: grid square only for now - no unitary authority lookup
     # yet, add it here later once that data source exists.
     df["coarse_locality"] = df.apply(
-        lambda row: _grid_square(
+        lambda row: os_grid_square(
             row[easting_column], row[northing_column]
-        ),
+        )
+        if pd.notna(row[easting_column]) and pd.notna(row[northing_column])
+        else pd.NA,
         axis=1,
     )
     return df
+
 
 def prepare_public_output(df: pd.DataFrame) -> pd.DataFrame:
     missing = [
