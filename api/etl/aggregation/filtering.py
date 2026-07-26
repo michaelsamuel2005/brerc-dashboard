@@ -1,22 +1,33 @@
 """
-filter_accepted_record():
+filter_accepted_records():
     - Take the records loaded from the source
-    - Return only records allowed to contribute to the public derived layer 
+    - Return only records allowed to contribute to the public derived layer
+
+Verification status terms per NBN standard:
+    Accepted - correct
+    Accepted - considered correct
+    Unconfirmed - plausible
+    Unconfirmed - not reviewed
+
+Deprecated older groupings still seen in older data: "Accepted",
+"Unconfirmed" (bare, no dash) - included here as fallbacks since
+BRERC's older records may still use them.
 """
 
-import pandas as pd 
+import pandas as pd
 
-# Defines the allowed values
+# DONT USE "ñ" that was previously here (invalid)
+
 ACCEPTED_VERIFIED_VALUES = {
-    "Accepted ñ correct",
-    "Accepted ñ considered correct",
+    "Accepted \u2013 correct",
+    "Accepted \u2013 considered correct",
+    "Accepted",  # deprecated older grouping, still seen in legacy data
 }
 
 LEGACY_VERIFIED_VALUES = {
     "BRERC",
 }
 
-# Recives DF + Verified column
 def filter_accepted_records(
         df: pd.DataFrame,
         verified_column: str = "verified",
@@ -24,22 +35,14 @@ def filter_accepted_records(
 
     df = df.copy()
 
-    # Standardise verified column values:
-    # Values = pandas strings + strips whitespace
     verified = (
         df[verified_column]
         .astype("string")
         .str.strip()
     )
 
-    # Finds accepted records in verified column (Returns T or F)
-    accepted = verified.isin(
-        ACCEPTED_VERIFIED_VALUES
-    ) 
+    accepted = verified.isin(ACCEPTED_VERIFIED_VALUES)
 
-    # Finds legacy records: 
-    # Checks for missing values, empty strings or legacy values
-    # Will give T for any values who are legacy, else false
     legacy = (
         verified.isna()
         | verified.eq("")
@@ -47,14 +50,8 @@ def filter_accepted_records(
     )
 
     included = accepted | legacy
-    
-    # Keeps rows only where included == True
+
     filtered_df = df.loc[included].copy()
+    filtered_df["is_legacy"] = legacy.loc[filtered_df.index]
 
-    # Adds a legacy marker - from legacy take the T/F values and add them to this column
-    filtered_df["is_legacy"] = legacy.loc[
-        filtered_df.index
-    ]
-
-    return filtered_df 
-
+    return filtered_df
