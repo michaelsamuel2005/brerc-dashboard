@@ -136,6 +136,7 @@ FROM species;
 
 CREATE OR REPLACE VIEW public_records AS
 SELECT o.record_id,
+       o.species_id,                 -- safe public id, used to FILTER (not shown to users)
        s.scientific_name,
        s.common_name,
        o.record_year,

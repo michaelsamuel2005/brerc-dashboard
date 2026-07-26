@@ -1,17 +1,20 @@
 """
 GET /api/distribution/cells — grid cells as GeoJSON (WGS84 / EPSG:4326).
 
-This is the non-tile, accessible-equivalent view of the map data (also useful
-for the WCAG data-table equivalent). The .mvt tiles themselves come from Martin
-(B7), not from this endpoint.
+NOW READS REAL DATA (B8) from the public_cells view. This is the non-tile,
+accessible-equivalent view of the map data (also useful for the WCAG data-table
+equivalent). The .mvt tiles themselves come from Martin (B7), not this endpoint.
 
-STUB: one fake cell in the contract shape. Swap for real query in B8.
-Every cell carries precisionMetres so the front end never implies more accuracy
-than the (generalised) data actually has.
+Cells are aggregated by cell (summing across years), optionally filtered to one
+species. Every cell carries precisionMetres so the front end never implies more
+accuracy than the (generalised) data actually has.
 """
+
+import json
 
 from fastapi import APIRouter, Query
 
+from app.db import get_connection
 from app.models import (
     GeoJSONFeatureCollection,
     GeoJSONFeature,
@@ -25,23 +28,44 @@ router = APIRouter(prefix="/api", tags=["distribution"])
 def distribution_cells(
     speciesId: int | None = Query(None),
 ) -> GeoJSONFeatureCollection:
-    # A single fake 1 km cell near Bristol, as a GeoJSON polygon.
-    fake_cell = GeoJSONFeature(
-        geometry={
-            "type": "Polygon",
-            "coordinates": [[
-                [-2.60, 51.45],
-                [-2.585, 51.45],
-                [-2.585, 51.46],
-                [-2.60, 51.46],
-                [-2.60, 51.45],
-            ]],
-        },
-        properties=CellProperties(
-            cellId="ST5872",
-            precisionMetres=1000,
-            recordCount=57,
-            verifiedCount=54,
-        ),
-    )
-    return GeoJSONFeatureCollection(features=[fake_cell])
+    # Optional species filter — fixed WHERE text, value passed as a parameter.
+    where_sql = ""
+    params: list = []
+    if speciesId is not None:
+        where_sql = "WHERE species_id = %s"
+        params.append(speciesId)
+
+    # One feature per cell: sum the counts across years, and let PostGIS turn the
+    # cell polygon straight into a GeoJSON string with ST_AsGeoJSON.
+    sql = f"""
+        SELECT
+            cell_id,
+            MAX(precision_metres) AS precision_metres,
+            SUM(record_count)     AS record_count,
+            SUM(verified_count)   AS verified_count,
+            ST_AsGeoJSON(geom)    AS geojson
+        FROM public_cells
+        {where_sql}
+        GROUP BY cell_id, geom
+        ORDER BY cell_id;
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+    features = [
+        GeoJSONFeature(
+            geometry=json.loads(row["geojson"]),   # GeoJSON string -> dict
+            properties=CellProperties(
+                cellId=row["cell_id"],
+                precisionMetres=row["precision_metres"],
+                recordCount=int(row["record_count"]),
+                verifiedCount=int(row["verified_count"]),
+            ),
+        )
+        for row in rows
+    ]
+
+    return GeoJSONFeatureCollection(features=features)

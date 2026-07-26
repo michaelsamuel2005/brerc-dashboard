@@ -63,10 +63,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      - name: Load the B0 sample database
+      - name: Load the sample databases (B0 + B6)
         run: |
           psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           psql "$DATABASE_URL" -f ../db/b0_staging_setup.sql
+          psql "$DATABASE_URL" -f ../db/b6_schema.sql
+          psql "$DATABASE_URL" -f ../db/b6_sample_data.sql
 
       - name: Run the tests
         # Scoped to the API test suite (this backend workstream, B0/B6-B9).

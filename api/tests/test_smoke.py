@@ -14,7 +14,7 @@ runner. Its real-data behaviour is covered by tests/test_b0_integration.py.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import needs_db
+from conftest import needs_db, needs_b6_schema
 
 client = TestClient(app)
 
@@ -25,12 +25,14 @@ def test_health():
     assert r.json()["status"] == "ok"
 
 
+@needs_b6_schema
 def test_summary():
     r = client.get("/api/summary")
     assert r.status_code == 200
     body = r.json()
-    assert body["totalSpecies"] == 14830
+    assert isinstance(body["totalSpecies"], int)
     assert len(body["yearRange"]) == 2
+    assert "recordsByYear" in body
 
 
 @needs_db
@@ -45,18 +47,21 @@ def test_species_detail_and_404():
     assert client.get("/api/species/9999").status_code == 404
 
 
+@needs_b6_schema
 def test_distribution_cells():
     r = client.get("/api/distribution/cells")
     assert r.status_code == 200
     assert r.json()["type"] == "FeatureCollection"
 
 
+@needs_b6_schema
 def test_records():
     r = client.get("/api/records")
     assert r.status_code == 200
     assert "items" in r.json()
 
 
+@needs_b6_schema
 def test_provenance():
     r = client.get("/api/meta/provenance")
     assert r.status_code == 200
