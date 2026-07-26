@@ -14,14 +14,14 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.db import get_connection
-from conftest import needs_db  # shared skip-when-no-database marker
+from conftest import needs_db, needs_b6_schema  # shared skip markers
 
 client = TestClient(app)
 
 
-@needs_db
+@needs_b6_schema
 def test_species_returns_real_counts_not_stub_values():
-    """The sample data has exactly 3 species with counts 3, 2, 2."""
+    """/api/species reads public_species — sample data has 3 species, counts 3, 2, 2."""
     r = client.get("/api/species")
     assert r.status_code == 200
     body = r.json()

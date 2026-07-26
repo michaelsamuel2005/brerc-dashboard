@@ -35,16 +35,17 @@ def test_summary():
     assert "recordsByYear" in body
 
 
-@needs_db
+@needs_b6_schema
 def test_species_list():
     r = client.get("/api/species")
     assert r.status_code == 200
     assert "items" in r.json()
 
 
+@needs_b6_schema
 def test_species_detail_and_404():
-    assert client.get("/api/species/1").status_code == 200
-    assert client.get("/api/species/9999").status_code == 404
+    assert client.get("/api/species/100001").status_code == 200   # a real sample id
+    assert client.get("/api/species/999999").status_code == 404
 
 
 @needs_b6_schema

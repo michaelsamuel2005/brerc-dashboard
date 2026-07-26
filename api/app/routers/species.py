@@ -1,24 +1,20 @@
 """
-GET /api/species          — paginated species list — NOW READS REAL DATA (B0 proof).
-GET /api/species/{id}     — one species' detail — still a stub for now.
+GET /api/species          — paginated species list (real data from public_species).
+GET /api/species/{id}     — one species' detail (real data from public_species).
 
-This is the "one real endpoint" for the mid-review demo: it queries the
-`public_occurrences` view in the UI database and shapes the result into the same
-contract models the stubs used. The response SHAPE is unchanged, so the front end
-needs no modification — that was the whole point of building stubs first.
+Both read ONLY from the public_species view (safe by construction). speciesId is
+the real SPECIES_NO, so a list item's speciesId works directly with /species/{id}
+(list and detail stay consistent).
 
-The remaining endpoints stay stubbed until B8.
+Species image + description come from a cached species-info proxy
+(iNaturalist -> GBIF -> Wikipedia) — a later B8 sub-task. Until a licensed image
++ attribution is confirmed, they fail closed to None (no broken/unlicensed image).
 """
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import get_connection
-from app.models import (
-    SpeciesList,
-    SpeciesListItem,
-    SpeciesDetail,
-    SpeciesImage,
-)
+from app.models import SpeciesList, SpeciesListItem, SpeciesDetail
 
 router = APIRouter(prefix="/api", tags=["species"])
 
@@ -28,82 +24,67 @@ def list_species(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
 ) -> SpeciesList:
-    """
-    Build one row per species by grouping the occurrence records.
-
-    Reads ONLY from public_occurrences (the safe view), so recorder names and
-    precise coordinates are impossible to reach from here by construction.
-    """
     offset = (page - 1) * pageSize
 
-    # One row per distinct species, with its record count and year span.
-    # NOTE: %s placeholders are parameterised — values are passed separately,
-    # never glued into the string (that is how SQL injection happens).
-    sql = """
-        SELECT
-            scientific_name,
-            MAX(common_name)   AS common_name,
-            MAX(species_group) AS species_group,
-            COUNT(*)           AS record_count,
-            MIN(record_year)   AS first_year,
-            MAX(record_year)   AS last_year
-        FROM public_occurrences
-        GROUP BY scientific_name
+    rows_sql = """
+        SELECT species_id, scientific_name, common_name, species_group,
+               record_count, first_year, last_year, has_image
+        FROM public_species
         ORDER BY record_count DESC, scientific_name
         LIMIT %s OFFSET %s;
     """
-
-    count_sql = "SELECT COUNT(DISTINCT scientific_name) AS total FROM public_occurrences;"
+    count_sql = "SELECT COUNT(*) AS total FROM public_species;"
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (pageSize, offset))
+            cur.execute(rows_sql, (pageSize, offset))
             rows = cur.fetchall()
 
             cur.execute(count_sql)
             total = cur.fetchone()["total"]
 
-    # Shape the database rows into the agreed contract models.
-    #
-    # speciesId: the contract expects an integer id. The sample data has no
-    # species id column yet (that arrives with the real taxonomy table in B6),
-    # so we derive a stable positional id here. THIS IS A KNOWN PLACEHOLDER —
-    # replace it with the real SPECIES_NO once the taxonomy table exists.
     items = [
         SpeciesListItem(
-            speciesId=offset + index + 1,
+            speciesId=row["species_id"],
             scientificName=row["scientific_name"],
             commonName=row["common_name"],
             group=row["species_group"],
             recordCount=row["record_count"],
             firstYear=row["first_year"],
             lastYear=row["last_year"],
-            hasImage=False,  # image sourcing is B8; fail closed for now
+            hasImage=row["has_image"],
         )
-        for index, row in enumerate(rows)
+        for row in rows
     ]
-
     return SpeciesList(items=items, total=total, page=page, pageSize=pageSize)
 
 
 @router.get("/species/{species_id}", response_model=SpeciesDetail)
 def species_detail(species_id: int) -> SpeciesDetail:
-    """STILL A STUB — wired to real data in B8, once species ids exist."""
-    if species_id != 1:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT species_id, scientific_name, common_name, species_group,
+                       record_count, first_year, last_year, has_image
+                FROM public_species
+                WHERE species_id = %s;
+                """,
+                (species_id,),
+            )
+            row = cur.fetchone()
+
+    if row is None:
         raise HTTPException(status_code=404, detail="Species not found")
 
     return SpeciesDetail(
-        speciesId=1,
-        scientificName="Erithacus rubecula",
-        commonName="Robin",
-        group="birds",
-        recordCount=3,
-        firstYear=2022,
-        lastYear=2024,
-        image=SpeciesImage(
-            url="https://example.org/placeholder.jpg",
-            licence="CC BY 4.0",
-            attribution="Placeholder — real licensed image sourced in B8",
-        ),
-        description="Placeholder description — real text cached in B8.",
+        speciesId=row["species_id"],
+        scientificName=row["scientific_name"],
+        commonName=row["common_name"],
+        group=row["species_group"],
+        recordCount=row["record_count"],
+        firstYear=row["first_year"],
+        lastYear=row["last_year"],
+        image=None,        # fail closed — real licensed image is a later B8 sub-task
+        description=None,   # cached description is a later B8 sub-task
     )
