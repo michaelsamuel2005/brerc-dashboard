@@ -45,6 +45,16 @@ import pandas as pd
 # Keep the order stable forever.
 HASH_COLUMNS = [
     "scientific_name",
+    "common_name",
+    "place",
+    "abundance",
+    "sex_stage",
+    "record_type",
+    "vitality",
+    "verified",
+    # "comments" possible ignore since forbidden to show on FE
+    "eastings",
+    "northings",
 ]
 
 def _normalised_hash_value(value) -> str:
