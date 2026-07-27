@@ -30,9 +30,26 @@ from etl.safety_gate.public_output import FORBIDDEN_COLUMNS
 @pytest.fixture
 def dictionary_df():
     return pd.DataFrame({
-        "scientific": ["Myotis daubentonii", "Meles meles"],
-        "species_no": [12345, 300],
-        "nbn_number": ["NBN001", "NBN002"],
+        "scientific": [
+            "Myotis daubentonii",
+            "Meles meles",
+        ],
+        "species_no": [
+            12345,
+            300,
+        ],
+        "nbn_number": [
+            "NBN001",
+            "NBN002",
+        ],
+        "common_name": [
+            "Daubenton's bat",
+            "European badger",
+        ],
+        "taxanb": [
+            "NBN001",
+            "NBN002",
+        ],
     })
 
 
@@ -78,9 +95,10 @@ def patch_generalise(monkeypatch):
 # --- An edited record updates ---
 
 def test_edited_record_updates(dictionary_df):
-    with patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
-         patch("etl.reconciliation.reconcile.update_records") as mock_update, \
-         patch("etl.reconciliation.reconcile.delete_records") as mock_delete:
+    with patch("etl.reconciliation.reconcile.upsert_species") as mock_species, \
+        patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
+        patch("etl.reconciliation.reconcile.update_records") as mock_update, \
+        patch("etl.reconciliation.reconcile.delete_records") as mock_delete:
 
         source_df = pd.DataFrame([
             _source_row(1, "Meles meles", 400500, 300500),  # coordinates changed
@@ -103,7 +121,8 @@ def test_edited_record_updates(dictionary_df):
 # --- A retracted record disappears ---
 
 def test_retracted_record_disappears(dictionary_df):
-    with patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
+    with patch("etl.reconciliation.reconcile.upsert_species") as mock_species, \
+         patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
          patch("etl.reconciliation.reconcile.update_records") as mock_update, \
          patch("etl.reconciliation.reconcile.delete_records") as mock_delete:
 
@@ -124,7 +143,8 @@ def test_retracted_record_disappears(dictionary_df):
 # --- A re-run changes nothing ---
 
 def test_rerun_with_no_changes_is_noop(dictionary_df):
-    with patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
+    with patch("etl.reconciliation.reconcile.upsert_species") as mock_species, \
+         patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
          patch("etl.reconciliation.reconcile.update_records") as mock_update, \
          patch("etl.reconciliation.reconcile.delete_records") as mock_delete:
 
@@ -143,7 +163,8 @@ def test_rerun_with_no_changes_is_noop(dictionary_df):
 # --- Safety guarantee: forbidden fields never reach the DB write ---
 
 def test_inserts_never_contain_forbidden_fields(dictionary_df):
-    with patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
+    with patch("etl.reconciliation.reconcile.upsert_species") as mock_species, \
+         patch("etl.reconciliation.reconcile.insert_records") as mock_insert, \
          patch("etl.reconciliation.reconcile.update_records") as mock_update, \
          patch("etl.reconciliation.reconcile.delete_records") as mock_delete:
 

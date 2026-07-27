@@ -63,7 +63,9 @@ def resolve_species_numbers(
                 "scientific",
                 "scientific_key",
                 "species_no",
-                "nbn_number"
+                "nbn_number",
+                "common_name",
+                "taxanb",
             ]
         ]
         .drop_duplicates(

@@ -19,7 +19,6 @@
 """
 
 import pandas as pd
-from psycopg2.extras import execute_values
 
 
 def upsert_species(species_df: pd.DataFrame, connection) -> None:
@@ -33,35 +32,47 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
     rows = list(
         species_df[
             [
-                "species_id", "scientific_name", "common_name",
-                "species_group", "record_count", "first_year",
-                "last_year", "has_image",
+                "species_id",
+                "scientific_name",
+                "common_name",
+                "species_group",
+                "record_count",
+                "first_year",
+                "last_year",
+                "has_image",
             ]
         ].itertuples(index=False, name=None)
     )
 
-    with connection:
-        with connection.cursor() as cursor:
-            execute_values(
-                cursor,
-                """
-                INSERT INTO species (
-                    species_id, scientific_name, common_name,
-                    species_group, record_count, first_year,
-                    last_year, has_image
-                )
-                VALUES %s
-                ON CONFLICT (species_id) DO UPDATE SET
-                    scientific_name = EXCLUDED.scientific_name,
-                    common_name     = EXCLUDED.common_name,
-                    species_group   = EXCLUDED.species_group,
-                    record_count    = EXCLUDED.record_count,
-                    first_year      = EXCLUDED.first_year,
-                    last_year       = EXCLUDED.last_year,
-                    has_image       = EXCLUDED.has_image
-                """,
-                rows,
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO species (
+                species_id,
+                scientific_name,
+                common_name,
+                species_group,
+                record_count,
+                first_year,
+                last_year,
+                has_image
             )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s
+            )
+            ON CONFLICT (species_id) DO UPDATE SET
+                scientific_name = EXCLUDED.scientific_name,
+                common_name     = EXCLUDED.common_name,
+                species_group   = EXCLUDED.species_group,
+                record_count    = EXCLUDED.record_count,
+                first_year      = EXCLUDED.first_year,
+                last_year       = EXCLUDED.last_year,
+                has_image       = EXCLUDED.has_image
+            """,
+            rows,
+        )
+
+    connection.commit()
 
 
 def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
@@ -69,63 +80,74 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         return
 
     required = {
-        "record_id", "species_id", "record_year", "grid_ref",
-        "locality", "precision_metres", "verified", "content_hash",
+        "record_id",
+        "species_id",
+        "record_year",
+        "grid_ref",
+        "locality",
+        "precision_metres",
+        "verified",
+        "content_hash",
     }
+
     missing = required - set(records_df.columns)
+
     if missing:
         raise KeyError(
-            f"records_df is missing columns required to write to "
-            f"occurrence_public: {missing}"
+            f"records_df is missing columns required to write to occurrence_public: {missing}"
         )
 
     rows = list(
         records_df[
             [
-                "record_id", "species_id", "record_year", "grid_ref",
-                "precision_metres", "locality", "verified",
+                "record_id",
+                "species_id",
+                "record_year",
+                "grid_ref",
+                "precision_metres",
+                "locality",
+                "verified",
                 "content_hash",
             ]
         ].itertuples(index=False, name=None)
     )
 
-    with connection:
-        with connection.cursor() as cursor:
-            execute_values(
-                cursor,
-                """
-                INSERT INTO occurrence_public (
-                    record_id, species_id, record_year, grid_ref,
-                    precision_metres, locality, verified, content_hash
-                )
-                VALUES %s
-                ON CONFLICT (record_id) DO UPDATE SET
-                    species_id       = EXCLUDED.species_id,
-                    record_year      = EXCLUDED.record_year,
-                    grid_ref         = EXCLUDED.grid_ref,
-                    precision_metres = EXCLUDED.precision_metres,
-                    locality         = EXCLUDED.locality,
-                    verified         = EXCLUDED.verified,
-                    content_hash     = EXCLUDED.content_hash
-                """,
-                rows,
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO occurrence_public (
+                record_id,
+                species_id,
+                record_year,
+                grid_ref,
+                precision_metres,
+                locality,
+                verified,
+                content_hash
             )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s
+            )
+            ON CONFLICT (record_id) DO UPDATE SET
+                species_id       = EXCLUDED.species_id,
+                record_year      = EXCLUDED.record_year,
+                grid_ref         = EXCLUDED.grid_ref,
+                precision_metres = EXCLUDED.precision_metres,
+                locality         = EXCLUDED.locality,
+                verified         = EXCLUDED.verified,
+                content_hash     = EXCLUDED.content_hash
+            """,
+            rows,
+        )
+
+    connection.commit()
 
 
 def insert_records(records_df: pd.DataFrame, connection) -> None:
-    """
-    New records. Uses upsert under the hood (see module docstring) -
-    safe even if a record with this id somehow already exists.
-    """
     _upsert_occurrences(records_df, connection)
 
 
 def update_records(records_df: pd.DataFrame, connection) -> None:
-    """
-    Existing records whose source content changed. Same upsert as
-    insert_records - the ON CONFLICT clause is what makes this
-    genuinely "update" rather than error on a duplicate key.
-    """
     _upsert_occurrences(records_df, connection)
 
 
@@ -133,9 +155,13 @@ def delete_records(record_ids: set, connection) -> None:
     if not record_ids:
         return
 
-    with connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "DELETE FROM occurrence_public WHERE record_id = ANY(%s)",
-                (list(record_ids),),
-            )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            DELETE FROM occurrence_public
+            WHERE record_id = ANY(%s)
+            """,
+            (list(record_ids),),
+        )
+
+    connection.commit()
