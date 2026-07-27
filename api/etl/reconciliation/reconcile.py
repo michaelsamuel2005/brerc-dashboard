@@ -7,6 +7,7 @@ from etl.reconciliation.diff import (
     get_reconciliation_records,
 )
 from etl.reconciliation.load import (
+    upsert_species,
     insert_records,
     update_records,
     delete_records,
@@ -23,6 +24,9 @@ from etl.safety_gate.public_output import add_coarse_locality, prepare_public_ou
 
 from etl.aggregation.filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
+
+from etl.aggregation.species_index import build_species_index
+
 
 def make_safe_for_publishing(
     df: pd.DataFrame,
@@ -102,6 +106,36 @@ def reconcile(
     )
 
     # 6. Apply database changes - only ever safe_* data past this point.
+
+    # Build species rows from the records that are actually being loaded.
+    species_records = pd.concat(
+        [
+            records["inserts"],
+            records["updates"],
+        ],
+        ignore_index=True,
+    )
+
+    if not species_records.empty:
+        filtered_species_records = filter_accepted_records(
+            species_records,
+            verified_column="verified",
+        )
+
+        resolved_species_records = resolve_species_numbers(
+            filtered_species_records,
+            dictionary_df,
+        )
+
+        species_index = build_species_index(
+            resolved_species_records
+        )
+
+        upsert_species(
+            species_index,
+            connection,
+        )
+
     insert_records(safe_inserts, connection)
     update_records(safe_updates, connection)
     delete_records(records["deletes"], connection)

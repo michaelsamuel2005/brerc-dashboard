@@ -16,6 +16,7 @@ import pandas as pd
 
 # Represents the floor, no location may be shown more precisely than 100m
 D0_FLOOR_M = 100
+DEFAULT_RESOLUTION_M = 10000
 
 # Connection allows python to send SQL to PostGIS/PostgreSQL
 def generalise_locations(
@@ -33,7 +34,7 @@ def generalise_locations(
     # Never allow anything below 100m
     df["effective_resolution_m"] = (
         df[resolution_column]
-        .fillna(D0_FLOOR_M)
+        .fillna(DEFAULT_RESOLUTION_M)
         .clip(lower=D0_FLOOR_M)
     )
 
@@ -111,13 +112,13 @@ def generalise_locations(
                 buffer.seek(0)
 
                 # Bulk-loads the data with COPY -> Sends all coordinates to PostgreSQL
-                cursor.copy_expert(
+                with cursor.copy(
                     f"""
                     COPY {temp_table} (row_id, easting, northing, resolution_m)
                     FROM STDIN WITH CSV
-                    """,
-                    buffer,
-                )
+                    """
+                ) as copy:
+                    copy.write(buffer.getvalue())
 
                 # Generalise the whole chunk in PostGIS
                 cursor.execute(
