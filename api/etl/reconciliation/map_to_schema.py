@@ -29,7 +29,7 @@ def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
         "species_id": df["species_no"],
         "record_year": df["record_year"],
         "grid_ref": df["coarse_locality"],
-        "locality": df["coarse_locality"],
+        "locality": df["coarse_locality"], # Change once we can calculate unitary authority data
         "precision_metres": df["effective_resolution_m"],
         "verified": ~df["is_legacy"].astype(bool),
         "content_hash": df["content_hash"],

@@ -1,6 +1,8 @@
 import pandas as pd
 from etl.cleaning import clean_data
 
+# python -m etl.tests.test_dic
+
 
 # --------------------------------------------------
 # Load and clean the species dictionary
@@ -191,3 +193,5 @@ print(
     related_species
     .sort_values(["nbn_number", "species_no"])
 )
+
+print(cleaned_dictionary["taxanb"].value_counts(dropna=False))

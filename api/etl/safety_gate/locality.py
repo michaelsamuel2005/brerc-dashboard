@@ -35,9 +35,16 @@ def os_grid_square(
     full_ref = str(
         OSGridReference(int(easting), int(northing))
     )
+
     letters, easting_str, northing_str = full_ref.split(" ")
 
-    return f"{letters} {easting_str[:digits]} {northing_str[:digits]}"
+    # Return the same format used by occurrence_public.grid_ref:
+    # ST5872, ST61, ST5
+    return (
+        f"{letters}"
+        f"{easting_str[:digits]}"
+        f"{northing_str[:digits]}"
+    )
 
 
 def add_grid_square(
