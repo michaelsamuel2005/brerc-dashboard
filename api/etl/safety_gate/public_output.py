@@ -2,16 +2,26 @@ import pandas as pd
 
 from etl.safety_gate.locality import os_grid_square
 
+# Matches occurrence_public (db/b6_schema.sql) + the API contract's
+# public fields (species_id, precision_metres are shown to users -
+# see /api/species, /api/distribution/cells in the contract §10).
 PUBLIC_COLUMNS = [
     "unique_no",
+    "species_no",             # public - shown as speciesId in the contract
     "scientific_name",
     "record_type",
     "longitude",
     "latitude",
     "coarse_locality",
+    "effective_resolution_m", # public - shown as precisionMetres in the contract
     "record_date",
+    "is_legacy",
 ]
 
+# Genuinely never allowed past the boundary - precise location, free
+# text, personal data, and INTERNAL classification machinery that
+# reveals why/whether a record was flagged sensitive (is_sensitive,
+# sensitivity_reason would tell an adversary which records to target).
 FORBIDDEN_COLUMNS = {
     "place",
     "comments",
@@ -21,9 +31,7 @@ FORBIDDEN_COLUMNS = {
     "recorder_name",
     "sensitivity_reason",
     "is_sensitive",
-    "species_no",
     "nbn_number",
-    "effective_resolution_m",
 }
 
 
@@ -47,11 +55,7 @@ def add_coarse_locality(
     # IMPORTANT: easting_column/northing_column must be the SNAPPED
     # (generalised) coordinates from generalise_locations, i.e.
     # "snapped_easting"/"snapped_northing" - never the raw ones.
-    # coarse_locality is a D0 safety field; building it from precise
-    # coordinates would defeat the point of blurring them.
     df = df.copy()
-    # NOTE: grid square only for now - no unitary authority lookup
-    # yet, add it here later once that data source exists.
     df["coarse_locality"] = df.apply(
         lambda row: os_grid_square(
             row[easting_column], row[northing_column]
@@ -77,9 +81,6 @@ def prepare_public_output(df: pd.DataFrame) -> pd.DataFrame:
 
     public_df = df[PUBLIC_COLUMNS].copy()
 
-    # Records with no coordinates (excluded upstream in
-    # generalise_locations) are kept elsewhere for record counts,
-    # but must never reach public/map output.
     no_coordinates = (
         public_df["longitude"].isna()
         | public_df["latitude"].isna()

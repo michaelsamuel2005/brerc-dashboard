@@ -20,27 +20,35 @@ from etl.matching.species import resolve_species_numbers
 from etl.safety_gate.generalisation import generalise_locations
 from etl.safety_gate.public_output import add_coarse_locality, prepare_public_output
 
+
+from etl.aggregation.filtering import filter_accepted_records
+from etl.reconciliation.map_to_schema import map_to_occurrence_public
+
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     connection,
     easting_column: str = "eastings",
     northing_column: str = "northings",
-    resolution_column: str = "effective_resolution_m",
+    resolution_column: str = "resolution_m",
 ) -> pd.DataFrame:
     """
-    Runs raw source rows through the full safety pipeline before they
-    are allowed anywhere near the UI database. This is the only path
-    inserts/updates should ever take - insert_records/update_records
-    must never receive anything that hasn't been through this.
+    Runs raw source rows through the full safety pipeline, then maps
+    the result onto occurrence_public's real column names. This is
+    the only path inserts/updates should ever take.
     """
     if df.empty:
-        # Preserve content_hash even on an empty frame, so downstream
-        # concat/merge doesn't break on a missing column.
-        return df.assign(**{col: pd.Series(dtype="object") for col in
-                             ("longitude", "latitude", "coarse_locality")})
+        return pd.DataFrame(columns=[
+            "record_id", "species_id", "record_year", "grid_ref",
+            "locality", "precision_metres", "verified", "content_hash",
+        ])
 
-    resolved = resolve_species_numbers(df, dictionary_df)
+    # D5: verified-only + legacy-flagged-not-dropped, BEFORE anything
+    # else runs. A record failing both accepted and legacy checks
+    # must never reach classification, generalisation, or the DB.
+    filtered = filter_accepted_records(df, verified_column="verified")
+
+    resolved = resolve_species_numbers(filtered, dictionary_df)
     classified = classify_chunk(resolved)
     generalised = generalise_locations(
         classified,
@@ -57,14 +65,10 @@ def make_safe_for_publishing(
 
     safe_df = prepare_public_output(with_locality)
 
-    # content_hash isn't a PUBLIC_COLUMN (it's not public-facing) but
-    # the UI table still needs to store it, so next run can diff
-    # against it. Re-attach it by unique_no after prepare_public_output
-    # has stripped everything else down.
     hash_lookup = with_locality.set_index("unique_no")["content_hash"]
     safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
 
-    return safe_df
+    return map_to_occurrence_public(safe_df)
 
 
 def reconcile(

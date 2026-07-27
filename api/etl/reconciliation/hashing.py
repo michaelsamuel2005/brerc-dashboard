@@ -45,8 +45,8 @@ import pandas as pd
 # Keep the order stable forever.
 HASH_COLUMNS = [
     "scientific_name",
-    "common_name",
-    "place",
+    # "common_name",
+    # "place",
     "abundance",
     "sex_stage",
     "record_type",

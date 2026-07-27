@@ -19,7 +19,6 @@ _DIGITS_BY_SQUARE_SIZE_M = {
     100: 3,
 }
 
-
 def os_grid_square(
     easting: float,
     northing: float,
@@ -59,3 +58,28 @@ def add_grid_square(
         return os_grid_square(easting, northing, square_size_m)
 
     return df.apply(_row_ref, axis=1)
+
+
+def add_coarse_locality(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+
+    df = df.copy()
+
+    df["grid_square"] = add_grid_square(
+        df,
+        easting_column="snapped_easting",
+        northing_column="snapped_northing",
+        square_size_m=1_000,
+    )
+
+    # TODO: determine authority from generalised coordinates
+    df["unitary_authority"] = ...
+
+    df["coarse_locality"] = (
+        df["unitary_authority"]
+        + " | "
+        + df["grid_square"]
+    )
+
+    return df
