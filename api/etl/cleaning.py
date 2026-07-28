@@ -1,16 +1,24 @@
-import pandas as pd
+import pandas as pd 
 
-# Takes in df (dataset) which is pandas and returns pandas dataframe (run via python test_cleaning.py)
+# Cleaning column names:
+def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
+
+    cleaned_df = df.copy()
+
+    cleaned_df.columns = (
+        cleaned_df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_", regex=False)
+    )
+
+    return cleaned_df
+
+# Applying cleaning steps
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    
-    """
-    Clean and standardise dataset
-    """
 
-    print(df.head())
-    # shows all column names
-    print(df.columns)
-    print(df.info())
-    print(df.isna().sum())
+    # Cleans the column names
+    cleaned_df = clean_column_names(df)
 
-    return df
+    # Returns the cleaned DF
+    return cleaned_df
