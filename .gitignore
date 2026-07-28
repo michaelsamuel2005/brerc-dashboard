@@ -25,5 +25,7 @@ build/
 coverage/
 *.log
 
-# Data — do not commit client data
-data/
+# Data — never commit real/sensitive data (species locations, personal data).
+# The folder and its README are tracked; everything else inside is ignored.
+data/*
+!data/README.md

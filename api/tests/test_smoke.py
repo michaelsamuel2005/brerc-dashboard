@@ -1,0 +1,69 @@
+"""
+Minimal smoke test (for CI, B0).
+
+Confirms the app starts and every stub endpoint returns HTTP 200 with JSON in
+the contract shape (validated by the Pydantic response_model). This is the
+"does it start + do stubs respond" check — not the full C2 audit (that's B10).
+
+These tests must run WITHOUT a database. The one endpoint that is already wired
+to real data — /api/species — therefore carries the `needs_db` marker so it
+SKIPS (instead of failing) when no database is reachable, e.g. on a clean CI
+runner. Its real-data behaviour is covered by tests/test_b0_integration.py.
+"""
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+from conftest import needs_db, needs_b6_schema
+
+client = TestClient(app)
+
+
+def test_health():
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
+@needs_b6_schema
+def test_summary():
+    r = client.get("/api/summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body["totalSpecies"], int)
+    assert len(body["yearRange"]) == 2
+    assert "recordsByYear" in body
+
+
+@needs_b6_schema
+def test_species_list():
+    r = client.get("/api/species")
+    assert r.status_code == 200
+    assert "items" in r.json()
+
+
+@needs_b6_schema
+def test_species_detail_and_404():
+    assert client.get("/api/species/100001").status_code == 200   # a real sample id
+    assert client.get("/api/species/999999").status_code == 404
+
+
+@needs_b6_schema
+def test_distribution_cells():
+    r = client.get("/api/distribution/cells")
+    assert r.status_code == 200
+    assert r.json()["type"] == "FeatureCollection"
+
+
+@needs_b6_schema
+def test_records():
+    r = client.get("/api/records")
+    assert r.status_code == 200
+    assert "items" in r.json()
+
+
+@needs_b6_schema
+def test_provenance():
+    r = client.get("/api/meta/provenance")
+    assert r.status_code == 200
+    assert "sources" in r.json()
