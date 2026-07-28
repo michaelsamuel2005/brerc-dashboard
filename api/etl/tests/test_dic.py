@@ -1,5 +1,5 @@
 import pandas as pd
-from etl.cleaning import clean_data
+from etl.profiling.cleaning import clean_data
 
 # python -m etl.tests.test_dic
 

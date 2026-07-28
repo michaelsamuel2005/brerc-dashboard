@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.cleaning import (
+from etl.profiling.cleaning import (
     clean_data,
 )
 from etl.aggregation.cell_filtering import (

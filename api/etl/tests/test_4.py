@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.cleaning import clean_data
+from etl.profiling.cleaning import clean_data
 from etl.safety_gate.generalisation import (
     report_match_coverage,
     check_nbn_consistency,

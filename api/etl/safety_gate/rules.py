@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.cleaning import clean_data
+from etl.profiling.cleaning import clean_data
 from pathlib import Path
 
 # Enables reading sensitive species from any persons own pathway

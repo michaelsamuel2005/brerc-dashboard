@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
-from etl.validation import validate_unique_no, validate_species_name, validate_avon_flag, validate_record_type, calculate_dictionary_match, get_sensitive_record_types, get_verified_types
-from etl.cleaning import clean_data 
+from etl.profiling.validation import validate_unique_no, validate_species_name, validate_avon_flag, validate_record_type, calculate_dictionary_match, get_sensitive_record_types, get_verified_types
+from etl.profiling.cleaning import clean_data 
 
 DATA_DIR = Path(
     "/Users/tingtinghe/Documents/brerc-dashboard/data"
