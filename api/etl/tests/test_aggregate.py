@@ -22,18 +22,53 @@ ACCEPTED_VALUE = next(iter(ACCEPTED_VERIFIED_VALUES))
 
 def _make_records():
     return pd.DataFrame([
-        {"unique_no": 1, "species_no": 100, "scientific_name": "Myotis daubentonii",
-         "verified": ACCEPTED_VALUE,
-         "easting": 400000, "northing": 300000, "record_date": "23/03/2023"},
-        {"unique_no": 2, "species_no": 100, "scientific_name": "Myotis daubentonii",
-         "verified": ACCEPTED_VALUE,
-         "easting": 400100, "northing": 300100, "record_date": "24/03/2023"},
-        {"unique_no": 3, "species_no": 200, "scientific_name": "Pipistrellus pipistrellus",
-         "verified": "Rejected",
-         "easting": 401000, "northing": 301000, "record_date": "01/06/2023"},
-        {"unique_no": 4, "species_no": 300, "scientific_name": "Meles meles",
-         "verified": "BRERC",
-         "easting": 402000, "northing": 302000, "record_date": "10/07/2023"},
+        {
+            "unique_no": 1,
+            "species_no": 100,
+            "scientific_name": "Myotis daubentonii",
+            "common_name": "Daubenton's bat",
+            "taxanb": "Mammals",
+            "verified": ACCEPTED_VALUE,
+            "easting": 400000,
+            "northing": 300000,
+            "record_date": "23/03/2023"
+        },
+
+        {
+            "unique_no": 2,
+            "species_no": 100,
+            "scientific_name": "Myotis daubentonii",
+            "common_name": "Daubenton's bat",
+            "taxanb": "Mammals",
+            "verified": ACCEPTED_VALUE,
+            "easting": 400100,
+            "northing": 300100,
+            "record_date": "24/03/2023"
+        },
+
+        {
+            "unique_no": 3,
+            "species_no": 200,
+            "scientific_name": "Pipistrellus pipistrellus",
+            "common_name": "Common pipistrelle",
+            "taxanb": "Mammals",
+            "verified": "Rejected",
+            "easting": 401000,
+            "northing": 301000,
+            "record_date": "01/06/2023"
+        },
+
+        {
+            "unique_no": 4,
+            "species_no": 300,
+            "scientific_name": "Meles meles",
+            "common_name": "European badger",
+            "taxanb": "Mammals",
+            "verified": "BRERC",
+            "easting": 402000,
+            "northing": 302000,
+            "record_date": "10/07/2023"
+        },
     ])
 
 
@@ -52,7 +87,7 @@ def test_species_index_built_from_loaded_records_only():
     filtered = filter_accepted_records(records, verified_column="verified")
     index = build_species_index(filtered)
 
-    assert set(index["species_no"]) == {100, 300}
+    assert set(index["species_id"]) == {100, 300}
 
 
 # --- Totals reconcile ---
