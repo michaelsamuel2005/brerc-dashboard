@@ -6,6 +6,7 @@ import { SpeciesPanel } from "../features/species/SpeciesPanel";
 import { CellSummaryTable } from "../features/species/CellSummaryTable";
 import { RecordsTable } from "../features/species/RecordsTable";
 import { LoadingState } from "../components/states/States";
+import { SummaryBar } from "../features/landing/SummaryBanner";
 
 // The map bundle (maplibre-gl) is heavy, so it is code-split and loaded lazily.
 const DistributionMap = lazy(() => import("../features/map/DistributionMap"));
@@ -28,6 +29,7 @@ export function App() {
       </header>
 
       <main id="main">
+        <SummaryBar />
         <span className="eyebrow">Distribution</span>
         <h1 className="page-title">Where wildlife has been recorded</h1>
         <p className="page-lead">
