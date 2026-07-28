@@ -7,7 +7,7 @@
 
 import pandas as pd
 
-from etl.aggregation.filtering import (
+from etl.aggregation.cell_filtering import (
     filter_accepted_records,
     ACCEPTED_VERIFIED_VALUES,
 )

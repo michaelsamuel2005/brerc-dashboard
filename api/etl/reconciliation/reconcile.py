@@ -22,7 +22,7 @@ from etl.safety_gate.generalisation import generalise_locations
 from etl.safety_gate.public_output import add_coarse_locality, prepare_public_output
 
 
-from etl.aggregation.filtering import filter_accepted_records
+from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
 
 from etl.aggregation.species_index import build_species_index

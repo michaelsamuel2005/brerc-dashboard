@@ -13,7 +13,7 @@ Checks:
 
 import pandas as pd
 
-from etl.aggregation.filtering import filter_accepted_records
+from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.aggregation.species_index import build_species_index
 from etl.aggregation.counts import (
     aggregate_counts,
