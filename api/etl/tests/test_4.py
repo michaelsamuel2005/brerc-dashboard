@@ -1,12 +1,11 @@
 import pandas as pd
 
 from etl.cleaning import clean_data
-from etl.generalisation import (
-    resolve_species_numbers,
+from etl.safety_gate.generalisation import (
     report_match_coverage,
     check_nbn_consistency,
 )
-
+from etl.matching.species import resolve_species_numbers
 
 # =========================
 # LOAD DICTIONARY

@@ -3,7 +3,7 @@ import pandas as pd
 from etl.cleaning import (
     clean_data,
 )
-from etl.filtering import (
+from etl.aggregation.filtering import (
     filter_sensitive_species
 )
 from etl.generalisation import (
