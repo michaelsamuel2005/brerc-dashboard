@@ -8,6 +8,8 @@ Thumbs.db
 # Secrets / environment
 .env
 .env.*
+# keep the no-secrets template committed:
+!.env.example
 
 # Python
 __pycache__/

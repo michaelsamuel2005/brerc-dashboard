@@ -69,6 +69,7 @@ jobs:
           psql "$DATABASE_URL" -f ../db/b0_staging_setup.sql
           psql "$DATABASE_URL" -f ../db/b6_schema.sql
           psql "$DATABASE_URL" -f ../db/b6_sample_data.sql
+          psql "$DATABASE_URL" -f ../db/b7_tiles.sql
 
       - name: Run the tests
         # Scoped to the API test suite (this backend workstream, B0/B6-B9).
