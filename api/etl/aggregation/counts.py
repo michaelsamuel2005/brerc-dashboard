@@ -15,26 +15,22 @@
 
 import pandas as pd
 
-from etl.aggregation.filtering import filter_accepted_records  # adjust path
-from etl.aggregation.species_index import build_species_index        # adjust path
-from etl.safety_gate.locality import os_grid_square                  # adjust path
+from etl.safety_gate.locality import os_grid_square
 
 SUPPRESSION_THRESHOLD = None           # TODO: BRERC's number - not yet given
-CELL_SIZE_M = None                     # TODO: confirm reporting grid size
-# ----------------------
-
 
 def aggregate_counts(
     filtered_df: pd.DataFrame,
     easting_column: str,
     northing_column: str,
     date_column: str,
-    cell_size_m: int = CELL_SIZE_M,
+    cell_size_m: int,
 ) -> pd.DataFrame:
     """
     Counts by species_no x grid cell x year. Full recompute each
     run - no incremental diffing here, unlike B3.
     """
+
     if cell_size_m is None:
         raise ValueError(
             "CELL_SIZE_M is not set - confirm the reporting grid "
@@ -43,26 +39,72 @@ def aggregate_counts(
 
     df = filtered_df.copy()
 
+
+    # Remove records where location cannot be converted into
+    # a reporting grid cell. These cannot contribute to the
+    # spatial aggregation safely.
+    df = df.dropna(
+        subset=[
+            easting_column,
+            northing_column
+        ]
+    )
+
+
+    # Convert precise eastings/northings into the reporting grid.
+    # This ensures aggregation happens against the public-facing
+    # spatial unit rather than exact coordinates.
     df["grid_cell"] = df.apply(
         lambda row: os_grid_square(
-            row[easting_column], row[northing_column], cell_size_m
+            row[easting_column],
+            row[northing_column],
+            cell_size_m
         ),
         axis=1,
     )
 
-    df["year"] = pd.to_datetime(
-        df[date_column], dayfirst=True
-    ).dt.year
 
-    aggregated = (
-        df
-        .groupby(["species_no", "grid_cell", "year"])
-        .size()
-        .reset_index(name="count")
+    # Extract the year from the observation date.
+    # Invalid dates become NaN and are removed because they cannot
+    # contribute to a species x cell x year count.
+    df["year"] = (
+        pd.to_datetime(
+            df[date_column],
+            dayfirst=True,
+            errors="coerce",
+        )
+        .dt.year
     )
 
-    return aggregated
+    df = df.dropna(
+        subset=["year"]
+    )
 
+
+    # Count records by:
+    #   - species
+    #   - reporting grid cell
+    #   - observation year
+    #
+    # Each row represents the number of observations of a species
+    # within one grid square during one year.
+    aggregated = (
+        df
+        .groupby(
+            [
+                "species_no",
+                "grid_cell",
+                "year",
+            ]
+        )
+        .size()
+        .reset_index(
+            name="count"
+        )
+    )
+
+
+    return aggregated
 
 def suppress_low_counts(
     aggregated_df: pd.DataFrame,
