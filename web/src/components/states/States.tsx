@@ -2,16 +2,17 @@
 // meaningful information, not an error.
 export function LoadingState({ label = "content" }: { label?: string }) {
   return (
-    <p role="status" aria-live="polite">
-      Loading {label}…
-    </p>
+    <div role="status" aria-live="polite" aria-label={`Loading ${label}`}>
+      <p>Loading {label}…</p>
+    </div>
   );
 }
 
 export function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   return (
     <div role="alert">
-      <p>Sorry — {message ?? "something went wrong loading this section."}</p>
+      <h3>Sorry, something went wrong</h3>
+      <p>{message ?? "something went wrong loading this section."}</p>
       {onRetry ? (
         <button type="button" onClick={onRetry}>
           Try again
@@ -21,6 +22,11 @@ export function ErrorState({ message, onRetry }: { message?: string; onRetry?: (
   );
 }
 
-export function EmptyState({ message = "No records here." }: { message?: string }) {
-  return <p>{message}</p>;
+export function EmptyState({ title = "No records here", message = "There is nothing to show right now." }: { title?: string; message?: string }) {
+  return (
+    <div role="status" aria-live="polite">
+      <h3>{title}</h3>
+      <p>{message}</p>
+    </div>
+  );
 }

@@ -45,8 +45,6 @@ test are the client-side net (the server contract is the fix — see assumptions
   CI + forbidden-field build guard, ADRs.
 - **P2:** the MapLibre distribution map (`react-map-gl/maplibre`) + colour-safe legend,
   reusing this exact data layer — plus the `/api/distribution/tiles` MVT path.
-<<<<<<< HEAD
-=======
 # 🌿 web/ — Public Dashboard (front-end)
 
 The **public, accessible dashboard** for BRERC's website — interactive
@@ -77,4 +75,3 @@ species‑distribution maps with species information and images. Built with
 
 - 🗂️ [Project structure](../docs/PROJECT_STRUCTURE.md) — what every folder is for.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).
->>>>>>> bcc692d (README change)
