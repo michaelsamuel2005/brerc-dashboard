@@ -1,8 +1,12 @@
 import pandas as pd
 
 from etl.cleaning import clean_data
+from pathlib import pathlib
 
-sensitive_species_df = pd.read_csv("/Users/tingtinghe/Documents/brerc-dashboard/data/sensitive_species.csv")
+# Enables reading sensitive species from any persons own pathway
+DATA_DIR = Path(__file__).resolve().parents[3]/ "data"
+sensitive_species_df = pd.read_cvs(DATA_DIR / sensitive_species.csv)
+
 sensitive_species_df_clean = clean_data(sensitive_species_df)
 
 D0_FLOOR_M = 100
@@ -38,7 +42,7 @@ FLAGGED_RECORD_TYPES = frozenset({
     "day roost",
     "rosette count",
     # for bat roost and plant
-    "field record"
+    "field record",
     "field record (bat roost sensitive record)",
     "field record (plant sensitive record)",
     "bat detector",
