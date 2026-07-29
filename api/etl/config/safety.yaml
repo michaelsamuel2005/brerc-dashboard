@@ -1,7 +1,7 @@
 # Safety Gate Configuration
 files: 
-  sensetive_species:
-    path: data/sensetive_species.csv
+  sensitive_species:
+    path: "data/sensitive_species.csv"
 
 columns:
   species_number:
@@ -15,8 +15,7 @@ generalisation:
   d0_floor_m: 100 
   default_sensitive_resolution_m: 10000
 
-species_resolution:
-  # LATER
+species_resolutions: {}
 
 flagged_record_types:
   - trapped at actinic light

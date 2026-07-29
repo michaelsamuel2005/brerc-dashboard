@@ -13,25 +13,9 @@ NOTE:
 """
 
 from pathlib import Path
-import yaml
+from etl.config.loader import load_safety_config
 
-# Enters the config/safety_rules.yaml
-CONFIG_PATH = (
-    Path(__file__)
-    .resolve()
-    .parents[1]
-    / "config"
-    / "safety_rules.yaml"
-)
-
-# Reads the file, converts to python dictionary
-def load_safety_rules():
-
-    with open(CONFIG_PATH, "r") as file:
-        return yaml.safe_load(file)
-
-# Loads configurations once file has been imported
-CONFIG = load_safety_rules()
+CONFIG = load_safety_config()
 
 # Generalisation rules
 
@@ -41,7 +25,6 @@ DEFAULT_SENSITIVE_RESOLUTION_M = (
     CONFIG["generalisation"]
     ["default_sensitive_resolution_m"]
 )
-
 
 SPECIES_RESOLUTIONS_M = (
     CONFIG["species_resolutions"]
@@ -61,9 +44,20 @@ def load_sensitive_species():
     from etl.profiling.cleaning import clean_data
 
     # Get CSV location from YAML
-    sensitive_species_file = (
-        Path(CONFIG["files"]["sensitive_species"]["path"])
+    sensitive_species_file = Path(
+        CONFIG["files"]["sensitive_species"]["path"]
     )
+
+    # Convert relative paths from YAML into absolute paths.
+    # This means the pipeline does not depend on where the user
+    # runs the command from.
+    if not sensitive_species_file.is_absolute():
+        sensitive_species_file = (
+            Path(__file__)
+            .resolve()
+            .parents[3]
+            / sensitive_species_file
+        )
 
     # Read + clean CSV 
     df = pd.read_csv(

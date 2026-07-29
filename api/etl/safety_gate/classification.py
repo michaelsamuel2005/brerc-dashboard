@@ -24,7 +24,7 @@ def classify_chunk(
 
     df = df.copy()
 
-    # Required columns for classificastion to run
+    # Required columns for classification to run
     required_columns = {
         "species_no",
         "species_unresolved",

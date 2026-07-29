@@ -1,11 +1,6 @@
-# TODO: this test file will crash on import for anyone without a local
-# data/sensitive_species.csv (see rules.py TODO). Fine on your machine,
-# not yet portable — revisit once rules.py lazy-loads instead of reading
-# the CSV at import time.
-
 import pandas as pd
-from etl.safety_gate import classify
-from etl.safety_gate.classify import classify_chunk
+from etl.safety_gate import classification
+from etl.safety_gate.classification import classify_chunk
 
 FAKE_SENSITIVE_SPECIES_NOS = {101}
 FAKE_FLAGGED_RECORD_TYPES = {"roost"}
@@ -15,11 +10,11 @@ FAKE_SPECIES_RESOLUTIONS_M = {}
 
 
 def _patch_rules(monkeypatch):
-    monkeypatch.setattr(classify, "SENSITIVE_SPECIES_NOS", FAKE_SENSITIVE_SPECIES_NOS)
-    monkeypatch.setattr(classify, "FLAGGED_RECORD_TYPES", FAKE_FLAGGED_RECORD_TYPES)
-    monkeypatch.setattr(classify, "DEFAULT_SENSITIVE_RESOLUTION_M", FAKE_DEFAULT_RESOLUTION_M)
-    monkeypatch.setattr(classify, "D0_FLOOR_M", FAKE_D0_FLOOR_M)
-    monkeypatch.setattr(classify, "SPECIES_RESOLUTIONS_M", FAKE_SPECIES_RESOLUTIONS_M)
+    monkeypatch.setattr(classification, "SENSITIVE_SPECIES_NOS", FAKE_SENSITIVE_SPECIES_NOS)
+    monkeypatch.setattr(classification, "FLAGGED_RECORD_TYPES", FAKE_FLAGGED_RECORD_TYPES)
+    monkeypatch.setattr(classification, "DEFAULT_SENSITIVE_RESOLUTION_M", FAKE_DEFAULT_RESOLUTION_M)
+    monkeypatch.setattr(classification, "D0_FLOOR_M", FAKE_D0_FLOOR_M)
+    monkeypatch.setattr(classification, "SPECIES_RESOLUTIONS_M", FAKE_SPECIES_RESOLUTIONS_M)
 
 
 def test_classify_chunk_flags_sensitive_species(monkeypatch):
@@ -34,8 +29,9 @@ def test_classify_chunk_flags_sensitive_species(monkeypatch):
     result = classify_chunk(df)
     assert result["is_sensitive"].iloc[0] == True
     assert result["blurred"].iloc[0] == True
-    assert result["sensitivity_reason"].iloc[0] == "sensitive_species"
-
+    assert result["sensitivity_reason"].iloc[0] == [
+        "sensitive_species"
+    ]
 
 def test_classify_chunk_flags_sensitive_record_type(monkeypatch):
     # Confirms a flagged record_type is sensitive even with an ordinary species.
@@ -48,8 +44,9 @@ def test_classify_chunk_flags_sensitive_record_type(monkeypatch):
     })
     result = classify_chunk(df)
     assert result["is_sensitive"].iloc[0] == True
-    assert result["sensitivity_reason"].iloc[0] == "sensitive_record_type"
-
+    assert result["sensitivity_reason"].iloc[0] == [
+        "sensitive_record_type"
+    ]
 
 def test_classify_chunk_fails_closed_on_unresolved_species(monkeypatch):
     # Confirms an unresolved species is always sensitive (D1 fail-closed).
@@ -62,8 +59,25 @@ def test_classify_chunk_fails_closed_on_unresolved_species(monkeypatch):
     })
     result = classify_chunk(df)
     assert result["is_sensitive"].iloc[0] == True
-    assert result["sensitivity_reason"].iloc[0] == "unresolved_species"
+    assert result["sensitivity_reason"].iloc[0] == [
+        "unresolved_species"
+    ]
 
+def test_classify_chunk_records_multiple_reasons(monkeypatch):
+    _patch_rules(monkeypatch)
+
+    df = pd.DataFrame({
+        "species_no": [101],
+        "record_type": ["roost"],
+        "species_unresolved": [False],
+    })
+
+    result = classify_chunk(df)
+
+    assert result["sensitivity_reason"].iloc[0] == [
+        "sensitive_record_type",
+        "sensitive_species",
+    ]
 
 def test_classify_chunk_leaves_ordinary_record_unflagged(monkeypatch):
     # Confirms a record matching none of the triggers stays not sensitive.

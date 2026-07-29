@@ -19,10 +19,10 @@ config = load_safety_config()
 logger = logging.getLogger(__name__)
 
 # Hard safety floor: no location can ever be shown more precisely than 100m
-D0_FLOOR_M = config["safety_gate"]["d0_floor_m"]
+D0_FLOOR_M = config["generalisation"]["d0_floor_m"]
 
 # Default blur distance for sensitive records when no specific resolution exists
-DEFAULT_SENSITIVE_RESOLUTION_M = config["safety_gate"]["default_sensitive_resolution_m"]
+DEFAULT_SENSITIVE_RESOLUTION_M = config["generalisation"]["default_sensitive_resolution_m"]
 
 # Connection allows python to send SQL to PostGIS/PostgreSQL
 def generalise_locations(
