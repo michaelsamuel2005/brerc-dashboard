@@ -67,3 +67,16 @@ flagged_record_types:
   - found dead
   - dam
   - gnawed timber
+
+# B3 
+
+reconciliation:
+  hash_columns:
+    - scientific_name
+    - abundance
+    - sex_stage
+    - record_type 
+    - vitality 
+    - verified 
+    - eastings 
+    - nothings 
