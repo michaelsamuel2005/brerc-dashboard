@@ -1,0 +1,70 @@
+# Safety Gate Configuration
+files: 
+  sensetive_species:
+    path: data/sensetive_species.csv
+
+columns:
+  species_number:
+    species_no
+
+  nbs_number:
+    nbs_number
+
+generalisation:
+  
+  d0_floor_m: 100 
+  default_sensitive_resolution_m: 10000
+
+species_resolution:
+  # LATER
+
+flagged_record_types:
+  - trapped at actinic light
+  - trapped at light
+  - trapped at mercury vapour light
+  - night roost
+  - tagged night roost
+  - plant count
+  - maternity roost
+  - flower count"
+  - photographed
+  - summer roost 
+  - hibernation 
+  - daylight site visit 
+  - day roost
+  - rosette count
+    # for bat roost and plant
+  - field record
+  - field record (bat roost sensitive record
+  - field record (plant sensitive record
+  - bat detector 
+  - box survey 
+  - hibernation roost
+  - earth 
+  - droppings 
+  - handled 
+  - burrow 
+  - pre-parturition roost
+  - netted 
+  - box survey 
+  - breeding
+  - roost 
+  - emergence count
+  - tagged day roost 
+  - grounded
+  - possibly breeding 
+  - nest",
+  - field record 
+  - holt
+  - bedding
+  - bat roost
+  - lie-up
+  - DNA or eDNA testing
+  - AI or programme analysis
+  - Beaver Lodge
+  - Acoustic audio recording
+  - Acoustic audio record
+  - found dead
+  - found dead
+  - dam
+  - gnawed timber

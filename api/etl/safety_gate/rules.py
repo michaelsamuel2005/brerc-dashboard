@@ -1,81 +1,99 @@
-import pandas as pd
+# Loads BRERC safety settings from YAML
+# Contains interface used by safety gate
+# Organisation specific rules are in: config/safety_rules.yaml
 
-from etl.profiling.cleaning import clean_data
+"""
+NOTE:
+    - CONFIG["key"] returns the value stored under "key".
+      Could be a dictionary, list, string, number, etc.
+
+    - CONFIG["key1"]["key2"] first gets the value stored under
+      "key1" (usually another dictionary), then retrieves the
+      value stored under "key2".
+"""
+
 from pathlib import Path
+import yaml
 
-# Enables reading sensitive species from any persons own pathway
-DATA_DIR = Path(__file__).resolve().parents[3]/ "data"
-sensitive_species_df = pd.read_csv(
-    DATA_DIR / "sensitive_species.csv"
+# Enters the config/safety_rules.yaml
+CONFIG_PATH = (
+    Path(__file__)
+    .resolve()
+    .parents[1]
+    / "config"
+    / "safety_rules.yaml"
 )
 
-sensitive_species_df_clean = clean_data(sensitive_species_df)
+# Reads the file, converts to python dictionary
+def load_safety_rules():
 
-D0_FLOOR_M = 100
+    with open(CONFIG_PATH, "r") as file:
+        return yaml.safe_load(file)
 
-DEFAULT_SENSITIVE_RESOLUTION_M = 10000
+# Loads configurations once file has been imported
+CONFIG = load_safety_rules()
 
-SPECIES_RESOLUTIONS_M = {
-    # Empty since BRERC hasn't provided
-    # For D2 
-}
+# Generalisation rules
 
-SENSITIVE_SPECIES_NOS = set(
-    sensitive_species_df_clean["species_no"].dropna()
+D0_FLOOR_M = CONFIG["generalisation"]["d0_floor_m"]
+
+DEFAULT_SENSITIVE_RESOLUTION_M = (
+    CONFIG["generalisation"]
+    ["default_sensitive_resolution_m"]
 )
 
-SENSITIVE_NBN_NUMBERS = set(
-    sensitive_species_df_clean["nbn_number"].dropna()
+
+SPECIES_RESOLUTIONS_M = (
+    CONFIG["species_resolutions"]
 )
 
-FLAGGED_RECORD_TYPES = frozenset({
-    "trapped at actinic light",
-    "trapped at light",
-    "trapped at mercury vapour light",
-    "night roost",
-    "tagged night roost",
-    "plant count",
-    "maternity roost",
-    "flower count",
-    "photographed",
-    "summer roost",
-    "hibernation",
-    "daylight site visit",
-    "day roost",
-    "rosette count",
-    # for bat roost and plant
-    "field record",
-    "field record (bat roost sensitive record)",
-    "field record (plant sensitive record)",
-    "bat detector",
-    "box survey",
-    "hibernation roost",
-    "earth",
-    "droppings",
-    "handled",
-    "burrow",
-    "pre-parturition roost",
-    "netted",
-    "box survey",
-    "breeding",
-    "roost",
-    "emergence count",
-    "tagged day roost ",
-    "grounded",
-    "possibly breeding",
-    "nest",
-    "field record",
-    "holt",
-    "bedding",
-    "bat roost",
-    "lie-up",
-    "DNA or eDNA testing",
-    "AI or programme analysis",
-    "Beaver Lodge",
-    "Acoustic audio recording",
-    "Acoustic audio record",
-    "found dead",
-    "found dead",
-    "dam",
-    "gnawed timber"
-})
+# Record type rules
+
+FLAGGED_RECORD_TYPES = frozenset(
+    CONFIG["flagged_record_types"]
+)
+
+# Sensitive species
+
+def load_sensitive_species():
+
+    import pandas as pd
+    from etl.profiling.cleaning import clean_data
+
+    # Get CSV location from YAML
+    sensitive_species_file = (
+        Path(CONFIG["files"]["sensitive_species"]["path"])
+    )
+
+    # Read + clean CSV 
+    df = pd.read_csv(
+        sensitive_species_file
+    )
+    df = clean_data(df)
+
+    # Create sets for species_no and nbm_number (drops missing values)
+    sensitive_species_nos = set(
+        df["species_no"]
+        .dropna()
+    )
+
+    sensitive_nbn_numbers = set(
+        df["nbn_number"]
+        .dropna()
+    )
+
+
+    return (
+        sensitive_species_nos,
+        sensitive_nbn_numbers,
+    )
+
+# Load the sensitive species data once when this module is imported.
+# load_sensitive_species() returns TWO values:
+#   1. the set of sensitive species numbers
+#   2. the set of sensitive NBN numbers
+# These are unpacked into two module-level constants.
+(
+    SENSITIVE_SPECIES_NOS,
+    SENSITIVE_NBN_NUMBERS,
+) = load_sensitive_species()
