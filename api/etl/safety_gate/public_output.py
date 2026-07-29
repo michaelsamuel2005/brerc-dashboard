@@ -1,6 +1,9 @@
 import pandas as pd
+import logging
 
 from etl.safety_gate.location import os_grid_square
+
+logger = logging.getLogger(__name__)
 
 # Matches occurrence_public (db/b6_schema.sql) + the API contract's
 # public fields (species_id, precision_metres are shown to users -
@@ -43,27 +46,48 @@ def _validate_public_columns() -> None:
             f"Forbidden columns found in PUBLIC_COLUMNS: {forbidden}"
         )
 
-
 _validate_public_columns()
-
 
 def add_coarse_locality(
     df: pd.DataFrame,
     easting_column: str = "snapped_easting",
     northing_column: str = "snapped_northing",
 ) -> pd.DataFrame:
-    # IMPORTANT: easting_column/northing_column must be the SNAPPED
-    # (generalised) coordinates from generalise_locations, i.e.
-    # "snapped_easting"/"snapped_northing" - never the raw ones.
+
     df = df.copy()
-    df["coarse_locality"] = df.apply(
-        lambda row: os_grid_square(
-            row[easting_column], row[northing_column]
+
+    required = {
+        easting_column,
+        northing_column,
+    }
+
+    missing = required - set(df.columns)
+
+    if missing:
+        raise ValueError(
+            f"Missing coordinate columns: {missing}"
         )
-        if pd.notna(row[easting_column]) and pd.notna(row[northing_column])
-        else pd.NA,
-        axis=1,
-    )
+
+    coarse_localities = []
+
+    # Loops through each coordinate pair
+    # zip() - pairs two coordinate columns together
+    for easting, northing in zip(
+        df[easting_column],
+        df[northing_column],
+    ):
+        # If coordinate exist create grid reference, else store missing value
+        if pd.notna(easting) and pd.notna(northing):
+            coarse_localities.append(
+                os_grid_square(easting, northing)
+            )
+        else:
+            coarse_localities.append(pd.NA)
+
+    # Adds returned list to DF column
+    df["coarse_locality"] = coarse_localities
+
+    # Returns updated dataframe
     return df
 
 
@@ -87,12 +111,13 @@ def prepare_public_output(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     if no_coordinates.any():
-        print(
-            "WARNING: dropping "
-            f"{no_coordinates.sum()} public records "
-            "with no coordinates."
+        logger.warning(
+            "Dropping %s public records with no coordinates.",
+            no_coordinates.sum(),
         )
 
+    # Public maps cannot display records without coordinates.
+    # These are removed only at the final output boundary.
     return (
         public_df
         .loc[~no_coordinates]

@@ -1,5 +1,4 @@
 # etl/safety_gate/generalise.py
-
 """
     Snaps easting/northing to a resolution grid in PostGIS (BNG ->
     WGS84), enforcing the D0 100m floor. Records with missing
@@ -11,12 +10,19 @@
 
 import csv
 import io
+import logging
 
 import pandas as pd
+from etl.config.loader import load_safety_config
 
-# Represents the floor, no location may be shown more precisely than 100m
-D0_FLOOR_M = 100
-DEFAULT_RESOLUTION_M = 10000
+config = load_safety_config()
+logger = logging.getLogger(__name__)
+
+# Hard safety floor: no location can ever be shown more precisely than 100m
+D0_FLOOR_M = config["safety_gate"]["d0_floor_m"]
+
+# Default blur distance for sensitive records when no specific resolution exists
+DEFAULT_SENSITIVE_RESOLUTION_M = config["safety_gate"]["default_sensitive_resolution_m"]
 
 # Connection allows python to send SQL to PostGIS/PostgreSQL
 def generalise_locations(
@@ -27,14 +33,33 @@ def generalise_locations(
     resolution_column: str,
 ) -> pd.DataFrame:
 
+    if connection is None:
+        raise ValueError(
+            "A PostGIS database connection is required"
+            "for location generalisation"
+        )
+
     df = df.copy()
 
+    required_columns = {
+        easting_column,
+        northing_column,
+        resolution_column,
+    }
+
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing required columns: {missing_columns}"
+        )
+
     # Calculating resolution:
-    # If no resolution exist, fill with 100m
+    # If no resolution exist, fill with 10000m
     # Never allow anything below 100m
     df["effective_resolution_m"] = (
         df[resolution_column]
-        .fillna(DEFAULT_RESOLUTION_M)
+        .fillna(DEFAULT_SENSITIVE_RESOLUTION_M)
         .clip(lower=D0_FLOOR_M)
     )
 
@@ -44,13 +69,13 @@ def generalise_locations(
         | df[northing_column].isna()
     )
 
+    # Using logging to capture error
     if missing_coordinates.any():
-        print(
-            "WARNING: "
-            f"{missing_coordinates.sum()} records "
-            "have missing coordinates and will be excluded "
-            "from location generalisation. They remain in "
-            "the dataset with longitude/latitude set to null."
+        logger.warning(
+            "%s records have missing coordinates and will be "
+            "excluded from location generalisation. They remain "
+            "in the dataset with longitude/latitude set to null.",
+            missing_coordinates.sum(),
         )
 
     # Tag original row order before splitting, so it can be restored
@@ -68,7 +93,7 @@ def generalise_locations(
     # aligns 1:1-by-position with the original df.
     locatable.insert(0, "row_id", range(len(locatable)))
 
-    # Creates temporary PostgreSQL table
+    # Creates temporary PostgreSQL table (Adjust later maybe)
     temp_table = "classified_locations"
 
     # Prepare only the data required by PostGIS
@@ -222,10 +247,10 @@ def generalise_locations(
 
     # Excluded rows get explicit null coordinates so downstream code
     # can filter on them rather than relying on a column being absent.
-    excluded["longitude"] = pd.NA
-    excluded["latitude"] = pd.NA
-    excluded["snapped_easting"] = pd.NA
-    excluded["snapped_northing"] = pd.NA
+    excluded["longitude"] = None
+    excluded["latitude"] = None
+    excluded["snapped_easting"] = None
+    excluded["snapped_northing"] = None
 
     # Recombine - full record count preserved, only the excluded rows
     # carry null lon/lat. It is the public-output layer's job to make
