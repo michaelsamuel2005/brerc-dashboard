@@ -15,6 +15,7 @@ Then open http://127.0.0.1:8000/docs to see and try every endpoint.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import IS_PROD, ALLOWED_ORIGINS
 from app.routers import (
     health,
     summary,
@@ -24,17 +25,23 @@ from app.routers import (
     provenance,
 )
 
+# In production, hide the interactive docs and the OpenAPI schema (don't expose
+# the API's internals publicly). In dev they stay on at /docs for convenience.
 app = FastAPI(
     title="BRERC Public Dashboard API",
     version="0.1.0",
     description="Read-only API serving safe, generalised species-record data.",
+    docs_url=None if IS_PROD else "/docs",
+    redoc_url=None if IS_PROD else "/redoc",
+    openapi_url=None if IS_PROD else "/openapi.json",
 )
 
-# CORS: during development, allow the front-end dev server to call this API.
-# In production this is tightened to the same origin (B8/B9).
+# CORS: which websites may call this API from a browser.
+#   * dev:  local front-end dev servers (see app/config.py)
+#   * prod: ONLY the origins listed in ALLOWED_ORIGINS (the council/BRERC site)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # DEV ONLY — restrict in production (B9).
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],

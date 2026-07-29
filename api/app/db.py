@@ -14,35 +14,23 @@ SAFETY RULES enforced here and in every query:
     how SQL injection happens
 """
 
-import os
-from pathlib import Path
-
 import psycopg
-from dotenv import load_dotenv
 from psycopg.rows import dict_row
 
-# Load api/.env (if it exists) so DATABASE_URL can live in a git-ignored file
-# instead of being typed into the shell every time. We point at the .env next to
-# the api/ folder explicitly, so it is found no matter which folder you run from.
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
-# Read the connection string from the environment. The fallback is a local
-# development default — it contains no real secret.
-#
-# Format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-# Put your real one in a git-ignored .env file, never in this file.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/brerc_ui",
-)
+from app.config import DATABASE_URL, DB_STATEMENT_TIMEOUT_MS
 
 
 def get_connection() -> psycopg.Connection:
     """
     Open a connection to the UI database.
 
-    `row_factory=dict_row` makes each returned row behave like a dictionary
-    ({"scientific_name": "...", ...}) instead of a plain tuple, which makes the
-    endpoint code much easier to read.
+    * `row_factory=dict_row` makes each returned row behave like a dictionary
+      ({"scientific_name": "...", ...}) instead of a plain tuple.
+    * `statement_timeout` tells PostgreSQL to cancel any single query that runs
+      longer than the configured limit — a safety valve against runaway queries.
     """
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row,
+        options=f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}",
+    )

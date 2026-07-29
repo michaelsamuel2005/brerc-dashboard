@@ -1,0 +1,76 @@
+# =============================================================================
+# BRERC dashboard — full backend stack in one command (B9, Half B).
+#
+#   docker compose up --build
+#
+# Starts four services that talk to each other on a private network:
+#   db     — PostgreSQL + PostGIS (loads schema + sample data on first run)
+#   martin — vector-tile server (connects with the READ-ONLY role)
+#   api    — the FastAPI service (connects with the READ-ONLY role)
+#   proxy  — Caddy, exposing everything same-origin at http://localhost:8080
+#
+# Only the proxy is published to your machine; db/martin/api stay internal.
+# Override the defaults for production by putting real values in a .env file
+# next to this one (POSTGRES_PASSWORD, RO_PASSWORD, APP_ENV, ALLOWED_ORIGINS).
+# =============================================================================
+
+name: brerc-dashboard
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: brerc_ui
+      # Used by the init script to set the read-only role's password.
+      RO_PASSWORD: ${RO_PASSWORD:-brerc_ro_2026}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Init scripts run ONCE on first startup, in filename order. The numeric
+      # prefixes force the correct order: schema -> B0 -> sample data -> tiles
+      # -> set the read-only role's password.
+      - ./db/b6_schema.sql:/docker-entrypoint-initdb.d/01_b6_schema.sql:ro
+      - ./db/b0_staging_setup.sql:/docker-entrypoint-initdb.d/02_b0.sql:ro
+      - ./db/b6_sample_data.sql:/docker-entrypoint-initdb.d/03_b6_sample_data.sql:ro
+      - ./db/b7_tiles.sql:/docker-entrypoint-initdb.d/04_b7_tiles.sql:ro
+      - ./db/docker/99_set_ro_password.sh:/docker-entrypoint-initdb.d/99_set_ro_password.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d brerc_ui"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    # Connects as the READ-ONLY role, so it can only ever serve the safe
+    # function + views — never the raw tables (matches the B7 hardening).
+    environment:
+      DATABASE_URL: postgresql://brerc_api_ro:${RO_PASSWORD:-brerc_ro_2026}@db:5432/brerc_ui
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      DATABASE_URL: postgresql://brerc_api_ro:${RO_PASSWORD:-brerc_ro_2026}@db:5432/brerc_ui
+      # Same-origin through the proxy, so this is the origin the browser uses.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  proxy:
+    image: caddy:2
+    ports:
+      - "8080:80"          # the ONE public entrypoint
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - martin
+
+volumes:
+  db_data:
