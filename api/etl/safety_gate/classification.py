@@ -1,16 +1,11 @@
 """
-    Classify records for sensitivity using vectorised operations.
+Records are classified as sensitive if they:
+- belong to a sensitive species,
+- have a sensitive record type, or
+- contain an unresolved species.
 
-    This function is designed to process a chunk of records at a time,
-    rather than one record at a time. D2
-
-    # D3: fixed sites (roosts/setts/holts/nests/hibernacula) blur year-round.
-    # BRERC has not yet supplied seasonal windows for any species, so there
-    # is currently NO date-based un-blurring anywhere in this pipeline -
-    # every sensitive record stays blurred regardless of record_date.
-    # If/when BRERC supplies a seasonal species list with date ranges,
-    # that logic would go here, and would only ever *narrow* blurring for
-    # species explicitly marked seasonal - never widen it.
+Fixed sites (e.g. roosts, holts, nests) are currently blurred year-round.
+Seasonal exceptions can be added in future if required by the data provider.
 """
 
 import pandas as pd 
@@ -27,22 +22,37 @@ def classify_chunk(
         df: pd.DataFrame,
     ) -> pd.DataFrame:
 
-    # Creates a copy of the DF 
     df = df.copy()
 
-    # For unresolved species: Checks if species is unresolved
+    # Required columns for classificastion to run
+    required_columns = {
+        "species_no",
+        "species_unresolved",
+        "record_type"
+    }
+
+    missing = required_columns - set(df.columns)
+
+    if missing:
+        raise ValueError(
+            f"classify_chunk() missing required columns: {sorted(missing)}"
+        )
+
+    # ---------------------
+    # Setting up the masks:
+    # ---------------------
+
+    # Unresolved species: True for records who species can't be
     unresolved_mask = (
         df["species_unresolved"]
     )
-
-    # Sensitive species: Checks if the species number exists in our imported list of sensitive columns
+    # Sensitive species: True for records belonging to a sensitive species.
     sensitive_species_mask = (
         df["species_no"].isin(
             SENSITIVE_SPECIES_NOS
         )
     )
-
-    # Sensitive Record Type: Checks if the type of record exists in our imported list of flagged records 
+    # Sensitive Record Type: True for records whose record type is classified as sensitive.
     flagged_record_type_mask = (
         df["record_type"].isin(
             FLAGGED_RECORD_TYPES
@@ -56,35 +66,51 @@ def classify_chunk(
         | flagged_record_type_mask
     )
 
-    # Creates new columns to flag the record as sensitive and indicate it needs to be blurred
+    # Two new columns: Sensitive records are marked, and marked needed location blurring 
     df["is_sensitive"] = sensitive_mask
     df["blurred"] = sensitive_mask
 
-    # Set the default reason for all rows to "not_sensitive"
-    df["sensitivity_reason"] = (
-        "not_sensitive"
-    )
+    # Store all reasons why a record was classified as sensitive.
+    # Start with an empty list for every record.
+    df["sensitivity_reason"] = [[] for _ in range(len(df))]
 
-    # Overwrites the reason:
-    # .loc, finds rows where specific mask is True, and change their reason 
+    # Add "unresolved_species" to records where the species could not be resolved.
     df.loc[
         unresolved_mask,
         "sensitivity_reason"
-    ] = "unresolved_species"
+    ] = df.loc[
+        unresolved_mask,
+        "sensitivity_reason"
+    ].apply(lambda x: x + ["unresolved_species"])
 
+    # Add "sensitive_record_type" to records with a flagged record type.
     df.loc[
         flagged_record_type_mask,
         "sensitivity_reason"
-    ] = "sensitive_record_type"
+    ] = df.loc[
+        flagged_record_type_mask,
+        "sensitivity_reason"
+    ].apply(lambda x: x + ["sensitive_record_type"])
 
+    # Add "sensitive_species" to records containing a sensitive species.
     df.loc[
         sensitive_species_mask,
         "sensitivity_reason"
-    ] = "sensitive_species"
+    ] = df.loc[
+        sensitive_species_mask,
+        "sensitivity_reason"
+    ].apply(lambda x: x + ["sensitive_species"])
 
-    # Sets the default blurring resolution
+    # Convert empty lists into "not_sensitive" for records that triggered no rules.
+    df.loc[
+        df["sensitivity_reason"].str.len() == 0,
+        "sensitivity_reason"
+    ] = "not_sensitive"
+
+    # Every record is set with the minimum (D0) resolution by default
     df["resolution_m"] = D0_FLOOR_M
 
+    # Increase the blur distance for sensitive records
     df.loc[
         sensitive_mask,
         "resolution_m"
