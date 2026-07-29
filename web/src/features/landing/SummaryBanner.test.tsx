@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
+import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { summaryFixture } from "../../test/fixtures";
+import { server } from "../../test/msw/server";
 import { SummaryBar } from "./SummaryBanner";
 
 function withQueryClient(children: ReactNode) {
@@ -30,6 +33,32 @@ describe("SummaryBar", () => {
 
     expect(screen.getByText(summaryFixture.coverageCaveat)).toBeInTheDocument();
 
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("shows an error state with a working, keyboard-operable retry on failure", async () => {
+    server.use(http.get("*/api/summary", () => HttpResponse.json({ message: "boom" }, { status: 400 })));
+    const user = userEvent.setup();
+    const { container } = render(withQueryClient(<SummaryBar />));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    const retryButton = screen.getByRole("button", { name: /try again/i });
+
+    server.use(http.get("*/api/summary", () => HttpResponse.json(summaryFixture)));
+    await user.click(retryButton);
+
+    expect(await screen.findByText(summaryFixture.totalRecords.toLocaleString())).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("shows an accessible empty state when there are no records", async () => {
+    server.use(
+      http.get("*/api/summary", () => HttpResponse.json({ ...summaryFixture, totalRecords: 0 })),
+    );
+    const { container } = render(withQueryClient(<SummaryBar />));
+
+    expect(await screen.findByRole("status")).toBeInTheDocument();
+    expect(await screen.findByText("No summary available.")).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -3,18 +3,23 @@
 import { useEffect, useState } from "react";
 import { toAsyncState, useSummary } from "../../lib/api";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
-import type { Summary } from "../../lib/api/schemas";
 
 export function SummaryBar() {
   const query = useSummary();
   const state = toAsyncState(query, (data) => data.totalRecords === 0);
+  const [announcement, setAnnouncement] = useState("");
+
+  useEffect(() => {
+    if (state.status === "ready") {
+      setAnnouncement(`Loaded summary: ${state.data.totalRecords.toLocaleString()} records.`);
+    }
+  }, [state]);
 
   if (state.status === "loading") return <LoadingState label="summary" />;
-  if (state.status === "error") return <ErrorState message={state.error.message} onRetry={function (): void {
-    throw new Error("Function not implemented.");
-  } } />;
-  if (state.status === "empty") return null;
-  const s = state.data;
+  if (state.status === "error")
+    return <ErrorState message={state.error.message} onRetry={() => query.refetch()} />;
+  if (state.status === "empty") return <EmptyState message="No summary available." />;
+  const data = state.data;
   return (
     <section className="panel summary-bar" aria-labelledby="summary-heading">
       <div className="panel-body">
