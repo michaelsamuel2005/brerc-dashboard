@@ -4,7 +4,9 @@ import { ErrorState, LoadingState } from "../../components/states/States";
 export function SummaryBanner() {
   const state = toAsyncState(useSummary());
   if (state.status === "loading") return <LoadingState label="summary" />;
-  if (state.status === "error") return <ErrorState message={state.error.message} />;
+  if (state.status === "error") return <ErrorState message={state.error.message} onRetry={function (): void {
+    throw new Error("Function not implemented.");
+  } } />;
   if (state.status === "empty") return null;
   const s = state.data;
   return (
