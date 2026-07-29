@@ -67,7 +67,8 @@ CREATE TABLE occurrence_public (
     precision_metres INTEGER  NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     locality         TEXT,                          -- coarse: authority + grid sq
-    verified         BOOLEAN  NOT NULL DEFAULT FALSE -- D5 (accepted); legacy marked
+    verified         BOOLEAN  NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
+    content_hash     TEXT     NOT NULL -- for comparison of current source vs previous database state
     -- NO eastings, northings, recorder1, bliss, comments, precise_date,
     -- is_sensitive — absent by construction.
 );

@@ -10,20 +10,11 @@ export function SummaryBar() {
   const state = toAsyncState(query, (data) => data.totalRecords === 0);
 
   if (state.status === "loading") return <LoadingState label="summary" />;
-  if (state.status === "error") return <ErrorState message={state.error.message} onRetry={() => void query.refetch()} />;
-  if (state.status === "empty") return <EmptyState message="No summary is available yet." />;
-
-  return <SummaryBarView data={state.data} />;
-}
-
-function SummaryBarView({ data }: { data: Summary }) {
-  // Announce a result-count change without stealing focus (WCAG 4.1.3) — the region is
-  // mounted empty and the text is written in after mount, per the states-component pitfall.
-  const [announcement, setAnnouncement] = useState("");
-  useEffect(() => {
-    setAnnouncement(`Showing ${data.totalRecords.toLocaleString()} records.`);
-  }, [data.totalRecords]);
-
+  if (state.status === "error") return <ErrorState message={state.error.message} onRetry={function (): void {
+    throw new Error("Function not implemented.");
+  } } />;
+  if (state.status === "empty") return null;
+  const s = state.data;
   return (
     <section className="panel summary-bar" aria-labelledby="summary-heading">
       <div className="panel-body">
