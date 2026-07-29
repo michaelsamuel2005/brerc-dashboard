@@ -15,7 +15,7 @@
 
 import pandas as pd
 
-from etl.safety_gate.locality import os_grid_square
+from etl.safety_gate.location import os_grid_square
 
 SUPPRESSION_THRESHOLD = None           # TODO: BRERC's number - not yet given
 

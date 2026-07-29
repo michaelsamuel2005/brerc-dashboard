@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from etl.safety_gate.locality import (
+from etl.safety_gate.location import (
     os_grid_square,
     add_grid_square,
     add_coarse_locality,
