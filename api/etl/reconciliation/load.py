@@ -6,6 +6,9 @@ import pandas as pd
 # Updates the species lookup table:
 def upsert_species(species_df: pd.DataFrame, connection) -> None:
     
+    if species_df.empty:
+            return
+
     required ={
         "species_id",
         "scientific_name",
@@ -23,9 +26,6 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
         raise KeyError(
             f"species_df missing required columns: {sorted(missing)}"
         )
-
-    if species_df.empty:
-        return
 
     rows = list(
         species_df[

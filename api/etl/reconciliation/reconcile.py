@@ -88,7 +88,7 @@ def make_safe_for_publishing(
     # Removes all columns public shouldn't see (sensitive columns)
     safe_df = prepare_public_output(with_locality)
 
-    # Sets unique_no as the index, selects content_hash column
+    # Sets unique_no as the index, selects content_hash column (uses with_locality DF)
     hash_lookup = with_locality.set_index("unique_no")["content_hash"]
     # For every value look up its hash_lookup, stored as content_hash
     safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
