@@ -13,10 +13,7 @@ from etl.reconciliation.load import (
     delete_records,
 )
 
-# Adjust these three imports to your real module paths -
-# same as classify.py/species.py/generalisation.py/public_output.py
-# used elsewhere in the pipeline.
-from etl.safety_gate.classify import classify_chunk
+from etl.safety_gate.classification import classify_chunk
 from etl.matching.species import resolve_species_numbers
 from etl.safety_gate.generalisation import generalise_locations
 from etl.safety_gate.public_output import add_coarse_locality, prepare_public_output
@@ -27,13 +24,28 @@ from etl.reconciliation.map_to_schema import map_to_occurrence_public
 
 from etl.aggregation.species_index import build_species_index
 
+from etl.config.loader import load_safety_config
+
+CONFIG = load_safety_config()
+
+VERIFIED_COLUMN = (
+    CONFIG["columns"]["verified"]
+)
+
+EASTING_COLUMN = (
+    CONFIG["columns"]["eastings"]
+)
+NORTHING_COLUMN = (
+    CONFIG["columns"]["northings"]
+)
+
 
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     connection,
-    easting_column: str = "eastings",
-    northing_column: str = "northings",
+    easting_column: str = EASTING_COLUMN,
+    northing_column: str = NORTHING_COLUMN,
     resolution_column: str = "resolution_m",
 ) -> pd.DataFrame:
     """
@@ -50,7 +62,7 @@ def make_safe_for_publishing(
     # D5: verified-only + legacy-flagged-not-dropped, BEFORE anything
     # else runs. A record failing both accepted and legacy checks
     # must never reach classification, generalisation, or the DB.
-    filtered = filter_accepted_records(df, verified_column="verified")
+    filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
 
     resolved = resolve_species_numbers(filtered, dictionary_df)
     classified = classify_chunk(resolved)
@@ -119,7 +131,7 @@ def reconcile(
     if not species_records.empty:
         filtered_species_records = filter_accepted_records(
             species_records,
-            verified_column="verified",
+            verified_column=VERIFIED_COLUMN,
         )
 
         resolved_species_records = resolve_species_numbers(

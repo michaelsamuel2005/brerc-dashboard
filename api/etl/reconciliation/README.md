@@ -35,3 +35,45 @@ diff_id_hash_maps():
 
 NEED TO IDENITFY THE RECONCILIATION INPUTS LATER
 """
+
+RECONCILIATION: 
+"""
+Nightly reconciliation pipeline.
+
+Compares the latest BRERC source data against the UI database,
+identifies inserts, updates and deletes, then ensures every new
+or changed record passes through the safety gate before being
+loaded into the public database.
+
+
+# Safety pipeline:
+# Raw records
+#   ↓
+# Species resolution
+#   ↓
+# Sensitivity classification
+#   ↓
+# Coordinate generalisation
+#   ↓
+# Coarse locality generation
+#   ↓
+# Public-column filtering
+#   ↓
+# Database schema mapping
+
+
+""" DIFF
+Compares the current source dataset with the UI database using
+content hashes.
+
+Each record is identified by its unique_no.
+
+The comparison determines which records should be:
+- inserted,
+- updated,
+- deleted, or
+- left unchanged.
+
+Only records requiring inserts or updates are returned for
+the safety pipeline.
+"""

@@ -4,11 +4,11 @@ files:
     path: "data/sensitive_species.csv"
 
 columns:
-  species_number:
-    species_no
-
-  nbs_number:
-    nbs_number
+  species_number: species_no
+  nbn_number: nbn_number
+  verified: verified
+  eastings: eastings
+  northings: northings
 
 generalisation:
   
@@ -25,7 +25,7 @@ flagged_record_types:
   - tagged night roost
   - plant count
   - maternity roost
-  - flower count"
+  - flower count
   - photographed
   - summer roost 
   - hibernation 
@@ -34,8 +34,8 @@ flagged_record_types:
   - rosette count
     # for bat roost and plant
   - field record
-  - field record (bat roost sensitive record
-  - field record (plant sensitive record
+  - field record (bat roost sensitive record)
+  - field record (plant sensitive record)
   - bat detector 
   - box survey 
   - hibernation roost
@@ -52,7 +52,7 @@ flagged_record_types:
   - tagged day roost 
   - grounded
   - possibly breeding 
-  - nest",
+  - nest
   - field record 
   - holt
   - bedding
@@ -79,4 +79,4 @@ reconciliation:
     - vitality 
     - verified 
     - eastings 
-    - nothings 
+    - northings 
