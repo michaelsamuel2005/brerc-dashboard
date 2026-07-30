@@ -15,7 +15,7 @@
 
 # pipeline.py
 from etl.profiling.cleaning import clean_data
-from etl.safety_gate.classify import classify_chunk  # switched to this one
+from etl.safety_gate.classification import classify_chunk  # switched to this one
 
 def run_pipeline(df):
 

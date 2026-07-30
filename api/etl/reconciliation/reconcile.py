@@ -16,7 +16,7 @@ from etl.reconciliation.load import (
 # Adjust these three imports to your real module paths -
 # same as classify.py/species.py/generalisation.py/public_output.py
 # used elsewhere in the pipeline.
-from etl.safety_gate.classify import classify_chunk
+from etl.safety_gate.classification import classify_chunk
 from etl.matching.species import resolve_species_numbers
 from etl.safety_gate.generalisation import generalise_locations
 from etl.safety_gate.public_output import add_coarse_locality, prepare_public_output

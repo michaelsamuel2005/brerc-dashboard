@@ -5,7 +5,7 @@
 
 import pandas as pd
 from etl.safety_gate import classify
-from etl.safety_gate.classify import classify_chunk
+from etl.safety_gate.classification import classify_chunk
 
 FAKE_SENSITIVE_SPECIES_NOS = {101}
 FAKE_FLAGGED_RECORD_TYPES = {"roost"}
