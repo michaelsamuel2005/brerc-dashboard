@@ -1,25 +1,12 @@
-"""
-    Maps the safety pipeline's output (PUBLIC_COLUMNS shape) onto
-    occurrence_public's real column names (db/b6_schema.sql).
-
-    grid_ref and locality are both sourced from coarse_locality today
-    (grid square only - unitary authority data doesn't exist yet, see
-    add_coarse_locality's own note). They will diverge naturally once
-    that data lands: grid_ref stays grid-square-only, locality
-    becomes the fuller "authority + grid square" D0 description. No
-    code change needed here when that happens - just a richer
-    coarse_locality value flowing through the same column.
-
-    verified = NOT is_legacy. Safe because filter_accepted_records's
-    accepted/legacy masks are mutually exclusive by construction.
-"""
-
 import pandas as pd
 
+# Takes the clean dataframe
+# Maps it to the occurence_public database table
 
 def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
     df = safe_df.copy()
 
+    # Returns only the year rn (may need to change later)
     df["record_year"] = pd.to_datetime(
         df["record_date"], dayfirst=True
     ).dt.year

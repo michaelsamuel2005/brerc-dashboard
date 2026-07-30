@@ -1,31 +1,29 @@
-"""
-    Real DB writes against Victor's B6 draft schema (db/b6_schema.sql),
-    specifically the occurrence_public table.
-
-    OPEN QUESTIONS FOR VICTOR (confirm before relying on this):
-      1. occurrence_public has no content_hash column yet - needed
-         for D7 reconciliation to diff against next run. Needs adding:
-             ALTER TABLE occurrence_public ADD COLUMN content_hash TEXT;
-      2. occurrence_public.species_id has a FK to species(species_id).
-         Species rows must be upserted into `species` BEFORE any
-         occurrence_public write, or inserts will fail on the FK.
-         (This file assumes that's handled separately - see
-         upsert_species below - call it first in the orchestrator.)
-
-    Uses upsert (INSERT ... ON CONFLICT DO UPDATE) for both insert
-    and update - simpler than two code paths, and makes a re-run
-    naturally idempotent even for edge cases (e.g. a record that
-    was deleted then re-added with the same id).
-"""
-
 import pandas as pd
 
+# UPSERT: Try to insert record, if it already exists, update it instead
+# As INSERT and UPDATE share identical SQL using PostgreSQL's
 
+# Updates the species lookup table:
 def upsert_species(species_df: pd.DataFrame, connection) -> None:
-    """
-    Must run BEFORE insert_records/update_records, since
-    occurrence_public.species_id has a foreign key to this table.
-    """
+    
+    required ={
+        "species_id",
+        "scientific_name",
+        "common_name",
+        "species_group",
+        "record_count",
+        "first_year",
+        "last_year",
+        "has_image",
+    }
+
+    missing = required - set(species_df.columns)
+
+    if missing:
+        raise KeyError(
+            f"species_df missing required columns: {sorted(missing)}"
+        )
+
     if species_df.empty:
         return
 
@@ -45,6 +43,8 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
     )
 
     with connection.cursor() as cursor:
+        # If species_id already exists, update the existing row
+        # with the latest values from the incoming ETL data
         cursor.executemany(
             """
             INSERT INTO species (
@@ -74,7 +74,7 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
 
     connection.commit()
 
-
+# Updates the actual biological records of species:
 def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
     if records_df.empty:
         return
@@ -94,7 +94,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
 
     if missing:
         raise KeyError(
-            f"records_df is missing columns required to write to occurrence_public: {missing}"
+            "records_df is missing columns required to write to "
+            f"occurrence_public: {sorted(missing)}"
         )
 
     rows = list(
@@ -144,14 +145,20 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
 
 
 def insert_records(records_df: pd.DataFrame, connection) -> None:
+    # New records indentified during reconcilisation are passed here
+    # UPSERT function inserts them into occurence_public
     _upsert_occurrences(records_df, connection)
 
 
 def update_records(records_df: pd.DataFrame, connection) -> None:
+    # Existing record with changed content hashes are passed here
+    # UPSERT function inserts them into occurence_public
     _upsert_occurrences(records_df, connection)
 
 
 def delete_records(record_ids: set, connection) -> None:
+    # For records present in the UI database but missing from the latest
+    # source dataset are removed during reconciliation
     if not record_ids:
         return
 
@@ -161,6 +168,8 @@ def delete_records(record_ids: set, connection) -> None:
             DELETE FROM occurrence_public
             WHERE record_id = ANY(%s)
             """,
+            # Convert Python set of IDs into a list so it can be
+            # passed to PostgreSQL as an array for the ANY() check.
             (list(record_ids),),
         )
 

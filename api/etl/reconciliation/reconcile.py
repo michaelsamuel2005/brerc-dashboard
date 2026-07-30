@@ -39,7 +39,6 @@ NORTHING_COLUMN = (
     CONFIG["columns"]["northings"]
 )
 
-
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
