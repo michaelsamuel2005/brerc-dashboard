@@ -17,7 +17,7 @@ def _normalised_hash_value(value) -> str:
         return ""
 
     # Converts all date/time into ISO format -> consistent hashes
-    if isinstance(value, pd.Timestamp, datetime, date):
+    if isinstance(value, (pd.Timestamp, datetime, date)):
         return value.isoformat()
     # Converts remaining value to string and removes whitespaces 
     # -> so formatting doesn't change hash
