@@ -6,6 +6,8 @@
     longitude/latitude - downstream public-output code must filter
     these out before anything reaches a map. Original row order is
     preserved on return.
+
+    resolution_m comes from classify_chunk()
 """
 
 import csv

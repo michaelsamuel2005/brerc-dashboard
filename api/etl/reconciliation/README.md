@@ -77,3 +77,67 @@ The comparison determines which records should be:
 Only records requiring inserts or updates are returned for
 the safety pipeline.
 """
+
+MAP TO sdddsa
+
+"""
+    Maps the safety pipeline's output (PUBLIC_COLUMNS shape) onto
+    occurrence_public's real column names (db/b6_schema.sql).
+
+    grid_ref and locality are both sourced from coarse_locality today
+    (grid square only - unitary authority data doesn't exist yet, see
+    add_coarse_locality's own note). They will diverge naturally once
+    that data lands: grid_ref stays grid-square-only, locality
+    becomes the fuller "authority + grid square" D0 description. No
+    code change needed here when that happens - just a richer
+    coarse_locality value flowing through the same column.
+
+    verified = NOT is_legacy. Safe because filter_accepted_records's
+    accepted/legacy masks are mutually exclusive by construction.
+"""
+
+
+LOAD:
+
+"""
+    Real DB writes against Victor's B6 draft schema (db/b6_schema.sql),
+    specifically the occurrence_public table.
+
+    OPEN QUESTIONS FOR VICTOR (confirm before relying on this):
+      1. occurrence_public has no content_hash column yet - needed
+         for D7 reconciliation to diff against next run. Needs adding:
+             ALTER TABLE occurrence_public ADD COLUMN content_hash TEXT;
+      2. occurrence_public.species_id has a FK to species(species_id).
+         Species rows must be upserted into `species` BEFORE any
+         occurrence_public write, or inserts will fail on the FK.
+         (This file assumes that's handled separately - see
+         upsert_species below - call it first in the orchestrator.)
+
+    Uses upsert (INSERT ... ON CONFLICT DO UPDATE) for both insert
+    and update - simpler than two code paths, and makes a re-run
+    naturally idempotent even for edge cases (e.g. a record that
+    was deleted then re-added with the same id).
+
+
+    """
+Database write functions for the reconciliation pipeline.
+
+Records reaching this module have already passed through the
+safety gate and been mapped to the public database schema.
+
+Responsibilities:
+- Upsert species metadata.
+- Insert or update public occurrence records.
+- Delete records removed from the source dataset.
+"""
+
+    """
+    Must run BEFORE insert_records/update_records, since
+    occurrence_public.species_id has a foreign key to this table.
+    """
+
+
+    # D5: verified-only + legacy-flagged-not-dropped, BEFORE anything
+    # else runs. A record failing both accepted and legacy checks
+    # must never reach classification, generalisation, or the DB.
+"""
