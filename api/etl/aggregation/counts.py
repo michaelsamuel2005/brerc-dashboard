@@ -1,48 +1,49 @@
-"""
-    B4: species x cell x year aggregation, species index, D5
-    low-count suppression.
-
-    filter_accepted_records / build_species_index are yours - used
-    as-is here, not reimplemented.
-
-    TODO before this runs for real:
-      - SUPPRESSION_THRESHOLD (BRERC's number, not yet given)
-      - CELL_SIZE_M (product decision, not yet confirmed)
-      - confirm whether blank `verified` should count as legacy
-        (currently does, per filter_accepted_records) - flagged for
-        the project/mentor check
-"""
-
 import pandas as pd
 
 from etl.safety_gate.location import os_grid_square
+from etl.aggregation.cell_filtering import filter_accepted_records
+from etl.aggregation.species_index import build_species_index
 
-SUPPRESSION_THRESHOLD = None           # TODO: BRERC's number - not yet given
+from etl.config.loader import load_safety_config
 
+CONFIG = load_safety_config() 
+
+# Suppresses low-frequency observations to prevent revealing
+# exact locations where only a small number of records exist.
+# Counts below this threshold are hidden.
+SUPPRESSION_THRESHOLD = CONFIG["aggregation"]["suppression_threshold"]
+
+# Converts records into species x grid cell x year counts 
 def aggregate_counts(
     filtered_df: pd.DataFrame,
     easting_column: str,
     northing_column: str,
     date_column: str,
-    cell_size_m: int,
+    cell_size_m=None,
 ) -> pd.DataFrame:
-    """
-    Counts by species_no x grid cell x year. Full recompute each
-    run - no incremental diffing here, unlike B3.
-    """
 
+    # Takes the grid size from the YAML
     if cell_size_m is None:
-        raise ValueError(
-            "CELL_SIZE_M is not set - confirm the reporting grid "
-            "size before running this for real."
+        cell_size_m = CONFIG["aggregation"]["cell_size_m"]
+    
+    required_columns = {
+        "species_no",
+        easting_column,
+        northing_column,
+        date_column,
+    }
+
+    missing_columns = required_columns - set(filtered_df.columns)
+
+    if missing_columns:
+        raise KeyError(
+            f"Missing columns required for aggregation: "
+            f"{sorted(missing_columns)}"
         )
 
     df = filtered_df.copy()
 
-
-    # Remove records where location cannot be converted into
-    # a reporting grid cell. These cannot contribute to the
-    # spatial aggregation safely.
+    # Removes records without coordinates, these cannot be converted into grid cell
     df = df.dropna(
         subset=[
             easting_column,
@@ -50,10 +51,11 @@ def aggregate_counts(
         ]
     )
 
-
-    # Convert precise eastings/northings into the reporting grid.
-    # This ensures aggregation happens against the public-facing
-    # spatial unit rather than exact coordinates.
+    # Convert each exact coordinate into its public grid square.
+    # Prevents aggregation using precise locations
+    # For current row, get easting and nothing row
+    # Tells how big the grid should be 1km 
+    # OS_grid_square returnd the Grid cell size
     df["grid_cell"] = df.apply(
         lambda row: os_grid_square(
             row[easting_column],
@@ -63,8 +65,7 @@ def aggregate_counts(
         axis=1,
     )
 
-
-    # Extract the year from the observation date.
+    # Extract the year from the observation date
     # Invalid dates become NaN and are removed because they cannot
     # contribute to a species x cell x year count.
     df["year"] = (
@@ -79,7 +80,6 @@ def aggregate_counts(
     df = df.dropna(
         subset=["year"]
     )
-
 
     # Count records by:
     #   - species
@@ -106,21 +106,70 @@ def aggregate_counts(
 
     return aggregated
 
+
+def build_public_aggregation(
+    df: pd.DataFrame,
+    verified_column: str,
+    easting_column: str,
+    northing_column: str,
+    date_column: str,
+    cell_size_m=None,
+) -> dict:
+
+    """
+    Runs the complete B4 aggregation pipeline.
+
+    Ensures only accepted records and marked legacy records
+    contribute to public statistics.
+    """
+
+    if cell_size_m is None:
+        cell_size_m = CONFIG["aggregation"]["cell_size_m"]
+
+    # D5:
+    # Remove rejected records before aggregation.
+    # Only accepted records + legacy flagged records continue.
+    filtered_records = filter_accepted_records(
+        df,
+        verified_column=verified_column,
+    )§§
+
+    # Build species metadata only from species that actually
+    # appear in the records being loaded.
+    species_index = build_species_index(
+        filtered_records
+    )
+
+    # Create species x cell x year counts.
+    aggregated = aggregate_counts(
+        filtered_records,
+        easting_column=easting_column,
+        northing_column=northing_column,
+        date_column=date_column,
+        cell_size_m=cell_size_m,
+    )
+
+    # Hide exact counts where only one record exists.
+    suppressed_counts = suppress_low_counts(
+        aggregated,
+        threshold=SUPPRESSION_THRESHOLD,
+    )
+
+    return {
+        "aggregation": suppressed_counts,
+        "species_index": species_index,
+    }
+
 def suppress_low_counts(
     aggregated_df: pd.DataFrame,
     threshold: int = SUPPRESSION_THRESHOLD,
 ) -> pd.DataFrame:
-    """
-    D5: any (species, cell, year) group with count < threshold gets
-    its exact count hidden - so a count of 1 (or any small number)
-    can never be read straight off the dashboard. Suppressed rows
-    keep count as null rather than being dropped, so callers can
-    still show "present, not shown" instead of nothing at all.
 
-    NOTE: boundary is currently strict "<" - a count exactly AT
-    threshold is shown, not suppressed. Confirm with BRERC whether
-    it should be "<=" instead before relying on this in production.
-    """
+    if "count" not in aggregated_df.columns:
+        raise KeyError(
+            "Aggregation dataframe must contain count column"
+        )
+   
     if threshold is None:
         raise ValueError(
             "SUPPRESSION_THRESHOLD is not set - confirm BRERC's "

@@ -13,7 +13,11 @@ columns:
 generalisation:
   
   d0_floor_m: 100 
-  default_sensitive_resolution_m: 10000
+  default_sensitive_resolution_m: 1000
+
+aggregation:
+  suppression_threshold: 2 
+  cell_size_m: 1000
 
 species_resolutions: {}
 

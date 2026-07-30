@@ -1,40 +1,24 @@
 # Build the species index from species that actually appear
 # in the filtered records, rather than from the full species dictionary.
 
-"""
-Ensure it matches the expected species: DATABASE| SOURCE(CVS column names)
-- species_id - species_no
-- scientific_name - scientific_name
-- common_name - common_name 
-- species_group - Represented by TAXANB in the dictionary
-- record_count
-- first_year
-- last_year
-- has_image
-"""
 import pandas as pd
 
 def build_species_index(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Builds one species row for each species that appears
-    in the records being loaded.
 
-    Database mapping:
-        species_id     <- species_no
-        scientific_name <- scientific_name
-        common_name    <- common_name
-        species_group  <- taxanb
-        record_count   <- count of records (how many records of said species)
-        first_year     <- earliest record year
-        last_year      <- latest record year
-        has_image      <- False until image data exists
+    """
+    Creates an aggregated species table from the records
+    that are actually being loaded into the database. 
+
+    One row is created per unoque species, containing
+    summary information needed by the species table
     """
 
     df = df.copy()
 
-    # Convert dates BEFORE calculating min/max.
+    # Convert record_date into year 
+    # Aggregation function can calculate the earliest and lastest observed years 
     df["record_year"] = (
         pd.to_datetime(
             df["record_date"],
@@ -44,6 +28,7 @@ def build_species_index(
         .dt.year
     )
 
+    # Groups records belonging to the same species 
     species_index = (
         df.groupby(
             [
@@ -52,14 +37,19 @@ def build_species_index(
                 "common_name",
                 "taxanb",
             ],
+            # Keeps species even if some name/group fields are missing
             dropna=False,
         )
         .agg(
+            # Count how many occurrence records belong to this species
             record_count=("unique_no", "count"),
+            # Find the earliest year this species was recorded
             first_year=("record_year", "min"),
+            # Find the most recent year this species was recorded
             last_year=("record_year", "max"),
         )
         .reset_index()
+        # Rename columns to match the database schema public UI will use
         .rename(
             columns={
                 "species_no": "species_id",
@@ -71,6 +61,8 @@ def build_species_index(
     # No image data is currently being loaded.
     species_index["has_image"] = False
 
+    # Returns the colimns required by the database
+    # Ensures the output matches the species table schema 
     return species_index[
         [
             "species_id",
