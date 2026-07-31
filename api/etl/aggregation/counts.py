@@ -106,7 +106,6 @@ def aggregate_counts(
 
     return aggregated
 
-
 def build_public_aggregation(
     df: pd.DataFrame,
     verified_column: str,
@@ -126,7 +125,6 @@ def build_public_aggregation(
     if cell_size_m is None:
         cell_size_m = CONFIG["aggregation"]["cell_size_m"]
 
-    # D5:
     # Remove rejected records before aggregation.
     # Only accepted records + legacy flagged records continue.
     filtered_records = filter_accepted_records(
@@ -134,13 +132,12 @@ def build_public_aggregation(
         verified_column=verified_column,
     )§§
 
-    # Build species metadata only from species that actually
-    # appear in the records being loaded.
+    # Build species table from species that actually ppear in the records being loaded
     species_index = build_species_index(
         filtered_records
     )
 
-    # Create species x cell x year counts.
+    # Create species x cell x year counts
     aggregated = aggregate_counts(
         filtered_records,
         easting_column=easting_column,
@@ -149,7 +146,7 @@ def build_public_aggregation(
         cell_size_m=cell_size_m,
     )
 
-    # Hide exact counts where only one record exists.
+    # Suppresses counts that are too small
     suppressed_counts = suppress_low_counts(
         aggregated,
         threshold=SUPPRESSION_THRESHOLD,
@@ -177,9 +174,12 @@ def suppress_low_counts(
         )
 
     df = aggregated_df.copy()
+    # Finds the cells that need hiding
     suppressed = df["count"] < threshold
 
+    # Add flag stating those records are suppressed
     df["suppressed"] = suppressed
+    # Replace the count with null
     df.loc[suppressed, "count"] = pd.NA
 
     return df
