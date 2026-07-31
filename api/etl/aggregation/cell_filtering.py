@@ -23,14 +23,14 @@ CONFIG = load_safety_config()
 # DONT USE "ñ" that was previously here (invalid)
 
 # Values which are considered verified and safe to include
-ACCEPTED_VERIFIED_VALUES = {
-    CONFIG["verification"]["accepted_values"]
-}
+ACCEPTED_VERIFIED_VALUES = set(
+    CONFIG["verified_values"]["accepted"]
+)
 
 # Older records which are included but marked as legacy
-LEGACY_VERIFIED_VALUES = {
-    CONFIG["verification"]["legacy_values"]
-}
+LEGACY_VERIFIED_VALUES = set(
+    CONFIG["verified_values"]["legacy"]
+)
 
 def filter_accepted_records(
         df: pd.DataFrame,

@@ -1,6 +1,6 @@
 from etl.profiling.cleaning import clean_data
 from etl.reconciliation.reconcile import reconcile
-from etl.aggregation.aggregation import build_public_aggregation
+from etl.aggregation.counts import build_public_aggregation
 
 from etl.config.loader import load_safety_config
 

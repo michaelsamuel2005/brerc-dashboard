@@ -22,16 +22,13 @@ aggregation:
 
 species_resolutions: {}
 
-ACCEPTED_VERIFIED_VALUES = {
-  "Accepted - correct",
-  "Accepted - considered correct",
-  "Accepted",
-}
-
-LEGACY_VERIFIED_VALUES = {
-  "BRERC",
-}
-
+verified_values:
+  accepted:
+    - "Accepted - correct"
+    - "Accepted - considered correct"
+    - "Accepted"
+  legacy:
+    - "BRERC"
 
 flagged_record_types:
   - trapped at actinic light
@@ -84,8 +81,6 @@ flagged_record_types:
   - dam
   - gnawed timber
 
-# B3 
-
 reconciliation:
   hash_columns:
     - scientific_name
@@ -95,4 +90,4 @@ reconciliation:
     - vitality 
     - verified 
     - eastings 
-    - northings 
+    - northings

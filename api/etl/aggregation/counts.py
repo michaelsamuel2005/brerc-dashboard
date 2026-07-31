@@ -130,7 +130,7 @@ def build_public_aggregation(
     filtered_records = filter_accepted_records(
         df,
         verified_column=verified_column,
-    )§§
+    )
 
     # Build species table from species that actually ppear in the records being loaded
     species_index = build_species_index(
