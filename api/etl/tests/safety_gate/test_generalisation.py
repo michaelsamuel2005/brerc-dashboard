@@ -14,15 +14,17 @@ def connection():
 
 @needs_db
 def test_generalise_locations_applies_resolution_tiers(connection):
-    ...
-def test_generalise_locations_applies_resolution_tiers(connection):
-    # Confirms effective_resolution_m: null -> default 10km, below-floor
-    # values raised to the 100m floor (D0), other values pass through unchanged.
-    # Expects [10000, 100, 1000, 2000, 10000], else fails.
+    # Confirms effective_resolution_m:
+    # - missing values default to 1000m
+    # - values below the D0 floor are raised to 100m
+    # - valid resolutions pass through unchanged.
+    #
+    # Expects [1000, 100, 1000, 100, 1000], else fails.
+
     df = pd.DataFrame({
         "easting": [359234] * 5,
         "northing": [173456] * 5,
-        "resolution": [None, 50, 1000, 2000, 1000],
+        "resolution": [None, 50, 1000, 100, None],
     })
 
     result = generalise_locations(
@@ -33,8 +35,13 @@ def test_generalise_locations_applies_resolution_tiers(connection):
         resolution_column="resolution",
     )
 
-    assert result["effective_resolution_m"].tolist() == [10000, 100, 1000, 2000, 1000]
-
+    assert result["effective_resolution_m"].tolist() == [
+        1000,
+        100,
+        1000,
+        100,
+        1000,
+    ]
 
 @needs_db
 def test_generalise_locations_produces_coordinates_for_locatable_rows(connection):

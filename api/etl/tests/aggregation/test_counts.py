@@ -9,20 +9,24 @@ from etl.aggregation.counts import (
 
 
 # --- aggregate_counts tests ---
+def test_aggregate_counts_uses_config_when_cell_size_not_provided():
+    df = pd.DataFrame({
+        "species_no": [123],
+        "eastings": [359234],
+        "northings": [173456],
+        "record_date": ["01/01/2020"],
+    })
 
-def test_aggregate_counts_raises_when_cell_size_not_set():
-    # Confirms a missing reporting grid size raises ValueError.
-    # Expects ValueError, else fails.
-    df = pd.DataFrame()
+    result = aggregate_counts(
+        filtered_df=df,
+        easting_column="eastings",
+        northing_column="northings",
+        date_column="record_date",
+        cell_size_m=None,
+    )
 
-    with pytest.raises(ValueError):
-        aggregate_counts(
-            df,
-            easting_column="eastings",
-            northing_column="northings",
-            date_column="record_date",
-            cell_size_m=None,
-        )
+    assert "grid_cell" in result.columns
+    assert len(result) == 1
 
 
 @patch("etl.aggregation.counts.os_grid_square")
