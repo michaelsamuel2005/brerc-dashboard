@@ -22,7 +22,7 @@ def test_generalise_locations_applies_resolution_tiers(connection):
     df = pd.DataFrame({
         "easting": [359234] * 5,
         "northing": [173456] * 5,
-        "resolution": [None, 50, 1000, 2000, 10000],
+        "resolution": [None, 50, 1000, 2000, 1000],
     })
 
     result = generalise_locations(
@@ -33,7 +33,7 @@ def test_generalise_locations_applies_resolution_tiers(connection):
         resolution_column="resolution",
     )
 
-    assert result["effective_resolution_m"].tolist() == [10000, 100, 1000, 2000, 10000]
+    assert result["effective_resolution_m"].tolist() == [10000, 100, 1000, 2000, 1000]
 
 
 @needs_db

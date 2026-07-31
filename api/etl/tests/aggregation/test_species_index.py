@@ -14,7 +14,7 @@ def test_build_species_index_creates_one_row_per_species():
         "scientific_name": ["Robin", "Blackbird"],
         "common_name": ["Robin", "Blackbird"],
         "taxanb": ["Bird", "Bird"],
-        "record_date": ["01/01/2024", "01/01/2024"],
+        "date_of_record": ["01/01/2024", "01/01/2024"],
     })
 
     result = build_species_index(df)
@@ -31,7 +31,7 @@ def test_build_species_index_counts_records_per_species():
         "scientific_name": ["Robin", "Robin"],
         "common_name": ["Robin", "Robin"],
         "taxanb": ["Bird", "Bird"],
-        "record_date": ["01/01/2024", "02/01/2024"],
+        "date_of_record": ["01/01/2024", "02/01/2024"],
     })
 
     result = build_species_index(df)
@@ -48,7 +48,7 @@ def test_build_species_index_calculates_first_and_last_year():
         "scientific_name": ["Robin"] * 3,
         "common_name": ["Robin"] * 3,
         "taxanb": ["Bird"] * 3,
-        "record_date": [
+        "date_of_record": [
             "01/01/2022",
             "01/01/2024",
             "01/01/2023",
@@ -70,7 +70,7 @@ def test_build_species_index_renames_columns():
         "scientific_name": ["Robin"],
         "common_name": ["Robin"],
         "taxanb": ["Bird"],
-        "record_date": ["01/01/2024"],
+        "date_of_record": ["01/01/2024"],
     })
 
     result = build_species_index(df)
@@ -90,7 +90,7 @@ def test_build_species_index_sets_has_image_false():
         "scientific_name": ["Robin"],
         "common_name": ["Robin"],
         "taxanb": ["Bird"],
-        "record_date": ["01/01/2024"],
+        "date_of_record": ["01/01/2024"],
     })
 
     result = build_species_index(df)
@@ -107,7 +107,7 @@ def test_build_species_index_preserves_missing_species_group():
         "scientific_name": ["Robin"],
         "common_name": ["Robin"],
         "taxanb": [pd.NA],
-        "record_date": ["01/01/2024"],
+        "date_of_record": ["01/01/2024"],
     })
 
     result = build_species_index(df)
@@ -125,7 +125,7 @@ def test_build_species_index_returns_expected_columns():
         "scientific_name": ["Robin"],
         "common_name": ["Robin"],
         "taxanb": ["Bird"],
-        "record_date": ["01/01/2024"],
+        "date_of_record": ["01/01/2024"],
     })
 
     result = build_species_index(df)

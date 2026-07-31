@@ -22,15 +22,31 @@ CONFIG = load_safety_config()
 
 # DONT USE "ñ" that was previously here (invalid)
 
+def _normalise_dashes(value: str) -> str:
+    """
+    Treat en-dash (–) and em-dash (—) the same as a plain hyphen (-).
+    We don't know for certain whether BRERC's real export uses a plain
+    hyphen or a typographic dash in values like "Accepted - correct",
+    so both config values and incoming data are normalised the same
+    way before comparison, rather than betting on one or the other.
+    """
+    return (
+        value
+        .replace("\u2013", "-")  # en-dash –
+        .replace("\u2014", "-")  # em-dash —
+    )
+
 # Values which are considered verified and safe to include
-ACCEPTED_VERIFIED_VALUES = set(
-    CONFIG["verified_values"]["accepted"]
-)
+ACCEPTED_VERIFIED_VALUES = {
+    _normalise_dashes(value)
+    for value in CONFIG["verified_values"]["accepted"]
+}
 
 # Older records which are included but marked as legacy
-LEGACY_VERIFIED_VALUES = set(
-    CONFIG["verified_values"]["legacy"]
-)
+LEGACY_VERIFIED_VALUES = {
+    _normalise_dashes(value)
+    for value in CONFIG["verified_values"]["legacy"]
+}
 
 def filter_accepted_records(
         df: pd.DataFrame,
@@ -55,6 +71,7 @@ def filter_accepted_records(
         df[verified_column]
         .astype("string")
         .str.strip()
+        .map(lambda v: _normalise_dashes(v) if pd.notna(v) else v)
     )
 
     # Identifies records with accepted verification status
