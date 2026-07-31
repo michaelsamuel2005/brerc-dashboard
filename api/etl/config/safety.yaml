@@ -21,6 +21,17 @@ aggregation:
 
 species_resolutions: {}
 
+ACCEPTED_VERIFIED_VALUES = {
+  "Accepted - correct",
+  "Accepted - considered correct",
+  "Accepted",
+}
+
+LEGACY_VERIFIED_VALUES = {
+  "BRERC",
+}
+
+
 flagged_record_types:
   - trapped at actinic light
   - trapped at light

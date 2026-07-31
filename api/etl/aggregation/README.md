@@ -34,3 +34,9 @@ The row is kept so the dashboard can show that a species
 exists in that grid cell, without revealing an exact single
 observation.
 """
+
+ACCEPTED_VERIFIED_VALUES = {
+    "Accepted \u2013 correct",
+    "Accepted \u2013 considered correct",
+    "Accepted",  # deprecated older grouping, still seen in legacy data
+}
