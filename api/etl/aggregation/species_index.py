@@ -3,6 +3,11 @@
 
 import pandas as pd
 
+from etl.config.loader import load_safety_config
+
+CONFIG = load_safety_config()
+DATE_COLUMN = CONFIG["columns"]["record_date"]
+
 def build_species_index(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -21,7 +26,7 @@ def build_species_index(
     # Aggregation function can calculate the earliest and lastest observed years 
     df["record_year"] = (
         pd.to_datetime(
-            df["record_date"],
+            df[DATE_COLUMN],
             dayfirst=True,
             errors="coerce",
         )

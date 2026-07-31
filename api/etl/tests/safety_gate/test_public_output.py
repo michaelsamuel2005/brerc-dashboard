@@ -128,7 +128,7 @@ def test_prepare_public_output_drops_rows_with_missing_latitude():
         "latitude": pd.NA,
         "coarse_locality": "TQ27",
         "effective_resolution_m": 1000,
-        "record_date": "2024-01-01",
+        "date_of_record": "2024-01-01",
         "is_legacy": False,
     }
 

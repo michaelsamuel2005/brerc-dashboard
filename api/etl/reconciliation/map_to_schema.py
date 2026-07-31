@@ -1,5 +1,10 @@
 import pandas as pd
 
+from etl.config.loader import load_safety_config
+
+CONFIG = load_safety_config()
+DATE_COLUMN = CONFIG["columns"]["record_date"]
+
 # Takes the clean dataframe
 # Maps it to the occurence_public database table
 
@@ -8,7 +13,7 @@ def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
 
     # Returns only the year rn (may need to change later)
     df["record_year"] = pd.to_datetime(
-        df["record_date"], dayfirst=True
+        df[DATE_COLUMN], dayfirst=True
     ).dt.year
 
     return pd.DataFrame({

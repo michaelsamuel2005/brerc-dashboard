@@ -17,7 +17,7 @@ PUBLIC_COLUMNS = [
     "latitude",
     "coarse_locality",
     "effective_resolution_m", # public - shown as precisionMetres in the contract
-    "record_date",
+    "date_of_record",
     "is_legacy",
 ]
 
