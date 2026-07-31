@@ -4,7 +4,7 @@
 # the CSV at import time.
 
 import pandas as pd
-from etl.safety_gate import classify
+from etl.safety_gate import classification
 from etl.safety_gate.classification import classify_chunk
 
 FAKE_SENSITIVE_SPECIES_NOS = {101}
@@ -15,11 +15,11 @@ FAKE_SPECIES_RESOLUTIONS_M = {}
 
 
 def _patch_rules(monkeypatch):
-    monkeypatch.setattr(classify, "SENSITIVE_SPECIES_NOS", FAKE_SENSITIVE_SPECIES_NOS)
-    monkeypatch.setattr(classify, "FLAGGED_RECORD_TYPES", FAKE_FLAGGED_RECORD_TYPES)
-    monkeypatch.setattr(classify, "DEFAULT_SENSITIVE_RESOLUTION_M", FAKE_DEFAULT_RESOLUTION_M)
-    monkeypatch.setattr(classify, "D0_FLOOR_M", FAKE_D0_FLOOR_M)
-    monkeypatch.setattr(classify, "SPECIES_RESOLUTIONS_M", FAKE_SPECIES_RESOLUTIONS_M)
+    monkeypatch.setattr(classification, "SENSITIVE_SPECIES_NOS", FAKE_SENSITIVE_SPECIES_NOS)
+    monkeypatch.setattr(classification, "FLAGGED_RECORD_TYPES", FAKE_FLAGGED_RECORD_TYPES)
+    monkeypatch.setattr(classification, "DEFAULT_SENSITIVE_RESOLUTION_M", FAKE_DEFAULT_RESOLUTION_M)
+    monkeypatch.setattr(classification, "D0_FLOOR_M", FAKE_D0_FLOOR_M)
+    monkeypatch.setattr(classification, "SPECIES_RESOLUTIONS_M", FAKE_SPECIES_RESOLUTIONS_M)
 
 
 def test_classify_chunk_flags_sensitive_species(monkeypatch):
