@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.safety_gate.locality import os_grid_square
+from etl.safety_gate.location import os_grid_square
 
 # Matches occurrence_public (db/b6_schema.sql) + the API contract's
 # public fields (species_id, precision_metres are shown to users -

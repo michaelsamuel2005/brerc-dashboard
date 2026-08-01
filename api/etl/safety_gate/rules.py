@@ -1,11 +1,13 @@
 import pandas as pd
 
-from etl.cleaning import clean_data
-from pathlib import pathlib
+from etl.profiling.cleaning import clean_data
+from pathlib import Path
 
 # Enables reading sensitive species from any persons own pathway
 DATA_DIR = Path(__file__).resolve().parents[3]/ "data"
-sensitive_species_df = pd.read_cvs(DATA_DIR / sensitive_species.csv)
+sensitive_species_df = pd.read_csv(
+    DATA_DIR / "sensitive_species.csv"
+)
 
 sensitive_species_df_clean = clean_data(sensitive_species_df)
 
