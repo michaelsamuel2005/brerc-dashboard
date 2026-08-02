@@ -60,7 +60,7 @@ CREATE TABLE species (
 --     No precise point is stored — not even a geometry column.
 DROP TABLE IF EXISTS occurrence_public CASCADE;
 CREATE TABLE occurrence_public (
-    record_id        BIGINT   PRIMARY KEY,          -- unique_No (D7 recon key)
+    record_id        VARCHAR   PRIMARY KEY,          -- unique_No (D7 recon key)
     species_id       BIGINT   NOT NULL REFERENCES species(species_id),
     record_year      INTEGER  NOT NULL,             -- YEAR only — never precise date
     grid_ref         TEXT     NOT NULL,             -- generalised OS grid ref
