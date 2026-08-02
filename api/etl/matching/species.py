@@ -87,14 +87,23 @@ def resolve_species_numbers(
         records_df["species_no"].isna()
     )
 
-    # Fail-closed flag (extended): a species_no that matched the
-    # dictionary but isn't a clean integer (e.g. "6973a",
-    # cannot be written to the database and cannot be trusted as a real ID.
-    # Per D1's fail-closed rule, treat these the same as unresolved -
-    # never silently drop the record, blur it as sensitive instead.
+    # Fail-closed flag (extended):
+    # Species numbers can appear as:
+    #   - normal numeric IDs (e.g. 6973)
+    #   - masked sensitive IDs (e.g. BRERC6973)
+    #
+    # Anything else cannot be trusted as a valid species identifier,
+    # so it is treated as unresolved and will follow the sensitive
+    # fail-closed path.
+    valid_species_no = (
+        records_df["species_no"]
+        .astype("string")
+        .str.match(r"^(BRERC)?\d+$")
+    )
+
     non_numeric_species_no = (
         records_df["species_no"].notna()
-        & ~records_df["species_no"].astype(str).str.match(r"^\d+$")
+        & ~valid_species_no
     )
 
     records_df["species_unresolved"] = (

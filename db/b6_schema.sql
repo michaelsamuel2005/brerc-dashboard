@@ -45,7 +45,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 --     D4), so it is stable and safe to expose.
 DROP TABLE IF EXISTS species CASCADE;
 CREATE TABLE species (
-    species_id      BIGINT      PRIMARY KEY,        -- real SPECIES_NO (D4)
+    species_id      TEXT      PRIMARY KEY,        -- real SPECIES_NO (D4)
     scientific_name TEXT        NOT NULL,
     common_name     TEXT,
     species_group   TEXT        NOT NULL,           -- e.g. birds / mammals
@@ -61,7 +61,7 @@ CREATE TABLE species (
 DROP TABLE IF EXISTS occurrence_public CASCADE;
 CREATE TABLE occurrence_public (
     record_id        VARCHAR   PRIMARY KEY,          -- unique_No (D7 recon key)
-    species_id       BIGINT   NOT NULL REFERENCES species(species_id),
+    species_id       TEXT   NOT NULL REFERENCES species(species_id),
     record_year      INTEGER  NOT NULL,             -- YEAR only — never precise date
     grid_ref         TEXT     NOT NULL,             -- generalised OS grid ref
     precision_metres INTEGER  NOT NULL
@@ -80,7 +80,7 @@ CREATE TABLE occurrence_public (
 DROP TABLE IF EXISTS distribution_cell CASCADE;
 CREATE TABLE distribution_cell (
     cell_id          TEXT     NOT NULL,             -- e.g. "ST57" (grid square)
-    species_id       BIGINT   NOT NULL REFERENCES species(species_id),
+    species_id       TEXT   NOT NULL REFERENCES species(species_id),
     record_year      INTEGER  NOT NULL,
     precision_metres INTEGER  NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor

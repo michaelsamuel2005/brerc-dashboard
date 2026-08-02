@@ -40,7 +40,6 @@ EASTING_COLUMN = (
 NORTHING_COLUMN = (
     CONFIG["columns"]["northings"]
 )
-
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
@@ -68,8 +67,29 @@ def make_safe_for_publishing(
 
     # Adds species_no to their name
     resolved = resolve_species_numbers(filtered, dictionary_df)
+
+    # Records without a resolved species_no cannot enter occurrence_public
+    # because occurrence_public.species_id is a required foreign key
+    # linked to the species table.
+    #
+    # These records have already gone through fail-closed logic, but they
+    # cannot be represented in the public database without a species ID.
+
+    unresolved_count = resolved["species_no"].isna().sum()
+
+    if unresolved_count:
+        print(
+            f"{unresolved_count} records excluded from public load "
+            "because species could not be resolved"
+        )
+
+    resolved = resolved.dropna(
+        subset=["species_no"]
+    )
+
     # Classifying if the species are sensitive or not + blur distance
     classified = classify_chunk(resolved)
+
     # Blur the location of the species
     generalised = generalise_locations(
         classified,
@@ -78,6 +98,7 @@ def make_safe_for_publishing(
         northing_column=northing_column,
         resolution_column=resolution_column,
     )
+
     # Create a locality string with the blurred coordinates
     with_locality = add_coarse_locality(
         generalised,
@@ -85,17 +106,24 @@ def make_safe_for_publishing(
         northing_column="snapped_northing",
     )
 
-    # Removes all columns public shouldn't see (sensitive columns)
+        # Removes all columns public shouldn't see (sensitive columns)
     safe_df = prepare_public_output(with_locality)
+
 
     # Sets unique_no as the index, selects content_hash column (uses with_locality DF)
     hash_lookup = with_locality.set_index("unique_no")["content_hash"]
+
     # For every value look up its hash_lookup, stored as content_hash
-    safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
+    safe_df["content_hash"] = safe_df["unique_no"].map(
+        hash_lookup
+    )
 
-    # Returned safe df to the map function
-    return map_to_occurrence_public(safe_df)
+    # Map internal ETL column names to occurrence_public schema names.
+    # This creates species_id from species_no.
+    safe_df = map_to_occurrence_public(safe_df)
 
+    # Returned safe df to the reconciliation load functions
+    return safe_df
 
 def reconcile(
     source_df: pd.DataFrame,

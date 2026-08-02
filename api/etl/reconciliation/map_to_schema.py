@@ -56,6 +56,15 @@ def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
         cleaned_dates, dayfirst=True, errors="coerce"
     ).dt.year
 
+    # Species IDs come from the dictionary SPECIES_NO field.
+    # BRERC uses both numeric IDs and prefixed IDs (e.g. Axxxxx).
+    # Keep them as strings because they are identifiers, not numbers.
+    df["species_no"] = (
+        df["species_no"]
+        .astype("string")
+        .str.strip()
+    )
+
     return pd.DataFrame({
         "record_id": df["unique_no"],
         "species_id": df["species_no"],

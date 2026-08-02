@@ -1,4 +1,7 @@
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # UPSERT: Try to insert record, if it already exists, update it instead
 # As INSERT and UPDATE share identical SQL using PostgreSQL's
@@ -8,6 +11,36 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
     
     if species_df.empty:
             return
+
+    # Converts pandas missing value into python None
+    # Since psycopgs can't adapt pd.NA as null
+
+    species_df = (
+        species_df
+        .astype(object)
+        .where(pd.notna(species_df), None)
+    )
+
+    species_df["species_id"] = (
+        species_df["species_id"]
+        .astype(str)
+        .str.strip()
+    )
+
+    rows = list(
+        species_df[
+            [
+                "species_id",
+                "scientific_name",
+                "common_name",
+                "species_group",
+                "record_count",
+                "first_year",
+                "last_year",
+                "has_image",
+            ]
+        ].itertuples(index=False, name=None)
+    )
 
     required ={
         "species_id",
@@ -26,6 +59,30 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
         raise KeyError(
             f"species_df missing required columns: {sorted(missing)}"
         )
+
+    # species_id comes from BRERC's SPECIES_NO field.
+    # It is an identifier, not a number.
+    # BRERC species numbers can contain letters (e.g. Axxxxx),
+    # so they must remain as TEXT.
+    valid_species_id = (
+        species_df["species_id"].notna()
+        &
+        (species_df["species_id"].astype(str).str.strip() != "")
+    )
+
+    invalid_count = (~valid_species_id).sum()
+
+    if invalid_count > 0:
+        logger.warning(
+            "%s species_index rows have a missing species_id "
+            "and will be excluded from the species table write",
+            invalid_count,
+        )
+
+    species_df = species_df.loc[valid_species_id].copy()
+
+    if species_df.empty:
+        return
 
     rows = list(
         species_df[
