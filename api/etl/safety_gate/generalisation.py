@@ -112,86 +112,48 @@ def generalise_locations(
     # Generalises coordinates
     # If success commit
     if len(location_data) > 0:
-        with connection:
-            with connection.cursor() as cursor:
+        with connection.cursor() as cursor:
 
-                # Creates temporary table in PostgreSQL, when transaction commits, delete
-                cursor.execute(
-                    f"""
-                    CREATE TEMP TABLE {temp_table} (
-                        row_id BIGINT,
-                        easting DOUBLE PRECISION,
-                        northing DOUBLE PRECISION,
-                        resolution_m DOUBLE PRECISION
-                    )
-                    ON COMMIT DROP
-                    """
+            # Creates temporary table in PostgreSQL, when transaction commits, delete
+            cursor.execute(
+                f"""
+                CREATE TEMP TABLE {temp_table} (
+                    row_id BIGINT,
+                    easting DOUBLE PRECISION,
+                    northing DOUBLE PRECISION,
+                    resolution_m DOUBLE PRECISION
                 )
+                ON COMMIT DROP
+                """
+            )
 
-                # Creates in-memory text buffer
-                buffer = io.StringIO()
-                writer = csv.writer(buffer)
-                # Converts DF rows into CSV-like data
-                writer.writerows(
-                    location_data.itertuples(index=False, name=None)
-                )
-                # Moves pointer to beginning of the buffer
-                buffer.seek(0)
+            # Creates in-memory text buffer
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            # Converts DF rows into CSV-like data
+            writer.writerows(
+                location_data.itertuples(index=False, name=None)
+            )
+            # Moves pointer to beginning of the buffer
+            buffer.seek(0)
 
-                # Bulk-loads the data with COPY -> Sends all coordinates to PostgreSQL
-                with cursor.copy(
-                    f"""
-                    COPY {temp_table} (row_id, easting, northing, resolution_m)
-                    FROM STDIN WITH CSV
-                    """
-                ) as copy:
-                    copy.write(buffer.getvalue())
+            # Bulk-loads the data with COPY -> Sends all coordinates to PostgreSQL
+            with cursor.copy(
+                f"""
+                COPY {temp_table} (row_id, easting, northing, resolution_m)
+                FROM STDIN WITH CSV
+                """
+            ) as copy:
+                copy.write(buffer.getvalue())
 
-                # Generalise the whole chunk in PostGIS
-                cursor.execute(
-                    f"""
-                    SELECT
-                        row_id,
+            # Generalise the whole chunk in PostGIS
+            cursor.execute(
+                f"""
+                SELECT
+                    row_id,
 
-                        ST_X(
-                            ST_Transform(
-                                ST_SnapToGrid(
-                                    ST_SetSRID(
-                                        ST_MakePoint(
-                                            easting,
-                                            northing
-                                        ),
-                                        27700
-                                    ),
-                                    resolution_m
-                                ),
-                                4326
-                            )
-                        ) AS longitude,
-
-                        ST_Y(
-                            ST_Transform(
-                                ST_SnapToGrid(
-                                    ST_SetSRID(
-                                        ST_MakePoint(
-                                            easting,
-                                            northing
-                                        ),
-                                        27700
-                                    ),
-                                    resolution_m
-                                ),
-                                4326
-                            )
-                        ) AS latitude,
-
-                        -- Snapped (blurred) BNG coordinates, same
-                        -- point as above but before the transform to
-                        -- lon/lat. coarse_locality must be built from
-                        -- THESE, never from the raw easting/northing,
-                        -- or the "safe" locality string would leak the
-                        -- precise point D0 exists to hide.
-                        ST_X(
+                    ST_X(
+                        ST_Transform(
                             ST_SnapToGrid(
                                 ST_SetSRID(
                                     ST_MakePoint(
@@ -201,10 +163,13 @@ def generalise_locations(
                                     27700
                                 ),
                                 resolution_m
-                            )
-                        ) AS snapped_easting,
+                            ),
+                            4326
+                        )
+                    ) AS longitude,
 
-                        ST_Y(
+                    ST_Y(
+                        ST_Transform(
                             ST_SnapToGrid(
                                 ST_SetSRID(
                                     ST_MakePoint(
@@ -214,16 +179,51 @@ def generalise_locations(
                                     27700
                                 ),
                                 resolution_m
-                            )
-                        ) AS snapped_northing
+                            ),
+                            4326
+                        )
+                    ) AS latitude,
 
-                    FROM {temp_table}
-                    ORDER BY row_id
-                    """
-                )
+                    -- Snapped (blurred) BNG coordinates, same
+                    -- point as above but before the transform to
+                    -- lon/lat. coarse_locality must be built from
+                    -- THESE, never from the raw easting/northing,
+                    -- or the "safe" locality string would leak the
+                    -- precise point D0 exists to hide.
+                    ST_X(
+                        ST_SnapToGrid(
+                            ST_SetSRID(
+                                ST_MakePoint(
+                                    easting,
+                                    northing
+                                ),
+                                27700
+                            ),
+                            resolution_m
+                        )
+                    ) AS snapped_easting,
 
-                # Fetch the results
-                generalised_coordinates = cursor.fetchall()
+                    ST_Y(
+                        ST_SnapToGrid(
+                            ST_SetSRID(
+                                ST_MakePoint(
+                                    easting,
+                                    northing
+                                ),
+                                27700
+                            ),
+                            resolution_m
+                        )
+                    ) AS snapped_northing
+
+                FROM {temp_table}
+                ORDER BY row_id
+                """
+            )
+
+            # Fetch the results
+            generalised_coordinates = cursor.fetchall()
+        connection.commit()
     else:
         generalised_coordinates = []
 

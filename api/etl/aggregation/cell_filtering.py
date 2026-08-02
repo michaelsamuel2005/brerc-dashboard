@@ -34,6 +34,7 @@ def _normalise_dashes(value: str) -> str:
         value
         .replace("\u2013", "-")  # en-dash –
         .replace("\u2014", "-")  # em-dash —
+        .replace("ñ", "-")  
     )
 
 # Values which are considered verified and safe to include

@@ -103,7 +103,7 @@ def classify_chunk(
 
     # Convert empty lists into "not_sensitive" for records that triggered no rules.
     df.loc[
-        df["sensitivity_reason"].str.len() == 0,
+        df["sensitivity_reason"].apply(len) == 0,
         "sensitivity_reason"
     ] = "not_sensitive"
 

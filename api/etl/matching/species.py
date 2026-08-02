@@ -64,7 +64,7 @@ def resolve_species_numbers(
                 "scientific_key",
                 "species_no",
                 "nbn_number",
-                "common_name",
+                "common_nam",
                 "taxanb",
             ]
         ]

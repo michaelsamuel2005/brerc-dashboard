@@ -1,6 +1,7 @@
 from etl.profiling.cleaning import clean_data
 from etl.reconciliation.reconcile import reconcile
 from etl.aggregation.counts import build_public_aggregation
+from etl.matching.species import resolve_species_numbers
 
 from etl.config.loader import load_safety_config
 
@@ -31,19 +32,21 @@ def run_pipeline(
 
     # Clean incoming tables: Cleans column names
     cleaned_source = clean_data(source_df)
+    cleaned_dictionary = clean_data(dictionary_df)
+
+    resolved_source = resolve_species_numbers(cleaned_source, cleaned_dictionary)
 
     # Update the occurence_public
     reconciliation_summary = reconcile(
         cleaned_source,
-        dictionary_df,
+        cleaned_dictionary,
         ui_map,
         connection,
     )
 
-    # Rebuilt the derived aggreation layer 
+    # Rebuilt the derived aggreation layer (SHOULD MAYBE USE LOADED RECORDS)
     aggregation_outputs = build_public_aggregation(
-        cleaned_source,
-        # change to the ymal
+        resolved_source,      # not cleaned_source
         verified_column=VERIFIED_COLUMN,
         easting_column=EASTING_COLUMN,
         northing_column=NORTHING_COLUMN,

@@ -3,6 +3,10 @@ files:
   sensitive_species:
     path: "data/sensitive_species.csv"
 
+source:
+  records_path: "../data/varied_sample.csv"     
+  dictionary_path: "../data/full_dictionary.csv"
+
 columns:
   species_number: species_no
   nbn_number: nbn_number
