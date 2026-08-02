@@ -14,7 +14,14 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
         )
 
     # Creates dictionary, joining two columns, allowing easier access e.g [1:"999"]
-    return dict(zip(df["unique_no"], df["content_hash"]))
+    # unique_no is cast to str so it matches the type of record_id coming
+    # back from the database (occurrence_public.record_id is VARCHAR) -
+    # without this, every record looks like a mismatch (int vs str keys
+    # never compare equal), causing false inserts/deletes every run.
+    return dict(zip(
+        df["unique_no"].astype(str),
+        df["content_hash"],
+    ))
 
 
 def diff_id_hash_maps(source_map: dict, ui_map: dict):
@@ -56,13 +63,18 @@ def get_reconciliation_records(
         changes: dict,
     ) -> dict:
 
+    # changes["inserts"]/["updates"] are now sets of STRINGS (see
+    # build_id_hash_map), so unique_no must be cast to str here too
+    # before comparing, or .isin() will match nothing.
+    unique_no_str = source_df["unique_no"].astype(str)
+
     # Retrieves the full source rows corresponding to each reconciliation action
     inserts = source_df[
-        source_df["unique_no"].isin(changes["inserts"])
+        unique_no_str.isin(changes["inserts"])
     ].copy()
 
     updates = source_df[
-        source_df["unique_no"].isin(changes["updates"])
+        unique_no_str.isin(changes["updates"])
     ].copy()
 
     return {

@@ -30,7 +30,11 @@ def get_ui_map(connection) -> dict:
         )
         rows = cursor.fetchall()
 
+    # record_id is cast to str so its type matches build_id_hash_map's
+    # unique_no keys (also cast to str) - without this, int vs str
+    # keys never compare equal in the reconciliation diff, causing
+    # every record to look like a fresh insert AND a delete each run.
     return {
-        row["record_id"]: row["content_hash"]
+        str(row["record_id"]): row["content_hash"]
         for row in rows
     }
