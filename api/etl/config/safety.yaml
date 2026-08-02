@@ -4,9 +4,13 @@ files:
     path: "data/sensitive_species.csv"
 
 source:
+  mode: "csv"
+
+  # For "csv" mode
   records_path: "../data/varied_sample.csv"     
   dictionary_path: "../data/full_dictionary.csv"
 
+  # For "database" - BRERC: replace with your real table/view names
   records_query: "SELECT * FROM your_source_table"
   dictionary_query: "SELECT * FROM your_dictionary_table"
 
