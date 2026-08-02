@@ -27,6 +27,10 @@ build/
 coverage/
 *.log
 
+# Cached third-party answers (species photo licences/descriptions, B8). Rebuilt
+# on demand — never commit it.
+.cache/
+
 # Data — never commit real/sensitive data (species locations, personal data).
 # The folder and its README are tracked; everything else inside is ignored.
 data/*

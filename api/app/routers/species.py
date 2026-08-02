@@ -6,13 +6,16 @@ Both read ONLY from the public_species view (safe by construction). speciesId is
 the real SPECIES_NO, so a list item's speciesId works directly with /species/{id}
 (list and detail stay consistent).
 
-Species image + description come from a cached species-info proxy
-(iNaturalist -> GBIF -> Wikipedia) — a later B8 sub-task. Until a licensed image
-+ attribution is confirmed, they fail closed to None (no broken/unlicensed image).
+The image + description on the detail endpoint come from the cached species-info
+proxy in app/species_info.py (iNaturalist -> GBIF -> Wikipedia). That module owns
+the licence rules; this router just asks it for an answer and passes on whatever
+it gets. When no reusable licence + attribution can be confirmed, both fields are
+None — the front end should then show a named placeholder, never a broken image.
 """
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app import species_info
 from app.db import get_connection
 from app.models import SpeciesList, SpeciesListItem, SpeciesDetail
 
@@ -43,6 +46,15 @@ def list_species(
             cur.execute(count_sql)
             total = cur.fetchone()["total"]
 
+    # hasImage means "the detail endpoint can give you a picture". Two ways that
+    # can be true: the database says so (a curated image), or the proxy already
+    # has a licence-checked one cached. This is a CACHE-ONLY, batched lookup —
+    # rendering one page of results must never trigger twenty outbound calls, so
+    # a species the proxy hasn't fetched yet simply reports the database's value.
+    cached_images = species_info.names_with_cached_image(
+        [row["scientific_name"] for row in rows]
+    )
+
     items = [
         SpeciesListItem(
             speciesId=row["species_id"],
@@ -52,7 +64,7 @@ def list_species(
             recordCount=row["record_count"],
             firstYear=row["first_year"],
             lastYear=row["last_year"],
-            hasImage=row["has_image"],
+            hasImage=row["has_image"] or row["scientific_name"] in cached_images,
         )
         for row in rows
     ]
@@ -77,6 +89,11 @@ def species_detail(species_id: int) -> SpeciesDetail:
     if row is None:
         raise HTTPException(status_code=404, detail="Species not found")
 
+    # Cached, licence-checked, and guaranteed not to raise: if the proxy is off or
+    # the sources are unreachable, both fields come back None and this endpoint
+    # still returns 200 with honest stats.
+    info = species_info.get_species_info(row["scientific_name"])
+
     return SpeciesDetail(
         speciesId=row["species_id"],
         scientificName=row["scientific_name"],
@@ -85,6 +102,6 @@ def species_detail(species_id: int) -> SpeciesDetail:
         recordCount=row["record_count"],
         firstYear=row["first_year"],
         lastYear=row["last_year"],
-        image=None,        # fail closed — real licensed image is a later B8 sub-task
-        description=None,   # cached description is a later B8 sub-task
+        image=info.image,
+        description=info.description,
     )

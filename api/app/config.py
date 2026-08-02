@@ -40,3 +40,66 @@ ALLOWED_ORIGINS = (
 # Safety valve: the maximum time (milliseconds) any single SQL query may run
 # before PostgreSQL cancels it, so a heavy/runaway query can't hang the API.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
+
+
+# ---------------------------------------------------------------------------
+# Species image + description proxy (B8). See app/species_info.py.
+# ---------------------------------------------------------------------------
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    """Read a true/false environment variable ("true", "1", "yes" all mean true)."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"true", "1", "yes", "on"}
+
+
+# OFF by default. Fetching pictures from third parties is the one thing this API
+# does that reaches outside BRERC's own systems, so it has to be switched on
+# deliberately rather than by accident.
+SPECIES_INFO_ENABLED = _env_flag("SPECIES_INFO_ENABLED", False)
+
+# Who to contact about our API traffic — an email address or project url. These
+# APIs ask callers to identify themselves in the User-Agent header, and the proxy
+# refuses to run without it.
+SPECIES_INFO_CONTACT = os.getenv("SPECIES_INFO_CONTACT", "")
+
+# Which image licences we may display, as canonical tokens (see
+# species_info.normalise_licence). The default is deliberately strict:
+#   cc0    public-domain dedication      — no conditions
+#   pd     public domain / no copyright  — no conditions
+#   cc-by  attribution only              — fine for a site that may go commercial
+# NOT included by default: anything NonCommercial (nc) or NoDerivatives (nd), and
+# cc-by-sa. Add "cc-by-sa" here if BRERC's legal position allows share-alike
+# images — that one line is the whole change.
+SPECIES_IMAGE_ALLOWED_LICENCES = {
+    token.strip().lower()
+    for token in os.getenv("SPECIES_IMAGE_ALLOWED_LICENCES", "cc0,pd,cc-by").split(",")
+    if token.strip()
+}
+
+# How long to wait on any single third-party request before giving up.
+SPECIES_INFO_TIMEOUT_SECONDS = float(os.getenv("SPECIES_INFO_TIMEOUT_SECONDS", "4"))
+
+# Cache lifetimes: a long one for answers we found, a short one for "found
+# nothing" so an outage or a newly-uploaded photo isn't missed for a month.
+SPECIES_INFO_CACHE_TTL_DAYS = float(os.getenv("SPECIES_INFO_CACHE_TTL_DAYS", "30"))
+SPECIES_INFO_MISS_TTL_MINUTES = float(os.getenv("SPECIES_INFO_MISS_TTL_MINUTES", "360"))
+
+# Where the cache file lives. Defaults to api/.cache/ (git-ignored); in Docker
+# this resolves to /app/.cache, which docker-compose keeps on a named volume so
+# the cache survives a restart.
+SPECIES_INFO_CACHE_PATH = os.getenv(
+    "SPECIES_INFO_CACHE_PATH",
+    str(Path(__file__).resolve().parent.parent / ".cache" / "species_info.sqlite3"),
+)
+
+# Minimum gap between outbound calls, so we stay a polite API client.
+SPECIES_INFO_MIN_INTERVAL_SECONDS = float(
+    os.getenv("SPECIES_INFO_MIN_INTERVAL_SECONDS", "0.25")
+)
+
+# Cap on the description length (it is a teaser, not an article).
+SPECIES_INFO_DESCRIPTION_MAX_CHARS = int(
+    os.getenv("SPECIES_INFO_DESCRIPTION_MAX_CHARS", "600")
+)

@@ -58,6 +58,15 @@ services:
       DATABASE_URL: postgresql://brerc_api_ro:${RO_PASSWORD:-brerc_ro_2026}@db:5432/brerc_ui
       # Same-origin through the proxy, so this is the origin the browser uses.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+      # Species photos + descriptions (B8). Off unless you set both of these in
+      # a .env next to this file — SPECIES_INFO_CONTACT must be a real address.
+      SPECIES_INFO_ENABLED: ${SPECIES_INFO_ENABLED:-false}
+      SPECIES_INFO_CONTACT: ${SPECIES_INFO_CONTACT:-}
+      SPECIES_INFO_CACHE_PATH: /app/.cache/species_info.sqlite3
+    volumes:
+      # Keeps the licence/description cache across restarts, so a redeploy does
+      # not re-hit iNaturalist/GBIF/Wikipedia for every species again.
+      - api_cache:/app/.cache
     depends_on:
       db:
         condition: service_healthy
@@ -74,3 +83,4 @@ services:
 
 volumes:
   db_data:
+  api_cache:
