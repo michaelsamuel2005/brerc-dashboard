@@ -23,6 +23,25 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
         df["content_hash"],
     ))
 
+"""
+Builds a complete unique_no -> content_hash mapping by
+combining the hash maps from each DataFrame chunk.
+"""
+
+# Takes iterable 'chunks" of dataframe combining into one dictionary
+def build_id_hash_map_from_chunks(chunks) -> dict:
+    # Creates empty dictionary
+    source_map = {}
+
+    # loops over dataframes
+    for chunk in chunks:
+        # calls function over chunk
+        chunk_map = build_id_hash_map(chunk)
+        # merges dictionary into overall dictionary
+        source_map.update(chunk_map)
+
+    return source_map
+
 
 def diff_id_hash_maps(source_map: dict, ui_map: dict):
 
