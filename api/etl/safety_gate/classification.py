@@ -116,20 +116,4 @@ def classify_chunk(
         "resolution_m"
     ] = DEFAULT_SENSITIVE_RESOLUTION_M
 
-    # # Apply species-specific resolutions.
-    # for species_no, resolution in (
-    #     SPECIES_RESOLUTIONS_M.items()
-    # ):
-
-    #     species_mask = (
-    #         df["species_no"]
-    #         == species_no
-    #     )
-
-    #     df.loc[
-    #         species_mask
-    #         & sensitive_species_mask,
-    #         "resolution_m"
-    #     ] = resolution
-
     return df
