@@ -22,6 +22,18 @@ columns:
   northings: northings
   record_date: date_of_record
 
+reconciliation:
+  hash_columns:
+    - scientific_name
+    - abundance
+    - sex_stage
+    - record_type
+    - vitality
+    - verified
+    - eastings
+    - northings
+  chunk_size: 5000
+
 generalisation:
   
   d0_floor_m: 100 
@@ -91,14 +103,3 @@ flagged_record_types:
   - found dead
   - dam
   - gnawed timber
-
-reconciliation:
-  hash_columns:
-    - scientific_name
-    - abundance
-    - sex_stage
-    - record_type 
-    - vitality 
-    - verified 
-    - eastings 
-    - northings

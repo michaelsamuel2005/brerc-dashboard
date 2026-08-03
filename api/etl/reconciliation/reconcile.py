@@ -40,6 +40,26 @@ EASTING_COLUMN = (
 NORTHING_COLUMN = (
     CONFIG["columns"]["northings"]
 )
+
+# Determines how many records are processed at once, keeps memory usage manageable
+CHUNK_SIZE = CONFIG.get("reconciliation", {}).get("chunk_size", 100)
+
+# Yields one chunk at a time
+def _chunk_dataframe(df: pd.DataFrame, chunk_size: int):
+    """
+    Yields df in consecutive slices of chunk_size rows.
+    Yields nothing if df is empty.
+    """
+    for start in range(0, len(df), chunk_size):
+        yield df.iloc[start:start + chunk_size]
+
+
+# How many rows to process per chunk through the safety gate + DB write.
+# Keeps peak memory down at scale (millions of records) - the initial
+# read + diff step still sees the whole dataset (that's Step B: chunked
+# reading + two-pass diffing, not yet done), but the expensive part -
+# safety-gate processing + writing - now happens in smaller batches.
+
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
@@ -125,6 +145,27 @@ def make_safe_for_publishing(
     # Returned safe df to the reconciliation load functions
     return safe_df
 
+
+def _process_and_write_in_chunks(
+    records_df: pd.DataFrame,
+    dictionary_df: pd.DataFrame,
+    connection,
+    write_fn,
+) -> None:
+    """
+    Splits records_df into CHUNK_SIZE-row pieces, runs each through
+    make_safe_for_publishing, and writes each chunk immediately via
+    write_fn (insert_records or update_records) - rather than building
+    one giant safe dataframe for the whole dataset before writing
+    anything.
+    """
+    for chunk in _chunk_dataframe(records_df, CHUNK_SIZE):
+        safe_chunk = make_safe_for_publishing(
+            chunk, dictionary_df, connection
+        )
+        write_fn(safe_chunk, connection)
+
+
 def reconcile(
     source_df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
@@ -144,15 +185,21 @@ def reconcile(
     # Get the full rows of the reconciliation columns
     records = get_reconciliation_records(source_df, changes)
 
-    # Every insert and update goes through the safety pipeline
-    safe_inserts = make_safe_for_publishing(
-        records["inserts"], dictionary_df, connection
+    # Every insert and update goes through the safety pipeline, now
+    # processed and written in chunks rather than all at once - keeps
+    # peak memory down and lets Postgres start receiving data sooner.
+    _process_and_write_in_chunks(
+        records["inserts"], dictionary_df, connection, insert_records
     )
-    safe_updates = make_safe_for_publishing(
-        records["updates"], dictionary_df, connection
+    _process_and_write_in_chunks(
+        records["updates"], dictionary_df, connection, update_records
     )
 
     # Builds the species records
+    # NOTE: species aggregation still needs to see the FULL inserts +
+    # updates set at once (species totals/first_year/last_year would
+    # be wrong if computed per-chunk) - this stays un-chunked for now.
+    # Chunk-safe aggregation is a separate, bigger piece of work.
     species_records = pd.concat(
         [
             records["inserts"],
@@ -186,9 +233,8 @@ def reconcile(
             connection,
         )
 
-    # Now insert, update or delete records from the source data
-    insert_records(safe_inserts, connection)
-    update_records(safe_updates, connection)
+    # Deletes are ID-only (no safety gate needed) - no chunking benefit
+    # here, this already sends one array to a single DELETE statement.
     delete_records(records["deletes"], connection)
 
     return changes
