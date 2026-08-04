@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
 DATE_COLUMN = CONFIG["columns"]["record_date"]

@@ -1,10 +1,11 @@
 import pandas as pd
 
 from etl.pipeline import run_pipeline
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 from etl.reconciliation.state import get_ui_map
 from etl.db import get_source_connection
-from app.db import get_connection
+from app.db import get_connection, check_table_exists, check_table_has_rows, force_full_reload
+from etl.load.mode import should_run_initial_load
 
 CONFIG = load_safety_config()
 
@@ -76,7 +77,6 @@ def get_current_ui_map(connection):
 
 
 def nightly_job():
-
     print("Starting nightly ETL")
 
     try:
@@ -91,6 +91,15 @@ def nightly_job():
             dictionary_df = load_species_dictionary()
 
         with get_connection() as connection:
+            table_name = CONFIG["destination"]["table"]  # "occurrence_public"
+
+            table_exists = check_table_exists(connection, table_name)
+            table_has_rows = check_table_has_rows(connection, table_name) if table_exists else False
+
+            if should_run_initial_load(table_exists, table_has_rows):
+                print(f"Forcing full reload of {table_name}")
+                force_full_reload(connection)
+
             ui_map = get_current_ui_map(connection)
 
             result = run_pipeline(

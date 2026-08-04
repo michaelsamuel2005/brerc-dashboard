@@ -15,7 +15,7 @@ import io
 import logging
 
 import pandas as pd
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 
 config = load_safety_config()
 logger = logging.getLogger(__name__)

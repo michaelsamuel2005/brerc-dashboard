@@ -33,3 +33,4 @@ def get_source_connection() -> psycopg.Connection:
     Open a connection to BRERC's private source database.
     """
     return psycopg.connect(SOURCE_DATABASE_URL, row_factory=dict_row)
+

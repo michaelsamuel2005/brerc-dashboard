@@ -6,7 +6,7 @@ import hashlib
 import pandas as pd
 
 from datetime import date, datetime
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config() 
 

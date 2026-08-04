@@ -27,7 +27,7 @@ from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
 from etl.aggregation.species_index import build_species_index
 
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
 

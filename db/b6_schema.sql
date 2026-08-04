@@ -52,10 +52,10 @@ CREATE TABLE species (
     record_count    INTEGER     NOT NULL DEFAULT 0,
     first_year      INTEGER,
     last_year       INTEGER,
-    has_image       BOOLEAN     NOT NULL DEFAULT FALSE
+    has_image       BOOLEAN     NOT NULL DEFAULT FALSE,
     
     -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL 
+    load_number     INTEGER     NOT NULL,
     date_of_load    TIMESTAMP   NOT NULL
 );
 
@@ -72,12 +72,12 @@ CREATE TABLE occurrence_public (
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     locality         TEXT,                          -- coarse: authority + grid sq
     verified         BOOLEAN  NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
-    content_hash     TEXT     NOT NULL -- for comparison of current source vs previous database state
+    content_hash     TEXT     NOT NULL, -- for comparison of current source vs previous database state
     -- NO eastings, northings, recorder1, bliss, comments, precise_date,
     -- is_sensitive — absent by construction.
 
     -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL 
+    load_number     INTEGER     NOT NULL,
     date_of_load    TIMESTAMP   NOT NULL
 );
 
@@ -95,13 +95,13 @@ CREATE TABLE distribution_cell (
     record_count     INTEGER  NOT NULL CHECK (record_count  >= 0),
     verified_count   INTEGER  NOT NULL CHECK (verified_count >= 0),
     geom             geometry(Polygon, 4326) NOT NULL,  -- cell polygon (WGS84)
-    PRIMARY KEY (cell_id, species_id, record_year)
+    PRIMARY KEY (cell_id, species_id, record_year),
     -- Low-count suppression (k-anonymity) for rare/sensitive cells is applied by
     -- the pipeline (B4) BEFORE writing here; the serving layer trusts safe input
     -- and re-checks the floor. See OPEN QUESTIONS.
 
     -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL 
+    load_number     INTEGER     NOT NULL,
     date_of_load    TIMESTAMP   NOT NULL
 );
 
@@ -112,10 +112,10 @@ CREATE TABLE provenance (
     sources                    TEXT[]  NOT NULL,
     caveats                    TEXT[]  NOT NULL,
     last_updated               DATE    NOT NULL,
-    sensitivity_policy_summary TEXT    NOT NULL
+    sensitivity_policy_summary TEXT    NOT NULL,
 
     -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL 
+    load_number     INTEGER     NOT NULL,
     date_of_load    TIMESTAMP   NOT NULL
 );
 

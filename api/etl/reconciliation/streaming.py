@@ -1,6 +1,6 @@
 import pandas as pd
 
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 from etl.profiling.cleaning import clean_data
 from etl.reconciliation.hashing import add_content_hash
 from etl.reconciliation.diff import build_id_hash_map_from_chunks

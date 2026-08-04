@@ -3,7 +3,7 @@ from etl.reconciliation.reconcile import reconcile
 from etl.aggregation.counts import build_public_aggregation
 from etl.matching.species import resolve_species_numbers
 
-from etl.config.loader import load_safety_config
+from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
 
@@ -38,7 +38,7 @@ def run_pipeline(
 
     # Update the occurence_public
     reconciliation_summary = reconcile(
-        cleaned_dictionary,
+        resolved_source,
         ui_map,
         connection,
     )

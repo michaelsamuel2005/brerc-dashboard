@@ -26,7 +26,6 @@ destination:
 load:
   # pipeline can perform incremental updates if true 
   incremental_check: true
-  batch_size: 10000
 
 source:
   mode: "csv"
