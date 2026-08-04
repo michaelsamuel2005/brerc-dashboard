@@ -16,6 +16,17 @@ connection:
 
 destination:
   # Similiar to connection
+    dbhostname:
+    port:
+    server:
+    dbname:
+    password:
+    schema:
+
+load:
+  # pipeline can perform incremental updates if true 
+  incremental_check: true
+  batch_size: 10000
 
 source:
   mode: "csv"
