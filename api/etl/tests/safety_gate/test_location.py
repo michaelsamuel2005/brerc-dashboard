@@ -76,19 +76,45 @@ def test_add_grid_square_preserves_row_count():
     result = add_grid_square(df, "easting", "northing", square_size_m=10_000)
     assert len(result) == 2
 
+def test_os_grid_square_returns_na_for_missing_coordinates():
+    """
+    Confirms missing coordinates do not crash the pipeline.
+    """
+
+    result = os_grid_square(
+        None,
+        179645,
+    )
+
+    assert pd.isna(result)
+
+
+def test_os_grid_square_returns_na_for_invalid_coordinates():
+    """
+    Confirms malformed coordinates are safely ignored.
+    """
+
+    result = os_grid_square(
+        "invalid",
+        "invalid",
+    )
+
+    assert pd.isna(result)
 
 # --- add_coarse_locality tests ---
 
-def test_add_coarse_locality_currently_raises_due_to_unfinished_unitary_authority():
-    # KNOWN BUG: unitary_authority is set to `...` (Ellipsis) as an
-    # unfinished placeholder, then string-concatenated with grid_square.
-    # This currently raises TypeError on every call, not just unset data.
-    # This test documents the current broken state — once
-    # unitary_authority lookup is implemented, replace this test with
-    # one that checks the real coarse_locality string.
+def test_add_coarse_locality_returns_grid_reference_only():
+    """
+    Confirms coarse locality is created from the generalised
+    grid reference and does not expose original locality text.
+    """
+
     df = pd.DataFrame({
         "snapped_easting": [529090],
         "snapped_northing": [179645],
     })
-    with pytest.raises(TypeError):
-        add_coarse_locality(df)
+
+    result = add_coarse_locality(df)
+
+    assert "coarse_locality" in result.columns
+    assert result.loc[0, "coarse_locality"] == "TQ2979"

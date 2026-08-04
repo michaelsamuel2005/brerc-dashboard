@@ -51,18 +51,29 @@ def aggregate_counts(
         ]
     )
 
-    # Convert each exact coordinate into its public grid square.
-    # Prevents aggregation using precise locations
-    # For current row, get easting and nothing row
-    # Tells how big the grid should be 1km 
-    # OS_grid_square returnd the Grid cell size
-    df["grid_cell"] = df.apply(
-        lambda row: os_grid_square(
-            row[easting_column],
-            row[northing_column],
-            cell_size_m
-        ),
-        axis=1,
+    # Convert each coordinate pair into its public grid square.
+    # Uses zip() instead of DataFrame.apply(axis=1).
+    # apply(axis=1) creates a pandas Series object for every row,
+    # which adds overhead when processing millions of records.
+    #
+    # zip() directly iterates through the coordinate columns,
+    # reducing unnecessary pandas overhead.
+    df["grid_cell"] = [
+        os_grid_square(
+            easting,
+            northing,
+            cell_size_m,
+        )
+        for easting, northing in zip(
+            df[easting_column],
+            df[northing_column],
+        )
+    ]
+
+    # Remove records that could not be converted into a
+    # valid public grid reference.
+    df = df.dropna(
+        subset=["grid_cell"]
     )
 
     # Extract the year from the observation date

@@ -24,22 +24,32 @@ def os_grid_square(
     northing: float,
     square_size_m: int = 10_000,
 ) -> str:
+
     if square_size_m not in _DIGITS_BY_SQUARE_SIZE_M:
         raise ValueError(
             f"Unsupported square_size_m: {square_size_m}. "
             f"Supported: {sorted(_DIGITS_BY_SQUARE_SIZE_M)}"
         )
 
+    # Prevent invalid coordinates crashing the ETL.
+    if pd.isna(easting) or pd.isna(northing):
+        return pd.NA
+
+    try:
+        easting = int(easting)
+        northing = int(northing)
+
+    except (TypeError, ValueError):
+        return pd.NA
+
     digits = _DIGITS_BY_SQUARE_SIZE_M[square_size_m]
 
     full_ref = str(
-        OSGridReference(int(easting), int(northing))
+        OSGridReference(easting, northing)
     )
 
     letters, easting_str, northing_str = full_ref.split(" ")
 
-    # Return the same format used by occurrence_public.grid_ref:
-    # ST5872, ST61, ST5
     return (
         f"{letters}"
         f"{easting_str[:digits]}"
@@ -80,13 +90,18 @@ def add_coarse_locality(
         square_size_m=1_000,
     )
 
-    # TODO: determine authority from generalised coordinates
-    df["unitary_authority"] = ...
+    # # TODO: determine authority from generalised coordinates
+    # df["unitary_authority"] = ...
 
-    df["coarse_locality"] = (
-        df["unitary_authority"]
-        + " | "
-        + df["grid_square"]
-    )
+    # df["coarse_locality"] = (
+    #     df["unitary_authority"]
+    #     + " | "
+    #     + df["grid_square"]
+    # )
+
+    # Do not expose original locality names.
+    # A future authority lookup can be added once we have a safe
+    # mapping from generalised coordinates.
+    df["coarse_locality"] = df["grid_square"]
 
     return df
