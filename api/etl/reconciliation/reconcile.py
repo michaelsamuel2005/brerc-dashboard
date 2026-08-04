@@ -1,17 +1,19 @@
 import pandas as pd
 
 # Imports functions to assist on finding out what records have changed
-from etl.reconciliation.hashing import add_content_hash
 from etl.reconciliation.diff import (
-    build_id_hash_map,
     diff_id_hash_maps,
-    get_reconciliation_records,
 )
 from etl.reconciliation.load import (
     upsert_species,
     insert_records,
     update_records,
     delete_records,
+)
+
+from etl.reconciliation.streaming import (
+    iter_source_chunks,
+    build_source_hash_map,
 )
 
 # Imports functions which makes the records safe to view in public dashboard
@@ -23,7 +25,6 @@ from etl.safety_gate.public_output import add_coarse_locality, prepare_public_ou
 # Imports functions to help build the species table
 from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
-
 from etl.aggregation.species_index import build_species_index
 
 from etl.config.loader import load_safety_config
@@ -40,19 +41,6 @@ EASTING_COLUMN = (
 NORTHING_COLUMN = (
     CONFIG["columns"]["northings"]
 )
-
-# Determines how many records are processed at once, keeps memory usage manageable
-CHUNK_SIZE = CONFIG.get("reconciliation", {}).get("chunk_size", 100)
-
-# Yields one chunk at a time
-def _chunk_dataframe(df: pd.DataFrame, chunk_size: int):
-    """
-    Yields df in consecutive slices of chunk_size rows.
-    Yields nothing if df is empty.
-    """
-    for start in range(0, len(df), chunk_size):
-        yield df.iloc[start:start + chunk_size]
-
 
 # How many rows to process per chunk through the safety gate + DB write.
 # Keeps peak memory down at scale (millions of records) - the initial
@@ -145,96 +133,123 @@ def make_safe_for_publishing(
     # Returned safe df to the reconciliation load functions
     return safe_df
 
-
-def _process_and_write_in_chunks(
-    records_df: pd.DataFrame,
-    dictionary_df: pd.DataFrame,
-    connection,
-    write_fn,
-) -> None:
-    """
-    Splits records_df into CHUNK_SIZE-row pieces, runs each through
-    make_safe_for_publishing, and writes each chunk immediately via
-    write_fn (insert_records or update_records) - rather than building
-    one giant safe dataframe for the whole dataset before writing
-    anything.
-    """
-    for chunk in _chunk_dataframe(records_df, CHUNK_SIZE):
-        safe_chunk = make_safe_for_publishing(
-            chunk, dictionary_df, connection
-        )
-        write_fn(safe_chunk, connection)
-
-
 def reconcile(
-    source_df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     ui_map: dict,
     connection,
 ) -> dict:
 
-    # Hashes every record
-    source_df = add_content_hash(source_df)
+    # Pass 1
 
-    # Builds the lookup table, converts DF into dictionary
-    source_map = build_id_hash_map(source_df)
+    # Streams through the source data to build the unique_no ->
+    # content_hash lookup map.
+    source_map = build_source_hash_map()
 
     # Comapres the UI with the new source data
     changes = diff_id_hash_maps(source_map, ui_map)
 
-    # Get the full rows of the reconciliation columns
-    records = get_reconciliation_records(source_df, changes)
+    insert_ids = changes["inserts"]
+    update_ids = changes["updates"]
+    delete_ids = changes["deletes"]
 
-    # Every insert and update goes through the safety pipeline, now
-    # processed and written in chunks rather than all at once - keeps
-    # peak memory down and lets Postgres start receiving data sooner.
-    _process_and_write_in_chunks(
-        records["inserts"], dictionary_df, connection, insert_records
-    )
-    _process_and_write_in_chunks(
-        records["updates"], dictionary_df, connection, update_records
-    )
+    # Stores records that contribute to the species table 
+    species_records = []
 
-    # Builds the species records
-    # NOTE: species aggregation still needs to see the FULL inserts +
-    # updates set at once (species totals/first_year/last_year would
-    # be wrong if computed per-chunk) - this stays un-chunked for now.
-    # Chunk-safe aggregation is a separate, bigger piece of work.
-    species_records = pd.concat(
-        [
-            records["inserts"],
-            records["updates"],
-        ],
-        ignore_index=True,
-    )
+    # Pass 2
 
-    # If there were records
-    if not species_records.empty:
-        # Filter the records to only allow records for public view
+    for cleaned_chunk in iter_source_chunks():
+
+        hashed_chunk = cleaned_chunk.copy()
+
+        # Attach content hashes calculated during pass 1
+        hashed_chunk["content_hash"] = (
+            hashed_chunk["unique_no"]
+            .astype(str)
+            .map(source_map)
+        )
+
+        # Find new records
+        insert_chunk = hashed_chunk[
+            hashed_chunk["unique_no"]
+            .astype(str)
+            .isin(insert_ids)
+        ]
+
+        # Find modified records
+        update_chunk = hashed_chunk[
+            hashed_chunk["unique_no"]
+            .astype(str)
+            .isin(update_ids)
+        ]
+
+
+        # Process inserts immediately
+        if not insert_chunk.empty:
+
+            species_records.append(insert_chunk)
+
+            safe_insert = make_safe_for_publishing(
+                insert_chunk,
+                dictionary_df,
+                connection,
+            )
+
+            if not safe_insert.empty:
+                insert_records(
+                    safe_insert,
+                    connection,
+                )
+
+
+        # Process updates immediately
+        if not update_chunk.empty:
+
+            species_records.append(update_chunk)
+
+            safe_update = make_safe_for_publishing(
+                update_chunk,
+                dictionary_df,
+                connection,
+            )
+
+            if not safe_update.empty:
+                update_records(
+                    safe_update,
+                    connection,
+                )
+    
+    # Deletes are ID-only (no safety gate needed) - no chunking benefit
+    # here, this already sends one array to a single DELETE statement.
+    delete_records(delete_ids, connection)
+
+    if species_records:
+
+        species_records = pd.concat(
+            species_records,
+            ignore_index=True,
+        )
+
+        # Only accepted records contribute to species table
         filtered_species_records = filter_accepted_records(
             species_records,
             verified_column=VERIFIED_COLUMN,
         )
 
-        # Convert scientific names to the species name
+        # Add species_no + metadata
         resolved_species_records = resolve_species_numbers(
             filtered_species_records,
             dictionary_df,
         )
 
-        # Build the species index, one row per species
+        # Build species summary
         species_index = build_species_index(
             resolved_species_records
         )
 
-        # Updates/Inserts species onto species table
+        # Insert/update species table
         upsert_species(
             species_index,
             connection,
         )
-
-    # Deletes are ID-only (no safety gate needed) - no chunking benefit
-    # here, this already sends one array to a single DELETE statement.
-    delete_records(records["deletes"], connection)
 
     return changes

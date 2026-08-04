@@ -38,7 +38,6 @@ def run_pipeline(
 
     # Update the occurence_public
     reconciliation_summary = reconcile(
-        cleaned_source,
         cleaned_dictionary,
         ui_map,
         connection,

@@ -3,6 +3,20 @@ files:
   sensitive_species:
     path: "data/sensitive_species.csv"
 
+# Source connection
+connection:
+  dbhostname:
+  port:
+  server:
+  dbname:
+  password:
+  schema:
+  table:
+  # call in the db connection file
+
+destination:
+  # Similiar to connection
+
 source:
   mode: "csv"
 

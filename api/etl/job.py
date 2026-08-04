@@ -6,38 +6,7 @@ from etl.reconciliation.state import get_ui_map
 from etl.db import get_source_connection
 from app.db import get_connection
 
-from etl.profiling.cleaning import clean_data
-from etl.reconciliation.hashing import add_content_hash
-from etl.reconciliation.diff import build_id_hash_map_from_chunks
-
 CONFIG = load_safety_config()
-
-# Returns dictionary containing every record's unique_name and content_hash 
-def build_source_hash_map(chunk_size=None):
-    mode = CONFIG["source"].get("mode", "csv")
-
-    if mode != "csv":
-        raise NotImplementedError(
-            "build_source_hash_map currently only supports csv mode"
-        )
-
-    if chunk_size is None:
-        chunk_size = CONFIG.get("reconciliation", {}).get("chunk_size", 5000)
-
-    # Generator function, produces one cleaned hashed chunk when required
-    def _cleaned_hashed_chunks():
-        # Reads the data in chunks
-        for raw_chunk in pd.read_csv(
-            CONFIG["source"]["records_path"], chunksize=chunk_size
-        ):  
-            # Clean each chunk + calculates hash
-            cleaned_chunk = clean_data(raw_chunk)
-            yield add_content_hash(cleaned_chunk)
-
-    # Call build..() and give it the _cleaned_hashed_chunks() generator
-    # Process each cleaned chunk in turn and combine them into a single
-    # unique_no -> content_hash mapping for the entire dataset.
-    return build_id_hash_map_from_chunks(_cleaned_hashed_chunks())
 
 def load_source_data(source_connection=None):
     """

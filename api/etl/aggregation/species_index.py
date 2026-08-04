@@ -16,7 +16,7 @@ def build_species_index(
     Creates an aggregated species table from the records
     that are actually being loaded into the database. 
 
-    One row is created per unoque species, containing
+    One row is created per unique species, containing
     summary information needed by the species table
     """
 

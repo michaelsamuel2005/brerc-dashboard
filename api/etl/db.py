@@ -11,6 +11,8 @@ this via the database credential BRERC issues (a read-only user), not
 in code - see the "Access & data" sign-off in the backend plan (§12).
 """
 
+# Update this later to use the config 
+
 import os
 from pathlib import Path
 

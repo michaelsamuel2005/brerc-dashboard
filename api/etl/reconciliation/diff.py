@@ -77,28 +77,28 @@ def diff_id_hash_maps(source_map: dict, ui_map: dict):
     }
 
 # Gets dataset + ids classified as insert, updates, deletes 
-def get_reconciliation_records(
-        source_df: pd.DataFrame,
-        changes: dict,
-    ) -> dict:
+# def get_reconciliation_records(
+#         source_df: pd.DataFrame,
+#         changes: dict,
+#     ) -> dict:
 
-    # changes["inserts"]/["updates"] are now sets of STRINGS (see
-    # build_id_hash_map), so unique_no must be cast to str here too
-    # before comparing, or .isin() will match nothing.
-    unique_no_str = source_df["unique_no"].astype(str)
+#     # changes["inserts"]/["updates"] are now sets of STRINGS (see
+#     # build_id_hash_map), so unique_no must be cast to str here too
+#     # before comparing, or .isin() will match nothing.
+#     unique_no_str = source_df["unique_no"].astype(str)
 
-    # Retrieves the full source rows corresponding to each reconciliation action
-    inserts = source_df[
-        unique_no_str.isin(changes["inserts"])
-    ].copy()
+#     # Retrieves the full source rows corresponding to each reconciliation action
+#     inserts = source_df[
+#         unique_no_str.isin(changes["inserts"])
+#     ].copy()
 
-    updates = source_df[
-        unique_no_str.isin(changes["updates"])
-    ].copy()
+#     updates = source_df[
+#         unique_no_str.isin(changes["updates"])
+#     ].copy()
 
-    return {
-        "inserts": inserts,
-        "updates": updates,
-        "deletes": changes["deletes"],
-        "unchanged": changes["unchanged"],
-    }
+#     return {
+#         "inserts": inserts,
+#         "updates": updates,
+#         "deletes": changes["deletes"],
+#         "unchanged": changes["unchanged"],
+#     }
