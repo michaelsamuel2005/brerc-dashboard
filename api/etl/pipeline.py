@@ -3,6 +3,7 @@ from etl.reconciliation.reconcile import reconcile
 from etl.aggregation.counts import build_public_aggregation
 from etl.aggregation.persist import persist_aggregation_outputs
 from etl.matching.species import resolve_species_numbers
+from etl.load.metadata import get_next_load_number
 
 from etl.load.loader import load_safety_config
 
@@ -19,7 +20,7 @@ def run_pipeline(
     dictionary_df,
     ui_map,
     connection,
-):
+): 
     """
     Runs the complete ETL pipeline.
 
@@ -30,6 +31,8 @@ def run_pipeline(
         4. Rebuild public aggregation layer
         5. Persist derived tables
     """
+
+    load_number = get_next_load_number(connection)
 
     # Clean incoming tables: Cleans column names
     cleaned_source = clean_data(source_df)
@@ -46,6 +49,7 @@ def run_pipeline(
         resolved_source,
         ui_map,
         connection,
+        load_number=1,
     )
 
     # Rebuild derived aggregation layer
@@ -63,7 +67,7 @@ def run_pipeline(
         species_index=aggregation_outputs["species_index"],
         suppressed_counts=aggregation_outputs["aggregation"],
         cell_size_m=CONFIG["aggregation"]["cell_size_m"],
-        load_number=1,
+        load_number=load_number,
     )
 
     return {

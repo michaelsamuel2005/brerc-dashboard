@@ -64,7 +64,7 @@ def resolve_species_numbers(
                 "scientific_key",
                 "species_no",
                 "nbn_number",
-                "common_nam",
+                "common_name",
                 "taxanb",
             ]
         ]
@@ -95,9 +95,15 @@ def resolve_species_numbers(
     # Anything else cannot be trusted as a valid species identifier,
     # so it is treated as unresolved and will follow the sensitive
     # fail-closed path.
-    valid_species_no = (
+
+    species_no_string = (
         records_df["species_no"]
+        .astype("Int64")
         .astype("string")
+    )
+
+    valid_species_no = (
+        species_no_string
         .str.match(r"^(BRERC)?\d+$")
     )
 

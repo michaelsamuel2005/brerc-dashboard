@@ -108,6 +108,7 @@ def test_reconcile_processes_insert_records():
     mock_insert.assert_called_once_with(
         safe_df,
         connection,
+        1,
     )
 
 
@@ -176,9 +177,12 @@ def test_reconcile_processes_update_records():
             connection,
         )
 
+    mock_safe.assert_called_once()
+
     mock_update.assert_called_once_with(
         safe_df,
         connection,
+        1,
     )
 
 

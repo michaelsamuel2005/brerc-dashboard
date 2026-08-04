@@ -137,6 +137,7 @@ def reconcile(
     dictionary_df: pd.DataFrame,
     ui_map: dict,
     connection,
+    load_number=1,
 ) -> dict:
 
     # Pass 1
@@ -198,6 +199,7 @@ def reconcile(
                 insert_records(
                     safe_insert,
                     connection,
+                    load_number,
                 )
 
 
@@ -216,6 +218,7 @@ def reconcile(
                 update_records(
                     safe_update,
                     connection,
+                    load_number,
                 )
     
     # Deletes are ID-only (no safety gate needed) - no chunking benefit
