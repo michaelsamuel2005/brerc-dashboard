@@ -56,7 +56,7 @@ CREATE TABLE species (
     
     -- FOR ETL LOAD TRACKING -- 
     load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMP   NOT NULL
+    date_of_load    TIMESTAMPTZ  NOT NULL
 );
 
 -- 1b. Per-record public rows (feeds /api/records). Already generalised by the
@@ -78,7 +78,7 @@ CREATE TABLE occurrence_public (
 
     -- FOR ETL LOAD TRACKING -- 
     load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMP   NOT NULL
+    date_of_load    TIMESTAMPTZ   NOT NULL
 );
 
 -- 1c. Pre-aggregated distribution grid (species x cell x year). This is the
@@ -102,7 +102,7 @@ CREATE TABLE distribution_cell (
 
     -- FOR ETL LOAD TRACKING -- 
     load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMP   NOT NULL
+    date_of_load    TIMESTAMPTZ   NOT NULL
 );
 
 -- 1d. Dataset-level provenance (feeds /api/meta/provenance). Single row.
@@ -116,7 +116,7 @@ CREATE TABLE provenance (
 
     -- FOR ETL LOAD TRACKING -- 
     load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMP   NOT NULL
+    date_of_load    TIMESTAMPTZ   NOT NULL
 );
 
 

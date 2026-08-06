@@ -5,7 +5,6 @@ from etl.reconciliation.diff import (
     diff_id_hash_maps,
 )
 from etl.reconciliation.load import (
-    upsert_species,
     insert_records,
     update_records,
     delete_records,
@@ -25,7 +24,9 @@ from etl.safety_gate.public_output import add_coarse_locality, prepare_public_ou
 # Imports functions to help build the species table
 from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
-from etl.aggregation.species_index import build_species_index
+
+# ETL load metadata (load_number / date_of_load)
+from etl.load.metadata import add_load_metadata
 
 from etl.load.loader import load_safety_config
 
@@ -134,11 +135,21 @@ def make_safe_for_publishing(
     return safe_df
 
 def reconcile(
+    records_df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     ui_map: dict,
     connection,
-    load_number=1,
+    load_number: int,
+    load_timestamp,
 ) -> dict:
+
+    """
+    Note: this function no longer writes to the species table.
+    species is fully owned by persist_aggregation_outputs(), which
+    truncates + rebuilds it from the complete current dataset every
+    run - a partial upsert_species() call here would just get
+    overwritten by that step immediately afterward.
+    """
 
     # Pass 1
 
@@ -149,12 +160,14 @@ def reconcile(
     # Comapres the UI with the new source data
     changes = diff_id_hash_maps(source_map, ui_map)
 
+    print("INSERTS:", len(changes["inserts"]))
+    print("UPDATES:", len(changes["updates"]))
+    print("DELETES:", len(changes["deletes"]))
+    print("UNCHANGED:", len(changes["unchanged"]))
+
     insert_ids = changes["inserts"]
     update_ids = changes["updates"]
     delete_ids = changes["deletes"]
-
-    # Stores records that contribute to the species table 
-    species_records = []
 
     # Pass 2
 
@@ -187,8 +200,6 @@ def reconcile(
         # Process inserts immediately
         if not insert_chunk.empty:
 
-            species_records.append(insert_chunk)
-
             safe_insert = make_safe_for_publishing(
                 insert_chunk,
                 dictionary_df,
@@ -196,17 +207,19 @@ def reconcile(
             )
 
             if not safe_insert.empty:
+                safe_insert = add_load_metadata(
+                    safe_insert,
+                    load_number,
+                    load_timestamp,
+                )
                 insert_records(
                     safe_insert,
                     connection,
-                    load_number,
                 )
 
 
         # Process updates immediately
         if not update_chunk.empty:
-
-            species_records.append(update_chunk)
 
             safe_update = make_safe_for_publishing(
                 update_chunk,
@@ -215,44 +228,18 @@ def reconcile(
             )
 
             if not safe_update.empty:
+                safe_update = add_load_metadata(
+                    safe_update,
+                    load_number,
+                    load_timestamp,
+                )
                 update_records(
                     safe_update,
                     connection,
-                    load_number,
                 )
     
     # Deletes are ID-only (no safety gate needed) - no chunking benefit
     # here, this already sends one array to a single DELETE statement.
     delete_records(delete_ids, connection)
-
-    if species_records:
-
-        species_records = pd.concat(
-            species_records,
-            ignore_index=True,
-        )
-
-        # Only accepted records contribute to species table
-        filtered_species_records = filter_accepted_records(
-            species_records,
-            verified_column=VERIFIED_COLUMN,
-        )
-
-        # Add species_no + metadata
-        resolved_species_records = resolve_species_numbers(
-            filtered_species_records,
-            dictionary_df,
-        )
-
-        # Build species summary
-        species_index = build_species_index(
-            resolved_species_records
-        )
-
-        # Insert/update species table
-        upsert_species(
-            species_index,
-            connection,
-        )
 
     return changes

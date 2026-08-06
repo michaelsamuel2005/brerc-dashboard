@@ -7,6 +7,8 @@ from etl.load.metadata import get_next_load_number
 
 from etl.load.loader import load_safety_config
 
+from datetime import datetime
+
 CONFIG = load_safety_config()
 
 VERIFIED_COLUMN = CONFIG["columns"]["verified"]
@@ -27,8 +29,8 @@ def run_pipeline(
     Steps:
         1. Clean the source data
         2. Resolve species numbers
-        3. Reconcile occurrence records
-        4. Rebuild public aggregation layer
+        3. Rebuild species and aggregation layer
+        4. Reconcile occurrence records
         5. Persist derived tables
     """
 
@@ -44,14 +46,6 @@ def run_pipeline(
         cleaned_dictionary,
     )
 
-    # Update occurrence_public
-    reconciliation_summary = reconcile(
-        resolved_source,
-        ui_map,
-        connection,
-        load_number=1,
-    )
-
     # Rebuild derived aggregation layer
     aggregation_outputs = build_public_aggregation(
         resolved_source,
@@ -62,12 +56,24 @@ def run_pipeline(
     )
 
     # Store species + distribution_cell tables
+    # This must happen before occurrence_public because
+    # occurrence_public has a foreign key to species.
     persist_aggregation_outputs(
         connection,
         species_index=aggregation_outputs["species_index"],
         suppressed_counts=aggregation_outputs["aggregation"],
         cell_size_m=CONFIG["aggregation"]["cell_size_m"],
         load_number=load_number,
+    )
+
+    # Update occurrence_public
+    reconciliation_summary = reconcile(
+        resolved_source,
+        cleaned_dictionary,
+        ui_map,
+        connection,
+        load_number=load_number,
+        load_timestamp=datetime.now(),
     )
 
     return {

@@ -29,20 +29,15 @@ def add_load_metadata(
 
 def get_next_load_number(connection) -> int:
     """
-    Returns the next ETL load number.
-
-    Uses the latest load_number stored in the provenance table.
-    If no previous load exists, starts from 1.
+    Returns the next ETL load number, based on the highest
+    load_number already written to occurrence_public.
+    Starts from 1 if the table is empty.
     """
-
     with connection.cursor() as cur:
         cur.execute(
             """
-            SELECT COALESCE(MAX(load_number), 0) + 1
-            FROM provenance
+            SELECT COALESCE(MAX(load_number), 0) + 1 AS next_load_number
+            FROM occurrence_public
             """
         )
-
-        load_number = cur.fetchone()[0]
-
-    return load_number
+        return cur.fetchone()["next_load_number"]

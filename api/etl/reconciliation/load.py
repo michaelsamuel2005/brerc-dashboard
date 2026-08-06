@@ -190,6 +190,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "precision_metres",
         "verified",
         "content_hash",
+        "load_number",
+        "date_of_load",
     }
 
     missing = required - set(records_df.columns)
@@ -209,15 +211,18 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "locality",
         "verified",
         "content_hash",
+        "load_number",
+        "date_of_load",
     ]
 
     with connection.cursor() as cursor:
-        # cursor used to execute SQL commands
-        # records_df: occurence records to be written to the db
-        # columns: list of columns to copy
-        # name of the temporary table created
-        # Defines the schema and the data types of temporary table
-        # All rows are copied onto this temporary table
+        # Cursor used to execute SQL commands.
+        # records_df: occurrence records to be written to the database.
+        # columns: list of columns copied from dataframe into the staging table.
+        # temp_table: temporary table used for bulk loading before insertion.
+        # column_defs: defines the schema and data types of the temporary table.
+        # All rows are first copied into this staging table before being
+        # inserted/upserted into occurrence_public.
         _copy_dataframe(
             cursor,
             records_df,
@@ -231,32 +236,27 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
                 precision_metres INTEGER,
                 locality         TEXT,
                 verified         BOOLEAN,
-                content_hash     TEXT
+                content_hash     TEXT,
+                load_number      INTEGER,
+                date_of_load     TIMESTAMPTZ
             """,
         )
 
         cursor.execute(
             """
             INSERT INTO occurrence_public (
-                record_id,
-                species_id,
-                record_year,
-                grid_ref,
-                precision_metres,
-                locality,
-                verified,
-                content_hash
+                record_id, species_id, record_year, grid_ref,
+                precision_metres, locality, verified, content_hash,
+                load_number, date_of_load
             )
             SELECT
-                record_id,
-                species_id,
-                record_year,
-                grid_ref,
-                precision_metres,
-                locality,
-                verified,
-                content_hash
+                record_id, species_id, record_year, grid_ref,
+                precision_metres, locality, verified, content_hash,
+                load_number, date_of_load
             FROM occurrence_staging
+
+            -- If the record already exists, update the existing row instead
+            -- of inserting a duplicate.
             ON CONFLICT (record_id) DO UPDATE SET
                 species_id       = EXCLUDED.species_id,
                 record_year      = EXCLUDED.record_year,
@@ -264,7 +264,9 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
                 precision_metres = EXCLUDED.precision_metres,
                 locality         = EXCLUDED.locality,
                 verified         = EXCLUDED.verified,
-                content_hash     = EXCLUDED.content_hash
+                content_hash     = EXCLUDED.content_hash,
+                load_number      = EXCLUDED.load_number,
+                date_of_load     = EXCLUDED.date_of_load
             """
         )
 
@@ -272,14 +274,14 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
 
 
 def insert_records(records_df: pd.DataFrame, connection) -> None:
-    # New records indentified during reconcilisation are passed here
-    # UPSERT function inserts them into occurence_public
+    # New records identified during reconciliation are passed here.
+    # The UPSERT function inserts them into occurrence_public.
     _upsert_occurrences(records_df, connection)
 
 
 def update_records(records_df: pd.DataFrame, connection) -> None:
-    # Existing record with changed content hashes are passed here
-    # UPSERT function inserts them into occurence_public
+    # Existing records with changed content hashes are passed here.
+    # The UPSERT function updates the existing occurrence_public row.
     _upsert_occurrences(records_df, connection)
 
 

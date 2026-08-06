@@ -15,13 +15,14 @@ connection:
   # call in the db connection file
 
 destination:
-  # Similiar to connection
+  # UI database destination
     dbhostname:
     port:
     server:
     dbname:
     password:
-    schema:
+    schema: public
+    table: occurrence_public
 
 load:
   # pipeline can perform incremental updates if true 

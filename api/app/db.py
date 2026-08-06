@@ -37,8 +37,11 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/brerc_ui",
 )
 
-B6_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "b6_schema.sql"
-
+B6_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "db"
+    / "b6_schema.sql"
+)
 
 def get_connection() -> psycopg.Connection:
     """

@@ -64,7 +64,7 @@ def resolve_species_numbers(
                 "scientific_key",
                 "species_no",
                 "nbn_number",
-                "common_name",
+                "common_nam",
                 "taxanb",
             ]
         ]
@@ -98,8 +98,12 @@ def resolve_species_numbers(
 
     species_no_string = (
         records_df["species_no"]
-        .astype("Int64")
         .astype("string")
+        .str.replace(
+            r"\.0$",
+            "",
+            regex=True,
+        )
     )
 
     valid_species_no = (
