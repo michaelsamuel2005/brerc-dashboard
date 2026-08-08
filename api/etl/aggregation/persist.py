@@ -21,7 +21,7 @@ def persist_aggregation_outputs(
     species_index,
     suppressed_counts,
     cell_size_m,
-    load_number,
+    load_mode,
 ):
     now = datetime.now(timezone.utc)
 
@@ -35,10 +35,17 @@ def persist_aggregation_outputs(
             to_python_none(row.first_year),
             to_python_none(row.last_year),
             bool(row.has_image),
-            load_number,
+            load_mode,
             now,
         )
         for row in species_index.itertuples(index=False)
+    ]
+
+    # Full set of species_ids present in THIS run's species_index.
+    # Used below to remove any species that no longer appear at all,
+    # so the species table doesn't accumulate stale rows forever.
+    current_species_ids = [
+        to_python_none(row.species_id) for row in species_index.itertuples(index=False)
     ]
 
     cell_rows = [
@@ -54,7 +61,7 @@ def persist_aggregation_outputs(
                 row.cell_sw_northing,
                 cell_size_m,
             ),
-            load_number,
+            load_mode,
             now,
         )
         for row in suppressed_counts.itertuples(index=False)
@@ -74,23 +81,13 @@ def persist_aggregation_outputs(
         #
         # Instead: upsert. Every species_id in this run's species_index
         # gets inserted if new, or has all its columns refreshed if it
-        # already exists. This still achieves "recompute fully each
-        # run" for every species that appears in the current data -
-        # it just can't remove a species_id that no longer appears,
-        # since that would require a DELETE, not an INSERT.
-        #
-        # (If a species drops to zero records, its row will linger with
-        # stale counts rather than disappearing. Safe to add a cleanup
-        # DELETE later, guarded by "AND species_id NOT IN (SELECT
-        # species_id FROM occurrence_public)" so it's protected by the
-        # same FK relationship rather than able to delete anything
-        # still actually referenced.)
+        # already exists.
         cur.executemany(
             """
             INSERT INTO species
                 (species_id, scientific_name, common_name, species_group,
                  record_count, first_year, last_year, has_image,
-                 load_number, date_of_load)
+                 "Load", "Load_date")
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (species_id) DO UPDATE SET
                 scientific_name = EXCLUDED.scientific_name,
@@ -100,21 +97,41 @@ def persist_aggregation_outputs(
                 first_year      = EXCLUDED.first_year,
                 last_year       = EXCLUDED.last_year,
                 has_image       = EXCLUDED.has_image,
-                load_number     = EXCLUDED.load_number,
-                date_of_load    = EXCLUDED.date_of_load
+                "Load"          = EXCLUDED."Load",
+                "Load_date"     = EXCLUDED."Load_date"
             """,
             species_rows,
         )
 
+        # Remove species that no longer appear in the current data at
+        # all, so the table doesn't silently accumulate stale entries
+        # with outdated counts forever ("recompute fully each run").
+        #
+        # This is safe even though occurrence_public.species_id
+        # references species: Postgres's default FK behaviour is
+        # RESTRICT, so this DELETE can only ever succeed for a
+        # species_id with zero remaining occurrence_public rows. If
+        # reconciliation somehow left a species referenced but not in
+        # this run's species_index, Postgres blocks the delete rather
+        # than silently breaking the FK - that's the safety net working
+        # as intended, not a bug if it ever fires.
+        cur.execute(
+            """
+            DELETE FROM species
+            WHERE species_id != ALL(%s)
+            """,
+            (current_species_ids,),
+        )
+
         # distribution_cell.species_id references species, so this
-        # insert must run after the species upsert above - otherwise
-        # a cell for a brand-new species would violate the FK.
+        # insert must run after the species upsert/delete above -
+        # otherwise a cell for a brand-new species would violate the FK.
         cur.executemany(
             """
             INSERT INTO distribution_cell
                 (cell_id, species_id, record_year, precision_metres,
                  record_count, verified_count, geom,
-                 load_number, date_of_load)
+                 "Load", "Load_date")
             VALUES (%s,%s,%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s,%s)
             """,
             cell_rows,
