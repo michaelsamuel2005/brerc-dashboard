@@ -4,6 +4,7 @@ from etl.aggregation.counts import build_public_aggregation
 from etl.aggregation.persist import persist_aggregation_outputs
 from etl.matching.species import resolve_species_numbers
 from etl.load.metadata import get_next_load_number
+from etl.provenance import upsert_provenance
 
 from etl.load.loader import load_safety_config
 
@@ -65,6 +66,8 @@ def run_pipeline(
         cell_size_m=CONFIG["aggregation"]["cell_size_m"],
         load_number=load_number,
     )
+    
+    upsert_provenance(connection, load_number=load_number)
 
     # Update occurrence_public
     reconciliation_summary = reconcile(
