@@ -1,9 +1,17 @@
 """
 Database connection for the API (B0).
 
-Keeps the connection details in ONE place, read from an environment variable,
-so that moving from your laptop to a real server is a credentials change only
-(no code change) — that is decision D-005.
+Keeps the connection details in ONE place: all connection fields (host,
+port, dbname, user, password) are read from safety.yaml's `destination:`
+block, so environments can differ (local / staging / prod) just by
+editing config. NOTE: this means safety.yaml holds a real password when
+filled in for a real environment — keep that file out of version control
+(or restrict its permissions) in any environment where it holds real
+credentials.
+
+If DATABASE_URL is set directly in the environment, it takes priority
+over the assembled safety.yaml URL, so deployments that already inject a
+full connection string keep working unchanged.
 
 The API opens a connection per request and closes it. That is simple and correct
 for B0; connection pooling comes later if it is needed.
@@ -22,20 +30,43 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 
-# Load api/.env (if it exists) so DATABASE_URL can live in a git-ignored file
+from etl.load.loader import load_safety_config
+
+# Load api/.env (if it exists) so credentials can live in a git-ignored file
 # instead of being typed into the shell every time. We point at the .env next to
 # the api/ folder explicitly, so it is found no matter which folder you run from.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# Read the connection string from the environment. The fallback is a local
-# development default — it contains no real secret.
-#
-# Format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-# Put your real one in a git-ignored .env file, never in this file.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/brerc_ui",
-)
+CONFIG = load_safety_config()
+_DESTINATION = CONFIG.get("destination", {})
+
+
+def _build_database_url() -> str:
+    """
+    Assembles the UI database connection string entirely from
+    safety.yaml's `destination:` block (host, port, dbname, user,
+    password).
+
+    DATABASE_URL, if set directly in the environment, overrides all of
+    this - useful for deployments that inject a full connection string
+    as one secret.
+    """
+    explicit_url = os.getenv("DATABASE_URL")
+    if explicit_url:
+        return explicit_url
+
+    # Local development defaults so this still runs before safety.yaml
+    # is filled in for a real environment - contain no real secret.
+    host = _DESTINATION.get("dbhostname") or "localhost"
+    port = _DESTINATION.get("port") or 5432
+    dbname = _DESTINATION.get("dbname") or "brerc_ui"
+    user = _DESTINATION.get("user") or "postgres"
+    password = _DESTINATION.get("password") or "postgres"
+
+    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+
+
+DATABASE_URL = _build_database_url()
 
 B6_SCHEMA_PATH = (
     Path(__file__).resolve().parents[2]

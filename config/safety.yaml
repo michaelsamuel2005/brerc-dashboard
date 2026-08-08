@@ -9,6 +9,7 @@ connection:
   port:
   server:
   dbname:
+  user:
   password:
   schema:
   table:
@@ -20,6 +21,7 @@ destination:
     port:
     server:
     dbname:
+    user:
     password:
     schema: public
     table: occurrence_public
@@ -125,7 +127,6 @@ flagged_record_types:
   - Beaver Lodge
   - Acoustic audio recording
   - Acoustic audio record
-  - found dead
   - found dead
   - dam
   - gnawed timber

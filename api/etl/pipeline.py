@@ -3,7 +3,6 @@ from etl.reconciliation.reconcile import reconcile
 from etl.aggregation.counts import build_public_aggregation
 from etl.aggregation.persist import persist_aggregation_outputs
 from etl.matching.species import resolve_species_numbers
-from etl.load.metadata import get_next_load_number
 from etl.provenance import upsert_provenance
 
 from etl.load.loader import load_safety_config
@@ -23,6 +22,7 @@ def run_pipeline(
     dictionary_df,
     ui_map,
     connection,
+    load_mode,
 ): 
     """
     Runs the complete ETL pipeline.
@@ -33,9 +33,11 @@ def run_pipeline(
         3. Rebuild species and aggregation layer
         4. Reconcile occurrence records
         5. Persist derived tables
-    """
 
-    load_number = get_next_load_number(connection)
+    load_mode is "initial" or "incremental", decided by the caller
+    (nightly_job) based on watermark state, and is stamped onto every
+    row written this run via the "Load" / "Load_date" audit columns.
+    """
 
     # Clean incoming tables: Cleans column names
     cleaned_source = clean_data(source_df)
@@ -64,10 +66,10 @@ def run_pipeline(
         species_index=aggregation_outputs["species_index"],
         suppressed_counts=aggregation_outputs["aggregation"],
         cell_size_m=CONFIG["aggregation"]["cell_size_m"],
-        load_number=load_number,
+        load_mode=load_mode,
     )
     
-    upsert_provenance(connection, load_number=load_number)
+    upsert_provenance(connection, load_mode=load_mode)
 
     # Update occurrence_public
     reconciliation_summary = reconcile(
@@ -75,7 +77,7 @@ def run_pipeline(
         cleaned_dictionary,
         ui_map,
         connection,
-        load_number=load_number,
+        load_mode=load_mode,
         load_timestamp=datetime.now(),
     )
 

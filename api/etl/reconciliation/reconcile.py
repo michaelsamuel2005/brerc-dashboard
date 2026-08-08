@@ -25,7 +25,7 @@ from etl.safety_gate.public_output import add_coarse_locality, prepare_public_ou
 from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.reconciliation.map_to_schema import map_to_occurrence_public
 
-# ETL load metadata (load_number / date_of_load)
+# ETL load metadata ("Load" / "Load_date")
 from etl.load.metadata import add_load_metadata
 
 from etl.load.loader import load_safety_config
@@ -139,7 +139,7 @@ def reconcile(
     dictionary_df: pd.DataFrame,
     ui_map: dict,
     connection,
-    load_number: int,
+    load_mode: str,
     load_timestamp,
 ) -> dict:
 
@@ -209,7 +209,7 @@ def reconcile(
             if not safe_insert.empty:
                 safe_insert = add_load_metadata(
                     safe_insert,
-                    load_number,
+                    load_mode,
                     load_timestamp,
                 )
                 insert_records(
@@ -230,7 +230,7 @@ def reconcile(
             if not safe_update.empty:
                 safe_update = add_load_metadata(
                     safe_update,
-                    load_number,
+                    load_mode,
                     load_timestamp,
                 )
                 update_records(

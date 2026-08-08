@@ -3,6 +3,8 @@ import io
 import logging
 import pandas as pd
 
+from etl.load.metadata import add_load_metadata
+
 logger = logging.getLogger(__name__)
 
 def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, column_defs: str):
@@ -35,9 +37,15 @@ def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, co
     # Moves cursor back to the beginning
     buffer.seek(0)
 
+    # Quote every column name for the COPY list. Harmless for ordinary
+    # lowercase columns, but required for mixed-case columns like
+    # "Load" - unquoted, Postgres would fold it to "load" and it
+    # wouldn't match the (quoted) column_defs above.
+    quoted_columns = ", ".join(f'"{c}"' for c in columns)
+
     # Copy (bulk loads) all rows into one operation
     with cursor.copy(
-        f"COPY {temp_table} ({', '.join(columns)}) FROM STDIN WITH CSV"
+        f"COPY {temp_table} ({quoted_columns}) FROM STDIN WITH CSV"
     ) as copy:
         copy.write(buffer.getvalue())
 
@@ -45,7 +53,12 @@ def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, co
 # As INSERT and UPDATE share identical SQL using PostgreSQL's
 
 # Updates the species lookup table:
-def upsert_species(species_df: pd.DataFrame, connection) -> None:
+def upsert_species(
+    species_df: pd.DataFrame,
+    connection,
+    load_mode: str,
+    load_timestamp,
+) -> None:
 
     if species_df.empty:
             return
@@ -107,6 +120,9 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
     if species_df.empty:
         return
 
+    # Stamp the ETL load audit columns, same as occurrence_public writes.
+    species_df = add_load_metadata(species_df, load_mode, load_timestamp)
+
     # Defines the column order 
     columns = [
         "species_id",
@@ -117,6 +133,8 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
         "first_year",
         "last_year",
         "has_image",
+        "Load",
+        "Load_date",
     ]
 
     with connection.cursor() as cursor:
@@ -137,7 +155,9 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
                 record_count    INTEGER,
                 first_year      INTEGER,
                 last_year       INTEGER,
-                has_image       BOOLEAN
+                has_image       BOOLEAN,
+                "Load"          TEXT,
+                "Load_date"     TIMESTAMPTZ
             """,
         )
 
@@ -151,7 +171,9 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
                 record_count,
                 first_year,
                 last_year,
-                has_image
+                has_image,
+                "Load",
+                "Load_date"
             )
             SELECT
                 species_id,
@@ -161,7 +183,9 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
                 record_count,
                 first_year,
                 last_year,
-                has_image
+                has_image,
+                "Load",
+                "Load_date"
             FROM species_staging
             ON CONFLICT (species_id) DO UPDATE SET
                 scientific_name = EXCLUDED.scientific_name,
@@ -170,7 +194,9 @@ def upsert_species(species_df: pd.DataFrame, connection) -> None:
                 record_count    = EXCLUDED.record_count,
                 first_year      = EXCLUDED.first_year,
                 last_year       = EXCLUDED.last_year,
-                has_image       = EXCLUDED.has_image
+                has_image       = EXCLUDED.has_image,
+                "Load"          = EXCLUDED."Load",
+                "Load_date"     = EXCLUDED."Load_date"
             """
         )
 
@@ -190,8 +216,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "precision_metres",
         "verified",
         "content_hash",
-        "load_number",
-        "date_of_load",
+        "Load",
+        "Load_date",
     }
 
     missing = required - set(records_df.columns)
@@ -211,8 +237,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "locality",
         "verified",
         "content_hash",
-        "load_number",
-        "date_of_load",
+        "Load",
+        "Load_date",
     ]
 
     with connection.cursor() as cursor:
@@ -237,8 +263,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
                 locality         TEXT,
                 verified         BOOLEAN,
                 content_hash     TEXT,
-                load_number      INTEGER,
-                date_of_load     TIMESTAMPTZ
+                "Load"           TEXT,
+                "Load_date"      TIMESTAMPTZ
             """,
         )
 
@@ -247,12 +273,12 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
             INSERT INTO occurrence_public (
                 record_id, species_id, record_year, grid_ref,
                 precision_metres, locality, verified, content_hash,
-                load_number, date_of_load
+                "Load", "Load_date"
             )
             SELECT
                 record_id, species_id, record_year, grid_ref,
                 precision_metres, locality, verified, content_hash,
-                load_number, date_of_load
+                "Load", "Load_date"
             FROM occurrence_staging
 
             -- If the record already exists, update the existing row instead
@@ -265,8 +291,8 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
                 locality         = EXCLUDED.locality,
                 verified         = EXCLUDED.verified,
                 content_hash     = EXCLUDED.content_hash,
-                load_number      = EXCLUDED.load_number,
-                date_of_load     = EXCLUDED.date_of_load
+                "Load"           = EXCLUDED."Load",
+                "Load_date"      = EXCLUDED."Load_date"
             """
         )
 
