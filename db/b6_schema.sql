@@ -53,10 +53,10 @@ CREATE TABLE species (
     first_year      INTEGER,
     last_year       INTEGER,
     has_image       BOOLEAN     NOT NULL DEFAULT FALSE,
-    
-    -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMPTZ  NOT NULL
+
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 -- 1b. Per-record public rows (feeds /api/records). Already generalised by the
@@ -76,9 +76,9 @@ CREATE TABLE occurrence_public (
     -- NO eastings, northings, recorder1, bliss, comments, precise_date,
     -- is_sensitive — absent by construction.
 
-    -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMPTZ   NOT NULL
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 -- 1c. Pre-aggregated distribution grid (species x cell x year). This is the
@@ -100,9 +100,9 @@ CREATE TABLE distribution_cell (
     -- the pipeline (B4) BEFORE writing here; the serving layer trusts safe input
     -- and re-checks the floor. See OPEN QUESTIONS.
 
-    -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMPTZ   NOT NULL
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 -- 1d. Dataset-level provenance (feeds /api/meta/provenance). Single row.
@@ -114,9 +114,9 @@ CREATE TABLE provenance (
     last_updated               DATE    NOT NULL,
     sensitivity_policy_summary TEXT    NOT NULL,
 
-    -- FOR ETL LOAD TRACKING -- 
-    load_number     INTEGER     NOT NULL,
-    date_of_load    TIMESTAMPTZ   NOT NULL
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 

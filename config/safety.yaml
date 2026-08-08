@@ -46,6 +46,7 @@ columns:
   eastings: eastings
   northings: northings
   record_date: date_of_record
+  modified_date: date_mdb_modified
 
 reconciliation:
   hash_columns:
