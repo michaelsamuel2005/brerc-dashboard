@@ -5,39 +5,42 @@ import pandas as pd
 
 def add_load_metadata(
     df: pd.DataFrame,
-    load_number: int,
+    load_mode: str,
     load_timestamp: datetime,
 ) -> pd.DataFrame:
     """
     Returns a copy of the dataframe with ETL load metadata attached.
 
-    Each row receives the same load number and timestamp,
-    representing the ETL run that produced the data.
+    Each row receives the same load mode ("initial" or "incremental")
+    and timestamp, representing the ETL run that produced the data.
     """
 
     # Takes a copy of the original dataframe
     df = df.copy()
 
-    # Each row gets the same load number (same ETL run)
-    df["load_number"] = load_number
+    # Each row gets the same load mode (same ETL run)
+    df["Load"] = load_mode
 
     # Each row gets the same timestamp (same ETL run)
-    df["date_of_load"] = load_timestamp
+    df["Load_date"] = load_timestamp
 
     return df
 
 
-def get_next_load_number(connection) -> int:
+def get_last_load_date(connection):
     """
-    Returns the next ETL load number, based on the highest
-    load_number already written to occurrence_public.
-    Starts from 1 if the table is empty.
+    Returns the watermark date for incremental loads: the most recent
+    Load_date already written to occurrence_public.
+
+    Returns None if the table is empty (i.e. there has been no
+    previous load), which callers should treat as "no watermark yet"
+    and fall back to an initial (full) load.
     """
     with connection.cursor() as cur:
         cur.execute(
             """
-            SELECT COALESCE(MAX(load_number), 0) + 1 AS next_load_number
+            SELECT MAX("Load_date") AS last_load_date
             FROM occurrence_public
             """
         )
-        return cur.fetchone()["next_load_number"]
+        return cur.fetchone()["last_load_date"]
