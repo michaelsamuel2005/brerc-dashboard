@@ -1,6 +1,6 @@
 from pathlib import Path
-from psycopg2.extras import execute_values
 
+import psycopg
 import yaml
 
 
@@ -27,15 +27,13 @@ def initial_load(df, connection, table_name: str):
     columns = list(df.columns)
     rows = [tuple(row) for row in df.itertuples(index=False)]
 
+    cols_sql = ", ".join(columns)
+
     with connection.cursor() as cur:
         cur.execute(f"TRUNCATE TABLE {table_name};")
-        cols_sql = ", ".join(columns)
-        execute_values(
-            cur,
-            f"INSERT INTO {table_name} ({cols_sql}) VALUES %s",
-            rows,
-            page_size=10000,
-        )
+        with cur.copy(f"COPY {table_name} ({cols_sql}) FROM STDIN") as copy:
+            for row in rows:
+                copy.write_row(row)
     connection.commit()
     return len(rows)
 
@@ -49,14 +47,14 @@ def incremental_load(df, connection, ui_map, table_name: str):
     update_cols = [c for c in columns if c != primary_key]
     update_sql = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
     cols_sql = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+
+    sql = (
+        f"INSERT INTO {table_name} ({cols_sql}) VALUES ({placeholders}) "
+        f"ON CONFLICT ({primary_key}) DO UPDATE SET {update_sql}"
+    )
 
     with connection.cursor() as cur:
-        execute_values(
-            cur,
-            f"INSERT INTO {table_name} ({cols_sql}) VALUES %s "
-            f"ON CONFLICT ({primary_key}) DO UPDATE SET {update_sql}",
-            rows,
-            page_size=5000,
-        )
+        cur.executemany(sql, rows)
     connection.commit()
     return len(rows)
