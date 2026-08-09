@@ -6,7 +6,7 @@ from etl.profiling.cleaning import clean_data
 
 def test_clean_data_lowercases_column_names():
     # Builds fake DF - Column with mixed-case name
-    # Checks if column name xomes out lowercase, else fails
+    # Checks if column name comes out lowercase, else fails
     df = pd.DataFrame({"Scientific_Name": ["Vulpes vulpes"]})
     result = clean_data(df)
     assert "scientific_name" in result.columns
@@ -34,3 +34,12 @@ def test_clean_data_does_not_change_row_count():
     df = pd.DataFrame({"Species_No": [1, 2, 3]})
     result = clean_data(df)
     assert len(result) == 3
+
+
+def test_clean_data_does_not_modify_original_dataframe():
+    # checks if clean_data modifies the original dataframe
+    # Expects: original columns remain untouched, else fails
+    df = pd.DataFrame({"Scientific Name": ["Vulpes vulpes"]})
+    clean_data(df)
+    assert "Scientific Name" in df.columns
+    assert "scientific_name" not in df.columns

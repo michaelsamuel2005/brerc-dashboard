@@ -1,5 +1,5 @@
 import pandas as pd
-from etl.rules import (
+from etl.safety_gate.rules import (
     SENSITIVE_SPECIES_NOS,
     SENSITIVE_NBN_NUMBERS,
     FLAGGED_RECORD_TYPES,
