@@ -57,7 +57,7 @@ def generalise_locations(
         )
 
     # Calculating resolution:
-    # If no resolution exist, fill with 10000m
+    # If no resolution exist, fill with 1000m
     # Never allow anything below 100m
     df["effective_resolution_m"] = (
         df[resolution_column]
