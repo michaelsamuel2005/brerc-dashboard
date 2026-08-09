@@ -1,6 +1,10 @@
 import pandas as pd
+import pytest
+
 from etl.safety_gate import classification
-from etl.safety_gate.classification import classify_chunk
+from etl.safety_gate.classification import ( # Update with your actual module path if different
+    classify_chunk,
+)
 
 FAKE_SENSITIVE_SPECIES_NOS = {101}
 FAKE_FLAGGED_RECORD_TYPES = {"roost"}
@@ -26,12 +30,15 @@ def test_classify_chunk_flags_sensitive_species(monkeypatch):
         "record_type": ["sighting"],
         "species_unresolved": [False],
     })
+    
     result = classify_chunk(df)
+    
     assert result["is_sensitive"].iloc[0] == True
     assert result["blurred"].iloc[0] == True
     assert result["sensitivity_reason"].iloc[0] == [
         "sensitive_species"
     ]
+
 
 def test_classify_chunk_flags_sensitive_record_type(monkeypatch):
     # Confirms a flagged record_type is sensitive even with an ordinary species.
@@ -42,11 +49,14 @@ def test_classify_chunk_flags_sensitive_record_type(monkeypatch):
         "record_type": ["roost"],
         "species_unresolved": [False],
     })
+    
     result = classify_chunk(df)
+    
     assert result["is_sensitive"].iloc[0] == True
     assert result["sensitivity_reason"].iloc[0] == [
         "sensitive_record_type"
     ]
+
 
 def test_classify_chunk_fails_closed_on_unresolved_species(monkeypatch):
     # Confirms an unresolved species is always sensitive (D1 fail-closed).
@@ -57,15 +67,19 @@ def test_classify_chunk_fails_closed_on_unresolved_species(monkeypatch):
         "record_type": ["sighting"],
         "species_unresolved": [True],
     })
+    
     result = classify_chunk(df)
+    
     assert result["is_sensitive"].iloc[0] == True
     assert result["sensitivity_reason"].iloc[0] == [
         "unresolved_species"
     ]
 
-def test_classify_chunk_records_multiple_reasons(monkeypatch):
-    _patch_rules(monkeypatch)
 
+def test_classify_chunk_records_multiple_reasons(monkeypatch):
+    # Confirms a record triggering multiple sensitivity rules records all reasons.
+    # Expects the sensitivity_reason list to contain multiple triggers, else fails.
+    _patch_rules(monkeypatch)
     df = pd.DataFrame({
         "species_no": [101],
         "record_type": ["roost"],
@@ -79,6 +93,7 @@ def test_classify_chunk_records_multiple_reasons(monkeypatch):
         "sensitive_species",
     ]
 
+
 def test_classify_chunk_leaves_ordinary_record_unflagged(monkeypatch):
     # Confirms a record matching none of the triggers stays not sensitive.
     # Expects is_sensitive=False, blurred=False, reason="not_sensitive", else fails.
@@ -88,7 +103,9 @@ def test_classify_chunk_leaves_ordinary_record_unflagged(monkeypatch):
         "record_type": ["sighting"],
         "species_unresolved": [False],
     })
+    
     result = classify_chunk(df)
+    
     assert result["is_sensitive"].iloc[0] == False
     assert result["blurred"].iloc[0] == False
     assert result["sensitivity_reason"].iloc[0] == "not_sensitive"
@@ -104,7 +121,9 @@ def test_classify_chunk_applies_default_resolution_to_sensitive_records(monkeypa
         "record_type": ["sighting"],
         "species_unresolved": [False],
     })
+    
     result = classify_chunk(df)
+    
     assert result["resolution_m"].iloc[0] == FAKE_DEFAULT_RESOLUTION_M
 
 
@@ -118,7 +137,9 @@ def test_classify_chunk_applies_floor_resolution_to_ordinary_records(monkeypatch
         "record_type": ["sighting"],
         "species_unresolved": [False],
     })
+    
     result = classify_chunk(df)
+    
     assert result["resolution_m"].iloc[0] == FAKE_D0_FLOOR_M
 
 
@@ -132,5 +153,38 @@ def test_classify_chunk_preserves_row_count(monkeypatch):
         "record_type": ["sighting", "roost", "sighting"],
         "species_unresolved": [False, False, False],
     })
+    
     result = classify_chunk(df)
+    
     assert len(result) == 3
+
+
+def test_classify_chunk_raises_valueerror_for_missing_columns(monkeypatch):
+    # Confirms the function enforces the presence of necessary data columns.
+    # Expects a ValueError to be raised if required columns are missing, else fails.
+    _patch_rules(monkeypatch)
+    df = pd.DataFrame({
+        "species_no": [101],
+        # Missing record_type and species_unresolved
+    })
+
+    with pytest.raises(ValueError) as exc_info:
+        classify_chunk(df)
+        
+    assert "missing required columns" in str(exc_info.value)
+
+
+def test_classify_chunk_does_not_modify_original_dataframe(monkeypatch):
+    # Confirms the input dataframe is left unchanged (mutation check).
+    # Expects the original dataframe to lack the new sensitivity columns, else fails.
+    _patch_rules(monkeypatch)
+    df = pd.DataFrame({
+        "species_no": [101],
+        "record_type": ["sighting"],
+        "species_unresolved": [False],
+    })
+
+    classify_chunk(df)
+
+    assert "is_sensitive" not in df.columns
+    assert "resolution_m" not in df.columns

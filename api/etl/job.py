@@ -5,7 +5,8 @@ from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
 from etl.reconciliation.state import get_ui_map
 from etl.db import get_source_connection
-from app.db import get_connection, check_table_exists, check_table_has_rows, force_full_reload
+from app.db import get_connection, check_table_exists, check_table_has_rows
+from etl.load.reload import force_full_reload
 from etl.load.mode import should_run_initial_load
 
 CONFIG = load_safety_config()
