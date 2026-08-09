@@ -26,6 +26,13 @@ destination:
     schema: public
     table: occurrence_public
 
+admin:
+  dbhostname: localhost
+  port: 5432
+  dbname: brerc_ui
+  user: brerc_admin
+  password: <real password, kept out of git>
+
 load:
   # pipeline can perform incremental updates if true 
   incremental_check: true

@@ -13,14 +13,19 @@ If DATABASE_URL is set directly in the environment, it takes priority
 over the assembled safety.yaml URL, so deployments that already inject a
 full connection string keep working unchanged.
 
-The API opens a connection per request and closes it. That is simple and correct
-for B0; connection pooling comes later if it is needed.
+The API opens a connection per request and closes it. That is simple and
+correct for B0; connection pooling comes later if it is needed.
 
 SAFETY RULES enforced here and in every query:
   * queries read ONLY from the public_* views (public_species, public_records,
     public_cells, public_provenance), never the base tables
   * all SQL is parameterised (%s placeholders) — never string-formatted, which is
     how SQL injection happens
+  * this connection is READ-ONLY (connects as brerc_api_ro). Schema-mutating
+    operations (drop/create/reload) do NOT live here — see
+    etl/load/admin.py::force_full_reload, which uses a separate connection
+    with actual DDL privileges. Keeping admin operations out of the
+    serving layer means a bug or bad request here can never touch schema.
 """
 
 import os
@@ -39,6 +44,12 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 CONFIG = load_safety_config()
 _DESTINATION = CONFIG.get("destination", {})
+
+# How long (ms) a single query may run before Postgres cancels it. Guards
+# against one runaway/badly-indexed query hanging the whole API — since
+# each request holds its own connection, a stuck query would otherwise
+# tie that connection up indefinitely.
+STATEMENT_TIMEOUT_MS = 10_000  # 10s — generous for this dataset's scale
 
 
 def _build_database_url() -> str:
@@ -68,21 +79,24 @@ def _build_database_url() -> str:
 
 DATABASE_URL = _build_database_url()
 
-B6_SCHEMA_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "db"
-    / "b6_schema.sql"
-)
 
 def get_connection() -> psycopg.Connection:
     """
-    Open a connection to the UI database.
+    Open a read-only connection to the UI database.
 
     `row_factory=dict_row` makes each returned row behave like a dictionary
-    ({"scientific_name": "...", ...}) instead of a plain tuple, which makes the
-    endpoint code much easier to read.
+    ({"scientific_name": "...", ...}) instead of a plain tuple, which makes
+    the endpoint code much easier to read.
+
+    `statement_timeout` caps how long any single query may run (see
+    STATEMENT_TIMEOUT_MS above).
     """
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row,
+        options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+    )
+
 
 def check_table_exists(connection, table_name: str) -> bool:
     """True if `table_name` exists as a table/view in the connected database."""
@@ -93,26 +107,9 @@ def check_table_exists(connection, table_name: str) -> bool:
         )
         return bool(cur.fetchone()["exists"])
 
+
 def check_table_has_rows(connection, table_name: str) -> bool:
     """True if `table_name` has at least one row. Assumes the table exists."""
     with connection.cursor() as cur:
         cur.execute(f"SELECT EXISTS (SELECT 1 FROM {table_name} LIMIT 1) AS has_rows;")
         return bool(cur.fetchone()["has_rows"])
-
-def force_full_reload(connection, schema_path: Path = B6_SCHEMA_PATH):
-    """
-    Drops and recreates the full B6 schema (species, occurrence_public,
-    distribution_cell, provenance + views + indexes + role grants) by
-    replaying db/b6_schema.sql. Used when safety.yaml's incremental_check
-    is false, or when a table is missing/empty - i.e. the "someone
-    corrupted the destination, force a clean rebuild" lever.
-
-    Runs the whole file (not per-table) because occurrence_public has a
-    FK into species - reloading one without the other breaks the FK.
-    """
-    with open(schema_path, "r") as f:
-        schema_sql = f.read()
-
-    with connection.cursor() as cur:
-        cur.execute(schema_sql)
-    connection.commit()
