@@ -1,7 +1,7 @@
 import pandas as pd
+import pytest
 
 from etl.aggregation.species_index import build_species_index
-
 
 # --- build_species_index tests ---
 
@@ -140,3 +140,67 @@ def test_build_species_index_returns_expected_columns():
         "last_year",
         "has_image",
     ]
+
+
+def test_build_species_index_raises_error_on_missing_columns():
+    # Confirms a missing required column safely halts execution.
+    # Expects a KeyError to be raised, else fails.
+    df = pd.DataFrame({
+        "unique_no": [1],
+        "scientific_name": ["Robin"],
+    })
+
+    with pytest.raises(KeyError, match="Missing columns required for species index"):
+        build_species_index(df)
+
+
+def test_build_species_index_drops_missing_species_no():
+    # Confirms records without a species_no are excluded from the index.
+    # Expects empty dataframe output, else fails.
+    df = pd.DataFrame({
+        "unique_no": [1],
+        "species_no": [pd.NA],
+        "scientific_name": ["Robin"],
+        "common_name": ["Robin"],
+        "taxanb": ["Bird"],
+        "date_of_record": ["01/01/2024"],
+    })
+
+    result = build_species_index(df)
+
+    assert len(result) == 0
+
+
+def test_build_species_index_raises_error_on_duplicate_species_id():
+    # Confirms conflicting metadata mapping to the same species ID raises an error.
+    # Expects a ValueError to be raised, else fails.
+    df = pd.DataFrame({
+        "unique_no": [1, 2],
+        "species_no": [10, 10],  # Same ID
+        "scientific_name": ["Robin", "Different Robin"],  # Different metadata creates two groups
+        "common_name": ["Robin", "Robin"],
+        "taxanb": ["Bird", "Bird"],
+        "date_of_record": ["01/01/2024", "01/01/2024"],
+    })
+
+    with pytest.raises(ValueError, match="Species index contains duplicate species IDs"):
+        build_species_index(df)
+
+
+def test_build_species_index_handles_invalid_dates():
+    # Confirms unparseable dates do not break the aggregation.
+    # Expects first_year and last_year to be missing (pd.NA), else fails.
+    df = pd.DataFrame({
+        "unique_no": [1],
+        "species_no": [10],
+        "scientific_name": ["Robin"],
+        "common_name": ["Robin"],
+        "taxanb": ["Bird"],
+        "date_of_record": ["invalid_date_string"],
+    })
+
+    result = build_species_index(df)
+
+    assert len(result) == 1
+    assert pd.isna(result.loc[0, "first_year"])
+    assert pd.isna(result.loc[0, "last_year"])

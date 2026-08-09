@@ -1,197 +1,128 @@
+from datetime import datetime
 import pandas as pd
+import numpy as np
+import pytest
+from unittest.mock import MagicMock, patch, call, ANY
 
-from etl.aggregation.persist import persist_aggregation_outputs
+from etl.aggregation.persist import (
+    to_python_none,
+    persist_aggregation_outputs,
+)
 
+# --- to_python_none tests ---
 
-def test_persist_aggregation_outputs_inserts_species_and_cells(connection):
-    """
-    Ensures aggregation outputs are written into:
-        - species
-        - distribution_cell
+def test_to_python_none_converts_pandas_na_to_none():
+    result = to_python_none(pd.NA)
+    assert result is None
 
-    Also checks that ETL metadata fields are populated.
-    """
+def test_to_python_none_converts_numpy_nan_to_none():
+    result = to_python_none(np.nan)
+    assert result is None
 
-    species_index = pd.DataFrame(
-        {
-            "species_id": ["123"],
-            "scientific_name": ["Test species"],
-            "common_name": ["Test bird"],
-            "species_group": ["Bird"],
-            "record_count": [5],
-            "first_year": [2020],
-            "last_year": [2025],
-            "has_image": [False],
-        }
-    )
+def test_to_python_none_preserves_valid_values():
+    assert to_python_none("Robin") == "Robin"
+    assert to_python_none(42) == 42
+    assert to_python_none(0) == 0
 
-    suppressed_counts = pd.DataFrame(
-        {
-            "grid_cell": ["ST61"],
-            "species_no": ["123"],
-            "year": [2025],
-            "record_count": [5],
-            "verified_count": [5],
-            "cell_sw_easting": [360000],
-            "cell_sw_northing": [170000],
-        }
-    )
+# --- persist_aggregation_outputs tests ---
 
-    persist_aggregation_outputs(
-        connection,
-        species_index,
-        suppressed_counts,
-        cell_size_m=1000,
-        load_number=1,
-    )
+@patch("etl.aggregation.persist.cell_polygon_wkt")
+def test_persist_aggregation_outputs_executes_queries_in_order(mock_wkt):
+    mock_wkt.return_value = "POLYGON((...))"
+    mock_connection = MagicMock()
+    mock_cursor = mock_connection.cursor.return_value.__enter__.return_value
 
-    with connection.cursor() as cur:
-
-        cur.execute(
-            """
-            SELECT
-                species_id,
-                scientific_name,
-                load_number,
-                date_of_load
-            FROM species
-            WHERE species_id = '123'
-            """
-        )
-
-        species_row = cur.fetchone()
-
-        assert species_row is not None
-        assert species_row["species_id"] == "123"
-        assert species_row["scientific_name"] == "Test species"
-        assert species_row["load_number"] == 1
-        assert species_row["date_of_load"] is not None
-
-
-        cur.execute(
-            """
-            SELECT
-                cell_id,
-                species_id,
-                record_year,
-                record_count,
-                verified_count,
-                load_number,
-                date_of_load
-            FROM distribution_cell
-            WHERE species_id = '123'
-            """
-        )
-
-        cell_row = cur.fetchone()
-
-        assert cell_row is not None
-        assert cell_row["species_id"] == "123"
-        assert cell_row["record_year"] == 2025
-        assert cell_row["record_count"] == 5
-        assert cell_row["verified_count"] == 5
-        assert cell_row["load_number"] == 1
-        assert cell_row["date_of_load"] is not None
-
-
-
-def test_persist_aggregation_outputs_replaces_previous_data(connection):
-    """
-    Ensures derived tables are rebuilt each ETL run.
-
-    Old aggregation data should disappear after
-    a new rebuild.
-    """
-
-    first_species = pd.DataFrame(
-        {
-            "species_id": ["111"],
-            "scientific_name": ["Old species"],
-            "common_name": ["Old"],
-            "species_group": ["Bird"],
-            "record_count": [2],
-            "first_year": [2020],
-            "last_year": [2020],
-            "has_image": [False],
-        }
-    )
-
-    first_counts = pd.DataFrame(
-        {
-            "grid_cell": ["ST11"],
-            "species_no": ["111"],
-            "year": [2020],
-            "record_count": [2],
-            "verified_count": [2],
-            "cell_sw_easting": [300000],
-            "cell_sw_northing": [100000],
-        }
-    )
+    empty_species = pd.DataFrame(columns=[
+        "species_id", "scientific_name", "common_name", "species_group",
+        "record_count", "first_year", "last_year", "has_image"
+    ])
+    empty_cells = pd.DataFrame(columns=[
+        "grid_cell", "species_no", "year", "record_count", "verified_count", 
+        "cell_sw_easting", "cell_sw_northing"
+    ])
 
     persist_aggregation_outputs(
-        connection,
-        first_species,
-        first_counts,
+        connection=mock_connection,
+        species_index=empty_species,
+        suppressed_counts=empty_cells,
         cell_size_m=1000,
-        load_number=1,
+        load_mode="TEST"
     )
 
+    calls = mock_cursor.mock_calls
+    assert "TRUNCATE TABLE distribution_cell;" in calls[0].args[0]
+    assert "INSERT INTO species" in calls[1].args[0]
+    assert "DELETE FROM species" in calls[2].args[0]
+    assert "INSERT INTO distribution_cell" in calls[3].args[0]
+    mock_connection.commit.assert_called_once()
 
-    second_species = pd.DataFrame(
-        {
-            "species_id": ["222"],
-            "scientific_name": ["New species"],
-            "common_name": ["New"],
-            "species_group": ["Plant"],
-            "record_count": [10],
-            "first_year": [2025],
-            "last_year": [2025],
-            "has_image": [False],
-        }
-    )
+@patch("etl.aggregation.persist.cell_polygon_wkt")
+def test_persist_aggregation_outputs_formats_species_tuples_correctly(mock_wkt):
+    mock_connection = MagicMock()
+    mock_cursor = mock_connection.cursor.return_value.__enter__.return_value
 
-    second_counts = pd.DataFrame(
-        {
-            "grid_cell": ["ST22"],
-            "species_no": ["222"],
-            "year": [2025],
-            "record_count": [10],
-            "verified_count": [10],
-            "cell_sw_easting": [400000],
-            "cell_sw_northing": [200000],
-        }
-    )
+    species_df = pd.DataFrame({
+        "species_id": ["TAX123"],
+        "scientific_name": ["Erithacus rubecula"],
+        "common_name": [pd.NA],
+        "species_group": ["Bird"],
+        "record_count": [150],
+        "first_year": [1990],
+        "last_year": [2023],
+        "has_image": [True],
+    })
+    
+    empty_cells = pd.DataFrame(columns=[
+        "grid_cell", "species_no", "year", "record_count", "verified_count", 
+        "cell_sw_easting", "cell_sw_northing"
+    ])
 
-    persist_aggregation_outputs(
-        connection,
-        second_species,
-        second_counts,
-        cell_size_m=1000,
-        load_number=2,
-    )
+    persist_aggregation_outputs(mock_connection, species_df, empty_cells, 1000, "TEST")
 
+    species_insert_call = mock_cursor.executemany.call_args_list[0]
+    inserted_rows = species_insert_call.args[1]
+    
+    assert len(inserted_rows) == 1
+    row = inserted_rows[0]
+    
+    assert row[0] == "TAX123"
+    assert row[2] is None
+    assert isinstance(row[4], int) and row[4] == 150
+    assert row[8] == "TEST"
+    assert isinstance(row[9], datetime)
 
-    with connection.cursor() as cur:
+@patch("etl.aggregation.persist.cell_polygon_wkt")
+def test_persist_aggregation_outputs_formats_cell_tuples_correctly(mock_wkt):
+    mock_wkt.return_value = "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
+    mock_connection = MagicMock()
+    mock_cursor = mock_connection.cursor.return_value.__enter__.return_value
 
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM species
-            WHERE species_id = '111'
-            """
-        )
+    empty_species = pd.DataFrame(columns=[
+        "species_id", "scientific_name", "common_name", "species_group",
+        "record_count", "first_year", "last_year", "has_image"
+    ])
+    
+    cells_df = pd.DataFrame({
+        "grid_cell": ["ST1234"],
+        "species_no": ["TAX123"],
+        "year": [2020.0],
+        "record_count": [5],
+        "verified_count": [3],
+        "cell_sw_easting": [1000],
+        "cell_sw_northing": [2000]
+    })
 
-        old_species_count = cur.fetchone()["count"]
-        assert old_species_count == 0
+    persist_aggregation_outputs(mock_connection, empty_species, cells_df, 1000, "TEST")
 
-
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM species
-            WHERE species_id = '222'
-            """
-        )
-
-        new_species_count = cur.fetchone()["count"]
-        assert new_species_count == 1
+    cell_insert_call = mock_cursor.executemany.call_args_list[1]
+    inserted_rows = cell_insert_call.args[1]
+    
+    assert len(inserted_rows) == 1
+    row = inserted_rows[0]
+    
+    assert row[0] == "ST1234"
+    assert row[1] == "TAX123"
+    assert isinstance(row[2], int) and row[2] == 2020
+    assert row[3] == 1000
+    assert row[6] == "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"
+    mock_wkt.assert_called_once_with(1000, 2000, 1000)

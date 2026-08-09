@@ -1,9 +1,11 @@
+# pytest etl/tests/aggregation/
+
 import pandas as pd
+import pytest
 
 from etl.aggregation.cell_filtering import (
     filter_accepted_records,
 )
-
 
 # --- filter_accepted_records tests ---
 
@@ -129,8 +131,8 @@ def test_filter_accepted_records_strips_whitespace():
 
 
 def test_filter_accepted_records_preserves_original_columns():
-    # Confirms filtering adds the legacy flag without removing
-    # source columns.
+    # Confirms filtering adds the legacy flag without removing source columns.
+    # Expects unique_no, scientific_name, and verified columns, else fails.
     df = pd.DataFrame({
         "unique_no": [1],
         "scientific_name": ["Robin"],
@@ -142,3 +144,31 @@ def test_filter_accepted_records_preserves_original_columns():
     assert "unique_no" in result.columns
     assert "scientific_name" in result.columns
     assert "verified" in result.columns
+
+
+def test_filter_accepted_records_raises_error_on_missing_verified_column():
+    # Confirms a missing verification column correctly halts the function.
+    # Expects a KeyError to be raised, else fails.
+    df = pd.DataFrame({
+        "unique_no": [1],
+        "scientific_name": ["Robin"],
+    })
+
+    with pytest.raises(KeyError, match="Missing columns required"):
+        filter_accepted_records(df)
+
+
+def test_filter_accepted_records_normalises_all_dash_types():
+    # Confirms standard hyphens and em-dashes are successfully normalised.
+    # Expects two retained records with identical evaluation, else fails.
+    df = pd.DataFrame({
+        "unique_no": [1, 2],
+        "verified": [
+            "Accepted - correct",  # standard hyphen
+            "Accepted — correct"   # em-dash
+        ],
+    })
+
+    result = filter_accepted_records(df)
+
+    assert len(result) == 2
