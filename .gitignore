@@ -29,3 +29,6 @@ coverage/
 # The folder and its README are tracked; everything else inside is ignored.
 data/*
 !data/README.md
+
+# Local database / ETL configuration
+config/safety.yaml
