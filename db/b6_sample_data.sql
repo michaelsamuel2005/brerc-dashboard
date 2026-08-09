@@ -24,15 +24,15 @@ INSERT INTO species (species_id, scientific_name, common_name, species_group,
 
 -- Per-record public rows (already generalised: grid ref + coarse locality only).
 INSERT INTO occurrence_public (record_id, species_id, record_year, grid_ref,
-                               precision_metres, locality, verified) VALUES
-    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',               true),
-    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',               true),
-    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',               false),
-    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true),
-    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true),
-    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',            true),
-    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',            false);
-
+                               precision_metres, locality, verified,
+                               content_hash, "Load", "Load_date") VALUES
+    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',               true,  md5('1|100001|2024|ST5872'), 'initial', '2026-08-09 00:00:00'),
+    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',               true,  md5('2|100001|2023|ST5973'), 'initial', '2026-08-09 00:00:00'),
+    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',               false, md5('3|100001|2022|ST5771'), 'initial', '2026-08-09 00:00:00'),
+    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true,  md5('4|100002|2024|ST6074'), 'initial', '2026-08-09 00:00:00'),
+    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true,  md5('5|100002|2021|ST61'),   'initial', '2026-08-09 00:00:00'),
+    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',            true,  md5('6|100003|2025|ST5'),    'initial', '2026-08-09 00:00:00'),
+    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',            false, md5('7|100003|2024|ST5'),    'initial', '2026-08-09 00:00:00');
 -- Pre-aggregated grid cells (geom = coarse cell polygon in WGS84 / EPSG:4326).
 INSERT INTO distribution_cell (cell_id, species_id, record_year, precision_metres,
                                record_count, verified_count, geom) VALUES
