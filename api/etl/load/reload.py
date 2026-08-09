@@ -21,10 +21,10 @@ import psycopg
 from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
-_DESTINATION = CONFIG.get("destination", {})
+_ADMIN = CONFIG.get("admin", {})
 
 B6_SCHEMA_PATH = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
     / "db"
     / "b6_schema.sql"
 )
@@ -33,19 +33,19 @@ B6_SCHEMA_PATH = (
 def _build_admin_database_url() -> str:
     """
     Connection string for schema-mutating operations. Prefers
-    DATABASE_URL_ADMIN if set; TODO confirm the real source once the
-    DDL-capable role/credentials exist (e.g. a safety.yaml `admin:`
-    block mirroring `destination:`).
+    DATABASE_URL_ADMIN if set; otherwise uses the `admin:` block
+    in safety.yaml.
     """
     explicit_url = os.getenv("DATABASE_URL_ADMIN")
+
     if explicit_url:
         return explicit_url
 
-    host = _DESTINATION.get("dbhostname") or "localhost"
-    port = _DESTINATION.get("port") or 5432
-    dbname = _DESTINATION.get("dbname") or "brerc_ui"
-    user = _DESTINATION.get("admin_user") or "postgres"
-    password = _DESTINATION.get("admin_password") or "postgres"
+    host = _ADMIN.get("dbhostname") or "localhost"
+    port = _ADMIN.get("port") or 5432
+    dbname = _ADMIN.get("dbname") or "brerc_ui"
+    user = _ADMIN.get("user") or "postgres"
+    password = _ADMIN.get("password") or "postgres"
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
@@ -55,7 +55,10 @@ def get_admin_connection() -> psycopg.Connection:
     return psycopg.connect(_build_admin_database_url())
 
 
-def force_full_reload(connection=None, schema_path: Path = B6_SCHEMA_PATH):
+def force_full_reload(
+    connection=None,
+    schema_path: Path = B6_SCHEMA_PATH,
+):
     """
     Drops and recreates the full B6 schema (species, occurrence_public,
     distribution_cell, provenance + views + indexes + role grants) by
@@ -70,6 +73,7 @@ def force_full_reload(connection=None, schema_path: Path = B6_SCHEMA_PATH):
     rights; otherwise one is opened via get_admin_connection().
     """
     owns_connection = connection is None
+
     if owns_connection:
         connection = get_admin_connection()
 
@@ -79,7 +83,10 @@ def force_full_reload(connection=None, schema_path: Path = B6_SCHEMA_PATH):
 
         with connection.cursor() as cur:
             cur.execute(schema_sql)
+
         connection.commit()
+
     finally:
         if owns_connection:
             connection.close()
+

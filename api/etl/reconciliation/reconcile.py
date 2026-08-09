@@ -155,7 +155,7 @@ def reconcile(
 
     # Streams through the source data to build the unique_no ->
     # content_hash lookup map.
-    source_map = build_source_hash_map()
+    source_map = build_source_hash_map(records_df)
 
     # Comapres the UI with the new source data
     changes = diff_id_hash_maps(source_map, ui_map)
@@ -171,7 +171,7 @@ def reconcile(
 
     # Pass 2
 
-    for cleaned_chunk in iter_source_chunks():
+    for cleaned_chunk in iter_source_chunks(records_df):
 
         hashed_chunk = cleaned_chunk.copy()
 

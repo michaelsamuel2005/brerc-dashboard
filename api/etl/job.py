@@ -4,12 +4,18 @@ from etl.pipeline import run_pipeline
 from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
 from etl.reconciliation.state import get_ui_map
-from etl.db import get_source_connection
-from app.db import get_connection, check_table_exists, check_table_has_rows
+from etl.db import (
+    get_source_connection,
+    get_destination_connection,
+    check_table_exists,
+    check_table_has_rows,
+)
 from etl.load.reload import force_full_reload
 from etl.load.mode import should_run_initial_load
 
+
 CONFIG = load_safety_config()
+
 
 def load_source_data(source_connection=None, watermark_date=None):
     """
@@ -30,9 +36,11 @@ def load_source_data(source_connection=None, watermark_date=None):
         df = pd.read_csv(
             CONFIG["source"]["records_path"]
         )
+
         if watermark_date is not None:
             df[modified_column] = pd.to_datetime(df[modified_column])
             df = df[df[modified_column] >= watermark_date]
+
         return df
 
     if mode == "database":
@@ -51,6 +59,7 @@ def load_source_data(source_connection=None, watermark_date=None):
                 f"SELECT * FROM ({query}) AS filtered_source "
                 f"WHERE {modified_column} >= %(watermark_date)s"
             )
+
             return pd.read_sql(
                 query,
                 source_connection,
@@ -61,30 +70,34 @@ def load_source_data(source_connection=None, watermark_date=None):
             query,
             source_connection,
         )
+
     raise ValueError(f"Unknown source.mode: {mode!r}")
+
 
 def load_species_dictionary(source_connection=None):
     """
     Loads species lookup table used for synonym-safe species resolution.
     """
+
     mode = CONFIG["source"].get("mode", "csv")
 
     if mode == "csv":
         return pd.read_csv(
             CONFIG["source"]["dictionary_path"]
         )
-    
+
     if mode == "database":
         if source_connection is None:
             raise ValueError(
                 "source_connection is required when "
                 "source.mode is 'database'"
             )
+
         return pd.read_sql(
             CONFIG["source"]["dictionary_query"],
             source_connection,
         )
-    
+
     raise ValueError(f"Unknown source.mode: {mode!r}")
 
 
@@ -100,8 +113,8 @@ def get_current_ui_map(connection):
         - updates
         - deletes
     """
-    return get_ui_map(connection)
 
+    return get_ui_map(connection)
 
 def nightly_job():
     print("Starting nightly ETL")
@@ -109,40 +122,68 @@ def nightly_job():
     try:
         mode = CONFIG["source"].get("mode", "csv")
 
-        with get_connection() as connection:
+        with get_destination_connection() as connection:
             table_name = CONFIG["destination"]["table"]  # "occurrence_public"
 
             table_exists = check_table_exists(connection, table_name)
-            table_has_rows = check_table_has_rows(connection, table_name) if table_exists else False
+            table_has_rows = (
+                check_table_has_rows(connection, table_name)
+                if table_exists
+                else False
+            )
 
-            run_initial = should_run_initial_load(table_exists, table_has_rows)
+            run_initial = should_run_initial_load(
+                table_exists,
+                table_has_rows,
+            )
             load_mode = "initial" if run_initial else "incremental"
 
             # Only look for a watermark when we're actually attempting an
-            # incremental load. incremental_check in safety.yaml lets this
-            # be disabled entirely (always full-load) regardless of state.
+            # incremental load AND the source is a database.
+            #
+            # The supplied CSV fixture does not contain the configured
+            # date_mdb_modified column, so CSV mode cannot use a watermark.
+            # Reconciliation still detects inserts, updates and deletes
+            # by comparing content hashes.
             watermark_date = None
-            if load_mode == "incremental" and CONFIG["load"].get("incremental_check", True):
+
+            if (
+                load_mode == "incremental"
+                and mode == "database"
+                and CONFIG["load"].get("incremental_check", True)
+            ):
                 watermark_date = get_last_load_date(connection)
+
                 if watermark_date is None:
                     # Table exists/has rows but carries no Load_date yet
                     # (e.g. pre-migration data) - fall back to a full load
                     # rather than incrementally filtering against nothing.
                     load_mode = "initial"
-            elif load_mode == "incremental":
+
+            elif (
+                load_mode == "incremental"
+                and mode == "database"
+            ):
                 # incremental_check is off - always do a full load.
                 load_mode = "initial"
 
             if load_mode == "initial":
                 print(f"Forcing full reload of {table_name}")
-                force_full_reload(connection)
+                force_full_reload()
 
             if mode == "database":
                 with get_source_connection() as source_connection:
-                    source_df = load_source_data(source_connection, watermark_date=watermark_date)
-                    dictionary_df = load_species_dictionary(source_connection)
+                    source_df = load_source_data(
+                        source_connection,
+                        watermark_date=watermark_date,
+                    )
+                    dictionary_df = load_species_dictionary(
+                        source_connection
+                    )
             else:
-                source_df = load_source_data(watermark_date=watermark_date)
+                source_df = load_source_data(
+                    watermark_date=None
+                )
                 dictionary_df = load_species_dictionary()
 
             ui_map = get_current_ui_map(connection)
@@ -163,8 +204,3 @@ def nightly_job():
     except Exception as error:
         print(f"Nightly ETL failed: {error}")
         raise
-
-
-
-if __name__ == "__main__":
-    nightly_job()
