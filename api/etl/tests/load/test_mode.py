@@ -1,16 +1,15 @@
 from unittest.mock import patch
+import pytest
 
-from etl.load.mode import should_run_initial_load
+from etl.load.mode import ( # Update with your actual module path if different
+    should_run_initial_load,
+)
 
+# --- should_run_initial_load tests ---
 
 def test_initial_load_when_incremental_disabled():
-    """
-    Confirms config can force a full initial load.
-
-    Even if the database already contains data,
-    incremental_check=False should trigger initial load.
-    """
-
+    # Confirms config can force a full initial load.
+    # Expects True to be returned even if the database already contains data, else fails.
     with patch(
         "etl.load.mode.CONFIG",
         {
@@ -19,7 +18,6 @@ def test_initial_load_when_incremental_disabled():
             }
         },
     ):
-
         result = should_run_initial_load(
             table_exists=True,
             table_has_rows=True,
@@ -29,11 +27,8 @@ def test_initial_load_when_incremental_disabled():
 
 
 def test_initial_load_when_table_does_not_exist():
-    """
-    Confirms a missing destination table requires
-    an initial load.
-    """
-
+    # Confirms a missing destination table requires an initial load.
+    # Expects True to be returned to trigger table creation and full load, else fails.
     with patch(
         "etl.load.mode.CONFIG",
         {
@@ -42,7 +37,6 @@ def test_initial_load_when_table_does_not_exist():
             }
         },
     ):
-
         result = should_run_initial_load(
             table_exists=False,
             table_has_rows=False,
@@ -52,11 +46,8 @@ def test_initial_load_when_table_does_not_exist():
 
 
 def test_initial_load_when_table_is_empty():
-    """
-    Confirms an empty destination table requires
-    an initial load.
-    """
-
+    # Confirms an empty destination table requires an initial load.
+    # Expects True to be returned when the table exists but has no records, else fails.
     with patch(
         "etl.load.mode.CONFIG",
         {
@@ -65,7 +56,6 @@ def test_initial_load_when_table_is_empty():
             }
         },
     ):
-
         result = should_run_initial_load(
             table_exists=True,
             table_has_rows=False,
@@ -75,11 +65,8 @@ def test_initial_load_when_table_is_empty():
 
 
 def test_incremental_load_when_database_contains_data():
-    """
-    Confirms an existing populated database uses
-    incremental loading when enabled.
-    """
-
+    # Confirms an existing populated database uses incremental loading when enabled.
+    # Expects False to be returned so the ETL process runs incrementally, else fails.
     with patch(
         "etl.load.mode.CONFIG",
         {
@@ -88,7 +75,6 @@ def test_incremental_load_when_database_contains_data():
             }
         },
     ):
-
         result = should_run_initial_load(
             table_exists=True,
             table_has_rows=True,
