@@ -1,19 +1,17 @@
 from unittest.mock import MagicMock
 
-from etl.reconciliation.state import get_ui_map
+from etl.reconciliation.state import ( # Update with your actual module path if different
+    get_ui_map,
+)
 
+# --- get_ui_map tests ---
 
 def test_get_ui_map_returns_id_hash_dictionary():
-    """
-    Confirms database rows are converted into a record_id ->
-    content_hash dictionary.
-
-    IDs are stored as strings because occurrence_public.record_id
-    is a TEXT database key.
-    """
-
+    # Confirms database rows are converted into a record_id to content_hash dictionary.
+    # Expects IDs to be stored as strings to match the occurrence_public TEXT key format, else fails.
     connection = MagicMock()
 
+    # Mocks the database cursor returning two rows
     connection.cursor.return_value.__enter__.return_value.fetchall.return_value = [
         {
             "record_id": 1,
@@ -34,10 +32,8 @@ def test_get_ui_map_returns_id_hash_dictionary():
 
 
 def test_get_ui_map_returns_empty_dictionary_when_no_records():
-    """
-    Confirms an empty database returns an empty mapping.
-    """
-
+    # Confirms an empty database gracefully returns an empty mapping without errors.
+    # Expects an empty dictionary {} to be returned when fetchall yields no rows, else fails.
     connection = MagicMock()
 
     connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []

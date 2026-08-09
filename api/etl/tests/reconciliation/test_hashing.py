@@ -1,13 +1,24 @@
-import hashlib
 import pandas as pd
+import pytest
+from unittest.mock import patch
 
-from etl.reconciliation.hashing import (
-    HASH_COLUMNS,
+from etl.reconciliation.hashing import ( # Update with your actual module path if different
     _normalised_hash_value,
     row_content_hash,
     add_content_hash,
 )
 
+# Standardized columns for the tests to use so they don't depend on the real config file
+MOCK_HASH_COLUMNS = [
+    "scientific_name",
+    "abundance",
+    "sex_stage",
+    "record_type",
+    "vitality",
+    "verified",
+    "eastings",
+    "northings",
+]
 
 # --- _normalised_hash_value tests ---
 
@@ -36,6 +47,18 @@ def test_normalised_hash_value_strips_surrounding_whitespace():
 
 # --- row_content_hash tests ---
 
+def test_row_content_hash_raises_keyerror_missing_columns():
+    # Confirms the function enforces the presence of required hash columns.
+    # Expects a KeyError to be raised if columns are missing, else fails.
+    row = pd.Series({"scientific_name": "Robin"}) # Missing all others
+
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        with pytest.raises(KeyError) as exc_info:
+            row_content_hash(row)
+
+    assert "Missing columns required for hashing" in str(exc_info.value)
+
+
 def test_row_content_hash_returns_sha256_hex_string():
     # Confirms a SHA-256 hash is produced.
     # Expects a 64-character hexadecimal string, else fails.
@@ -50,7 +73,8 @@ def test_row_content_hash_returns_sha256_hex_string():
         "northings": 179645,
     })
 
-    result = row_content_hash(row)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        result = row_content_hash(row)
 
     assert len(result) == 64
     assert all(c in "0123456789abcdef" for c in result)
@@ -70,7 +94,8 @@ def test_row_content_hash_same_data_produces_same_hash():
         "northings": 179645,
     })
 
-    assert row_content_hash(row) == row_content_hash(row)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        assert row_content_hash(row) == row_content_hash(row)
 
 
 def test_row_content_hash_detects_changed_value():
@@ -90,7 +115,8 @@ def test_row_content_hash_detects_changed_value():
     row2 = row1.copy()
     row2["verified"] = "No"
 
-    assert row_content_hash(row1) != row_content_hash(row2)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        assert row_content_hash(row1) != row_content_hash(row2)
 
 
 # --- add_content_hash tests ---
@@ -109,7 +135,8 @@ def test_add_content_hash_adds_content_hash_column():
         "northings": [179645],
     })
 
-    result = add_content_hash(df)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        result = add_content_hash(df)
 
     assert "content_hash" in result.columns
 
@@ -128,7 +155,8 @@ def test_add_content_hash_returns_one_hash_per_row():
         "northings": [179645, 179650],
     })
 
-    result = add_content_hash(df)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        result = add_content_hash(df)
 
     assert len(result["content_hash"]) == 2
     assert result["content_hash"].notna().all()
@@ -149,8 +177,29 @@ def test_add_content_hash_preserves_existing_columns():
         "unique_no": [123],
     })
 
-    result = add_content_hash(df)
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        result = add_content_hash(df)
 
     assert "unique_no" in result.columns
     assert result.loc[0, "unique_no"] == 123
     assert "content_hash" in result.columns
+
+
+def test_add_content_hash_does_not_modify_original_dataframe():
+    # Confirms the input dataframe is left unchanged (mutation check).
+    # Expects the original dataframe to lack the content_hash column, else fails.
+    df = pd.DataFrame({
+        "scientific_name": ["Robin"],
+        "abundance": ["Common"],
+        "sex_stage": ["Adult"],
+        "record_type": ["Observation"],
+        "vitality": ["Alive"],
+        "verified": ["Yes"],
+        "eastings": [529090],
+        "northings": [179645],
+    })
+
+    with patch("etl.reconciliation.hashing.HASH_COLUMNS", MOCK_HASH_COLUMNS):
+        add_content_hash(df)
+
+    assert "content_hash" not in df.columns
