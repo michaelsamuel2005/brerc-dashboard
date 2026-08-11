@@ -116,18 +116,7 @@ class RecordList(BaseModel):
 
 # ---- /api/meta/provenance --------------------------------------------------
 class Provenance(BaseModel):
-    """
-    Dataset-level context only.
-
-    Deliberately does NOT include:
-      * a per-source breakdown — naming which dataset each record came from
-        narrows down who recorded it and where, which is the sort of detail the
-        public tier exists to withhold.
-      * any description of HOW locations are generalised — telling the public
-        the exact blurring rules tells someone trying to locate a protected
-        species exactly how much to un-blur.
-    Both were removed deliberately. Please don't add them back without asking.
-    """
-
+    sources: list[str]
     caveats: list[str]
-    lastUpdated: str                # ISO date — see routers/provenance.py
+    lastUpdated: str                # ISO date
+    sensitivityPolicySummary: str

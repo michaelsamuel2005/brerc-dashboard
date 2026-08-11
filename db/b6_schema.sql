@@ -67,16 +67,7 @@ CREATE TABLE occurrence_public (
     precision_metres INTEGER  NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     locality         TEXT,                          -- coarse: authority + grid sq
-    verified         BOOLEAN  NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
-    load_date        DATE                           -- Load_date: when the ETL last
-                                                    -- wrote this row. Feeds
-                                                    -- /api/meta/provenance's
-                                                    -- lastUpdated via MAX(load_date),
-                                                    -- so "last updated" is measured
-                                                    -- rather than hand-maintained.
-                                                    -- Safe to publish: a load date is
-                                                    -- about OUR pipeline, not about
-                                                    -- when or where a species was seen.
+    verified         BOOLEAN  NOT NULL DEFAULT FALSE -- D5 (accepted); legacy marked
     -- NO eastings, northings, recorder1, bliss, comments, precise_date,
     -- is_sensitive — absent by construction.
 );
@@ -152,8 +143,7 @@ SELECT o.record_id,
        o.grid_ref,
        o.precision_metres,
        o.locality AS place,          -- contract calls it "place": coarse only
-       o.verified,
-       o.load_date                   -- feeds /api/meta/provenance (MAX(load_date))
+       o.verified
 FROM occurrence_public AS o
 JOIN species AS s USING (species_id)
 WHERE o.precision_metres >= 100;      -- belt-and-braces on top of the CHECK
@@ -218,9 +208,4 @@ GRANT SELECT ON public_species, public_records, public_cells, public_provenance
 --    sensitivity marker.
 -- 5. Low-count suppression: confirm it happens in your aggregation (B4) so the
 --    serving views never see a count that could pinpoint a sensitive record.
--- 6. NEW — load_date: occurrence_public now has a load_date DATE column, and
---    /api/meta/provenance reports MAX(load_date) as the dashboard's "last
---    updated". Please set it to BRERC's Load_date (or the date of the ETL run)
---    on every row you write. If it stays NULL the endpoint returns 503 rather
---    than showing a made-up date.
 -- =============================================================================

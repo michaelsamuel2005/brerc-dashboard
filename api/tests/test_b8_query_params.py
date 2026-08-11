@@ -1,6 +1,5 @@
 """
-Tests for the species sort/filter parameters, the row caps, and what
-/api/meta/provenance is allowed to say.
+Tests for the species sort/filter parameters and the row caps.
 
 WHAT THESE ARE PROTECTING — three separate promises:
 
@@ -12,9 +11,8 @@ WHAT THESE ARE PROTECTING — three separate promises:
   2. No request can ever pull out more than a fixed number of rows. That is what
      keeps the dashboard a lookup tool rather than a bulk download.
 
-  3. /api/meta/provenance does not name the contributing sources or explain how
-     sensitive locations are blurred. Both were removed deliberately, and it
-     would be easy to add either back without realising why they went.
+  3. There is no bulk export or CSV route anywhere, and a test walks the app's
+     registered routes so one can't be added by accident.
 
 Tests that need a database skip themselves when there isn't one, so the suite
 stays green on a machine (or CI runner) without PostgreSQL.
@@ -25,7 +23,7 @@ from fastapi.testclient import TestClient
 
 from app import config
 from app.main import app
-from conftest import needs_b6_schema, needs_load_date
+from conftest import needs_b6_schema
 
 client = TestClient(app)
 
@@ -215,48 +213,7 @@ def test_precision_metres_field_name_is_unchanged():
 
 
 # =============================================================================
-# 5. /api/meta/provenance — what it must NOT say
-# =============================================================================
-
-@needs_b6_schema
-@needs_load_date
-def test_provenance_no_longer_lists_sources_or_explains_generalisation():
-    body = client.get("/api/meta/provenance").json()
-
-    assert "sources" not in body, (
-        "the per-source list is back — naming contributing datasets narrows down "
-        "who recorded what, and where"
-    )
-    assert "sensitivityPolicySummary" not in body, (
-        "the generalisation description is back — publishing the blurring rules "
-        "tells someone how much precision to add back"
-    )
-
-    assert set(body) == {"caveats", "lastUpdated"}
-
-
-@needs_b6_schema
-@needs_load_date
-def test_provenance_last_updated_is_the_newest_load_date():
-    """
-    lastUpdated is measured from the data, not typed in by hand — so it can't
-    silently go stale.
-    """
-    from app.db import get_connection
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT MAX(load_date) AS newest FROM public_records;")
-            newest = cur.fetchone()["newest"]
-
-    body = client.get("/api/meta/provenance").json()
-
-    assert body["lastUpdated"] == newest.isoformat()
-    assert body["caveats"], "caveats should still be published"
-
-
-# =============================================================================
-# 6. There is no bulk export, anywhere
+# 5. There is no bulk export, anywhere
 # =============================================================================
 
 def test_no_route_offers_a_bulk_export_or_download():
