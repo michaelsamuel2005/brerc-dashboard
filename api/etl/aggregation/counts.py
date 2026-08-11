@@ -1,9 +1,12 @@
 import pandas as pd
 
 from etl.safety_gate.location import os_grid_square
-from etl.aggregation.cell_filtering import filter_accepted_records
+from etl.aggregation.cell_filtering import (
+    filter_accepted_records,
+    _normalise_dashes,
+    ACCEPTED_VERIFIED_VALUES,
+)
 from etl.aggregation.species_index import build_species_index
-
 from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
@@ -56,12 +59,6 @@ def aggregate_counts(
     )
 
     # Convert each coordinate pair into its public grid square.
-    # Uses zip() instead of DataFrame.apply(axis=1).
-    # apply(axis=1) creates a pandas Series object for every row,
-    # which adds overhead when processing millions of records.
-    #
-    # zip() directly iterates through the coordinate columns,
-    # reducing unnecessary pandas overhead.
     df["grid_cell"] = [
         os_grid_square(
             easting,
@@ -81,12 +78,6 @@ def aggregate_counts(
     )
 
     # Store the south-west corner of each grid cell.
-    #
-    # This uses floor division so that every coordinate inside
-    # the same grid square receives the same starting point.
-    #
-    # These values are later used to create the polygon geometry
-    # stored in the database.
     df["cell_sw_easting"] = (
         df[easting_column] // cell_size_m
     ) * cell_size_m
@@ -96,8 +87,6 @@ def aggregate_counts(
     ) * cell_size_m
 
     # Extract the year from the observation date.
-    # Invalid dates become NaN and are removed because they cannot
-    # contribute to a species x cell x year count.
     df["year"] = (
         pd.to_datetime(
             df[date_column],
@@ -111,26 +100,20 @@ def aggregate_counts(
         subset=["year"]
     )
 
-    # Convert verification status into a boolean value.
-    # This allows aggregation to count only verified records.
-    df["is_verified"] = (
-        df[verified_column]
-        .astype(bool)
-    )
+    # Handle both boolean inputs (from unit tests) and string NBN status terms (from CSVs)
+    sample_val = df[verified_column].dropna().iloc[0] if not df[verified_column].dropna().empty else None
+    if pd.api.types.is_bool_dtype(df[verified_column]) or isinstance(sample_val, bool):
+        df["is_verified"] = df[verified_column].fillna(False).astype(bool)
+    else:
+        normalized_verified = (
+            df[verified_column]
+            .astype("string")
+            .str.strip()
+            .map(lambda v: _normalise_dashes(v) if pd.notna(v) else v)
+        )
+        df["is_verified"] = normalized_verified.isin(ACCEPTED_VERIFIED_VALUES)
 
-    # Count records by:
-    #   - species
-    #   - reporting grid cell
-    #   - observation year
-    #
-    # Each row represents the number of observations of a species
-    # within one grid square during one year.
-    #
-    # record_count:
-    #   Total observations in that cell.
-    #
-    # verified_count:
-    #   Number of verified observations contributing to the cell.
+    # Count records by species, grid cell, and year
     aggregated = (
         df
         .groupby(
@@ -166,31 +149,22 @@ def build_public_aggregation(
     date_column: str,
     cell_size_m=None,
 ) -> dict:
-
     """
     Runs the complete B4 aggregation pipeline.
-
-    Ensures only accepted records and marked legacy records
-    contribute to public statistics.
     """
 
     if cell_size_m is None:
         cell_size_m = CONFIG["aggregation"]["cell_size_m"]
 
-    # Remove rejected records before aggregation.
-    # Only accepted records + legacy flagged records continue.
     filtered_records = filter_accepted_records(
         df,
         verified_column=verified_column,
     )
 
-    # Build species table from species that actually appear
-    # in the records being loaded.
     species_index = build_species_index(
         filtered_records
     )
 
-    # Create species x cell x year counts.
     aggregated = aggregate_counts(
         filtered_records,
         verified_column=verified_column,
@@ -200,9 +174,6 @@ def build_public_aggregation(
         cell_size_m=cell_size_m,
     )
 
-    # Removes cells with very low counts.
-    # Small counts can allow users to identify individual
-    # sensitive records.
     suppressed_counts = suppress_low_counts(
         aggregated,
         threshold=SUPPRESSION_THRESHOLD,
@@ -232,12 +203,8 @@ def suppress_low_counts(
 
     df = aggregated_df.copy()
 
-    # Finds cells with enough records to safely display.
     visible_cells = (
         df["record_count"] >= threshold
     )
 
-    # Remove low-frequency cells entirely.
-    # This prevents revealing that a sensitive record exists
-    # at a specific location.
     return df[visible_cells].copy()
