@@ -14,14 +14,27 @@ DATABASE_URL_ADMIN in the environment (or extend safety.yaml with an
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import psycopg
 
 from etl.load.loader import load_safety_config
 
-CONFIG = load_safety_config()
-_ADMIN = CONFIG.get("admin", {})
+
+# Loaded lazily (not at import time) so importing this module never
+# requires safety.yaml to already exist on disk - only calling
+# get_config()/_get_admin() does. lru_cache means it's still only read
+# once per process, just on first use rather than at import.
+
+@lru_cache(maxsize=1)
+def get_config() -> dict:
+    return load_safety_config()
+
+
+def _get_admin() -> dict:
+    return get_config().get("admin", {})
+
 
 B6_SCHEMA_PATH = (
     Path(__file__).resolve().parents[3]
@@ -41,11 +54,13 @@ def _build_admin_database_url() -> str:
     if explicit_url:
         return explicit_url
 
-    host = _ADMIN.get("dbhostname") or "localhost"
-    port = _ADMIN.get("port") or 5432
-    dbname = _ADMIN.get("dbname") or "brerc_ui"
-    user = _ADMIN.get("user") or "postgres"
-    password = _ADMIN.get("password") or "postgres"
+    admin = _get_admin()
+
+    host = admin.get("dbhostname") or "localhost"
+    port = admin.get("port") or 5432
+    dbname = admin.get("dbname") or "brerc_ui"
+    user = admin.get("user") or "postgres"
+    password = admin.get("password") or "postgres"
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
@@ -89,4 +104,3 @@ def force_full_reload(
     finally:
         if owns_connection:
             connection.close()
-

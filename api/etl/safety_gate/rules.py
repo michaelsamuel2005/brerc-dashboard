@@ -1,21 +1,27 @@
 # Loads BRERC safety settings from YAML
+
 # Contains interface used by safety gate
+
 # Organisation specific rules are in: config/safety_rules.yaml
 
 """
 NOTE:
-    - CONFIG["key"] returns the value stored under "key".
-      Could be a dictionary, list, string, number, etc.
+- CONFIG["key"] returns the value stored under "key".
+Could be a dictionary, list, string, number, etc.
 
-    - CONFIG["key1"]["key2"] first gets the value stored under
-      "key1" (usually another dictionary), then retrieves the
-      value stored under "key2".
+- CONFIG["key1"]["key2"] first gets the value stored under
+  "key1" (usually another dictionary), then retrieves the
+  value stored under "key2".
 """
 
+from functools import lru_cache
 from pathlib import Path
+
 from etl.load.loader import load_safety_config
 
+
 CONFIG = load_safety_config()
+
 
 # Generalisation rules
 
@@ -30,16 +36,18 @@ SPECIES_RESOLUTIONS_M = (
     CONFIG["species_resolutions"]
 )
 
+
 # Record type rules
 
 FLAGGED_RECORD_TYPES = frozenset(
     CONFIG["flagged_record_types"]
 )
 
+
 # Sensitive species
 
+@lru_cache(maxsize=1)
 def load_sensitive_species():
-
     import pandas as pd
     from etl.profiling.cleaning import clean_data
 
@@ -59,13 +67,20 @@ def load_sensitive_species():
             / sensitive_species_file
         )
 
-    # Read + clean CSV 
+    # Fall back to the example file if the real file is unavailable.
+    if not sensitive_species_file.exists():
+        sensitive_species_file = sensitive_species_file.with_suffix(
+            sensitive_species_file.suffix + ".example"
+        )
+
+    # Read + clean CSV
     df = pd.read_csv(
         sensitive_species_file
     )
     df = clean_data(df)
 
-    # Create sets for species_no and nbm_number (drops missing values)
+    # Create sets for species_no and nbn_number
+    # (drops missing values)
     sensitive_species_nos = set(
         df["species_no"]
         .dropna()
@@ -76,18 +91,7 @@ def load_sensitive_species():
         .dropna()
     )
 
-
     return (
         sensitive_species_nos,
         sensitive_nbn_numbers,
     )
-
-# Load the sensitive species data once when this module is imported.
-# load_sensitive_species() returns TWO values:
-#   1. the set of sensitive species numbers
-#   2. the set of sensitive NBN numbers
-# These are unpacked into two module-level constants.
-(
-    SENSITIVE_SPECIES_NOS,
-    SENSITIVE_NBN_NUMBERS,
-) = load_sensitive_species()

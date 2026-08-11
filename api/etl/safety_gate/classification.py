@@ -15,7 +15,7 @@ import pandas as pd
 from etl.safety_gate.rules import (
     DEFAULT_SENSITIVE_RESOLUTION_M,
     FLAGGED_RECORD_TYPES,
-    SENSITIVE_SPECIES_NOS,
+    load_sensitive_species,
     SPECIES_RESOLUTIONS_M,
     D0_FLOOR_M,
 )
@@ -26,6 +26,8 @@ def classify_chunk(
 ) -> pd.DataFrame:
 
     df = df.copy()
+
+    sensitive_species_nos, _ = load_sensitive_species()
 
     # Required columns for classification to run
     required_columns = {
@@ -53,7 +55,7 @@ def classify_chunk(
     # Sensitive species: True for records belonging to a sensitive species.
     sensitive_species_mask = (
         df["species_no"].isin(
-            SENSITIVE_SPECIES_NOS
+            sensitive_species_nos
         )
     )
 

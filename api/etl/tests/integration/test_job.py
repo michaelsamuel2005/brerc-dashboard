@@ -19,7 +19,7 @@ def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
     mock_df = pd.DataFrame({"col": [1, 2]})
     mock_read_csv.return_value = mock_df
 
-    with patch("etl.job.CONFIG", {
+    with patch("etl.job.get_config", return_value={
         "source": {"mode": "csv", "records_path": "dummy.csv"}, 
         "columns": {"modified_date": "modified"}
     }):
@@ -32,7 +32,7 @@ def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
 def test_load_source_data_database_mode_raises_valueerror_without_connection():
     # Confirms database mode enforces the presence of a source connection.
     # Expects a ValueError to be raised if source_connection is None, else fails.
-    with patch("etl.job.CONFIG", {"source": {"mode": "database"}, "columns": {"modified_date": "modified"}}):
+    with patch("etl.job.get_config", return_value={"source": {"mode": "database"}, "columns": {"modified_date": "modified"}}):
         with pytest.raises(ValueError) as exc_info:
             load_source_data(source_connection=None)
             
@@ -51,7 +51,7 @@ def test_load_source_data_database_mode_incremental(mock_read_sql):
         "columns": {"modified_date": "modified"}
     }
 
-    with patch("etl.job.CONFIG", config):
+    with patch("etl.job.get_config", return_value=config):
         load_source_data(source_connection=mock_conn, watermark_date="2026-01-01")
 
     mock_read_sql.assert_called_once()
@@ -67,7 +67,7 @@ def test_load_species_dictionary_csv_mode(mock_read_csv):
     # Expects pd.read_csv to be invoked with the dictionary path, else fails.
     mock_read_csv.return_value = pd.DataFrame({"species": ["Robin"]})
 
-    with patch("etl.job.CONFIG", {"source": {"mode": "csv", "dictionary_path": "dummy_dict.csv"}}):
+    with patch("etl.job.get_config", return_value={"source": {"mode": "csv", "dictionary_path": "dummy_dict.csv"}}):
         result = load_species_dictionary()
 
     mock_read_csv.assert_called_once()
@@ -77,7 +77,7 @@ def test_load_species_dictionary_csv_mode(mock_read_csv):
 def test_load_species_dictionary_database_mode_raises_missing_connection():
     # Confirms species dictionary loading enforces a database connection in database mode.
     # Expects a ValueError, else fails.
-    with patch("etl.job.CONFIG", {"source": {"mode": "database"}}):
+    with patch("etl.job.get_config", return_value={"source": {"mode": "database"}}):
         with pytest.raises(ValueError) as exc_info:
             load_species_dictionary(source_connection=None)
             
@@ -109,7 +109,7 @@ def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
 @patch("etl.job.load_species_dictionary", return_value=pd.DataFrame())
 @patch("etl.job.get_current_ui_map", return_value={})
 @patch("etl.job.run_pipeline")
-@patch("etl.job.get_connection")
+@patch("etl.job.get_destination_connection")
 def test_nightly_job_incremental_flow(
     mock_get_conn, mock_run_pipeline, mock_ui_map, mock_dict, 
     mock_source, mock_last_date, mock_initial_check, mock_has_rows, mock_exists
@@ -120,7 +120,7 @@ def test_nightly_job_incremental_flow(
     mock_conn_ctx = MagicMock()
     mock_get_conn.return_value.__enter__.return_value = mock_conn_ctx
 
-    with patch("etl.job.CONFIG", {"source": {"mode": "csv"}, "destination": {"table": "occurrence_public"}, "load": {"incremental_check": True}}):
+    with patch("etl.job.get_config", return_value={"source": {"mode": "csv"}, "destination": {"table": "occurrence_public"}, "load": {"incremental_check": True}}):
         nightly_job()
 
     mock_run_pipeline.assert_called_once()

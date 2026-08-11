@@ -30,6 +30,7 @@ SAFETY RULES enforced here and in every query:
 """
 
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import psycopg
@@ -47,8 +48,18 @@ from etl.load.loader import load_safety_config
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
-CONFIG = load_safety_config()
-_DESTINATION = CONFIG.get("destination", {})
+# CONFIG and _DESTINATION are loaded lazily (not at import time) because
+# safety.yaml may not exist on a fresh clone — importing this module must
+# not require the file to be present. lru_cache means the file is still
+# only read once per process, just on first use instead of at import.
+
+@lru_cache(maxsize=1)
+def get_config() -> dict:
+    return load_safety_config()
+
+
+def _get_destination() -> dict:
+    return get_config().get("destination", {})
 
 
 # How long (ms) a single query may run before Postgres cancels it.
@@ -89,16 +100,23 @@ def _build_database_url() -> str:
     # Local development defaults so this still runs before safety.yaml
     # is filled in for a real environment — contain no real secret.
 
-    host = _DESTINATION.get("dbhostname") or "localhost"
-    port = _DESTINATION.get("port") or 5432
-    dbname = _DESTINATION.get("dbname") or "brerc_ui"
-    user = _DESTINATION.get("user") or "postgres"
-    password = _DESTINATION.get("password") or "postgres"
+    destination = _get_destination()
+
+    host = destination.get("dbhostname") or "localhost"
+    port = destination.get("port") or 5432
+    dbname = destination.get("dbname") or "brerc_ui"
+    user = destination.get("user") or "postgres"
+    password = destination.get("password") or "postgres"
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
 
-DATABASE_URL = _build_database_url()
+# Built lazily too, since it transitively depends on safety.yaml via
+# _get_destination(). Cached so the URL is only assembled once.
+
+@lru_cache(maxsize=1)
+def get_database_url() -> str:
+    return _build_database_url()
 
 
 def get_connection() -> psycopg.Connection:
@@ -114,7 +132,7 @@ def get_connection() -> psycopg.Connection:
     """
 
     return psycopg.connect(
-        DATABASE_URL,
+        get_database_url(),
         row_factory=dict_row,
         options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
     )

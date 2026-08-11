@@ -1,5 +1,7 @@
 import pandas as pd
 
+from functools import lru_cache
+
 from etl.pipeline import run_pipeline
 from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
@@ -14,7 +16,14 @@ from etl.load.reload import force_full_reload
 from etl.load.mode import should_run_initial_load
 
 
-CONFIG = load_safety_config()
+# Loaded lazily (not at import time) so importing this module never
+# requires safety.yaml to already exist on disk - only calling
+# get_config() does. lru_cache means it's still only read once per
+# process, just on first use rather than at import.
+
+@lru_cache(maxsize=1)
+def get_config() -> dict:
+    return load_safety_config()
 
 
 def load_source_data(source_connection=None, watermark_date=None):
@@ -29,12 +38,13 @@ def load_source_data(source_connection=None, watermark_date=None):
     None, every row is returned (initial/full load).
     """
 
-    mode = CONFIG["source"].get("mode", "csv")
-    modified_column = CONFIG["columns"]["modified_date"]
+    config = get_config()
+    mode = config["source"].get("mode", "csv")
+    modified_column = config["columns"]["modified_date"]
 
     if mode == "csv":
         df = pd.read_csv(
-            CONFIG["source"]["records_path"]
+            config["source"]["records_path"]
         )
 
         if watermark_date is not None:
@@ -50,7 +60,7 @@ def load_source_data(source_connection=None, watermark_date=None):
                 "source.mode is 'database'"
             )
 
-        query = CONFIG["source"]["records_query"]
+        query = config["source"]["records_query"]
 
         if watermark_date is not None:
             # Wrap the configured query so incremental filtering works
@@ -79,11 +89,12 @@ def load_species_dictionary(source_connection=None):
     Loads species lookup table used for synonym-safe species resolution.
     """
 
-    mode = CONFIG["source"].get("mode", "csv")
+    config = get_config()
+    mode = config["source"].get("mode", "csv")
 
     if mode == "csv":
         return pd.read_csv(
-            CONFIG["source"]["dictionary_path"]
+            config["source"]["dictionary_path"]
         )
 
     if mode == "database":
@@ -94,7 +105,7 @@ def load_species_dictionary(source_connection=None):
             )
 
         return pd.read_sql(
-            CONFIG["source"]["dictionary_query"],
+            config["source"]["dictionary_query"],
             source_connection,
         )
 
@@ -120,10 +131,11 @@ def nightly_job():
     print("Starting nightly ETL")
 
     try:
-        mode = CONFIG["source"].get("mode", "csv")
+        config = get_config()
+        mode = config["source"].get("mode", "csv")
 
         with get_destination_connection() as connection:
-            table_name = CONFIG["destination"]["table"]  # "occurrence_public"
+            table_name = config["destination"]["table"]  # "occurrence_public"
 
             table_exists = check_table_exists(connection, table_name)
             table_has_rows = (
@@ -150,7 +162,7 @@ def nightly_job():
             if (
                 load_mode == "incremental"
                 and mode == "database"
-                and CONFIG["load"].get("incremental_check", True)
+                and config["load"].get("incremental_check", True)
             ):
                 watermark_date = get_last_load_date(connection)
 

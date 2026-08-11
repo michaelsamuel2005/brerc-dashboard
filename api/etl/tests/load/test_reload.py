@@ -21,23 +21,20 @@ def test_build_admin_database_url_uses_env_var():
 
 
 def test_build_admin_database_url_uses_fallback_config():
-    # Confirms the function falls back to configuration values when no env var exists.
-    # Expects a fully constructed connection string using _DESTINATION values, else fails.
     with patch.dict(os.environ, {}, clear=True):
         with patch(
-            "etl.load.reload._DESTINATION", 
+            "etl.load.reload._ADMIN",
             {
-                "dbhostname": "test_host", 
-                "port": 5432, 
-                "dbname": "test_db", 
-                "admin_user": "test_user", 
-                "admin_password": "test_password"
+                "dbhostname": "test_host",
+                "port": 5432,
+                "dbname": "test_db",
+                "user": "test_user",
+                "password": "test_password"
             }
         ):
             result = _build_admin_database_url()
-            
-    assert result == "postgresql://test_user:test_password@test_host:5432/test_db"
 
+    assert result == "postgresql://test_user:test_password@test_host:5432/test_db"
 
 # --- get_admin_connection tests ---
 
