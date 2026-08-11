@@ -54,14 +54,14 @@ source:
   records_query: "SELECT * FROM your_source_table"
   dictionary_query: "SELECT * FROM your_dictionary_table"
 
-  columns:
-    species_number: species_no
-    nbn_number: nbn_number
-    verified: verified
-    eastings: eastings
-    northings: northings
-    record_date: date_of_record
-    modified_date: date_mdb_modified
+columns:
+  species_number: species_no
+  nbn_number: nbn_number
+  verified: verified
+  eastings: eastings
+  northings: northings
+  record_date: date_of_record
+  modified_date: date_mdb_modified
 
 reconciliation:
   hash_columns:
