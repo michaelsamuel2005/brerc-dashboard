@@ -1,7 +1,7 @@
 """
 Read-only database connection management and security validation module for the API layer. 
-Enforces strict read-only access (connecting as brerc_api_ro), parameterised queries, 
-statement timeouts, and validation against approved public B6 views (public_*).
+Enforces strict read-only access, parameterised queries, statement timeouts, 
+and validation against approved public B6 views (public_*).
 """
 
 import os
@@ -15,7 +15,7 @@ from psycopg.rows import dict_row
 
 from etl.load.loader import load_safety_config
 
-# Load api/.env (if present) so credentials can be managed outside version control
+# Load api/.env (if present) so credentials can live in a git-ignored file
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
@@ -28,6 +28,7 @@ def get_config() -> dict:
 def _get_destination() -> dict:
     """Retrieves the destination connection configuration block."""
     return get_config().get("destination", {})
+
 
 # Statement timeout guard: caps query execution at 10 seconds to prevent runaway queries
 STATEMENT_TIMEOUT_MS = 10_000  # 10s
@@ -51,9 +52,7 @@ def _build_database_url() -> str:
     if explicit_url:
         return explicit_url
 
-    # Local development defaults so this still runs before safety.yaml
-    # is filled in for a real environment — contain no real secret.
-
+    # Local development defaults if safety.yaml is missing credentials
     destination = _get_destination()
 
     host = destination.get("dbhostname") or "localhost"

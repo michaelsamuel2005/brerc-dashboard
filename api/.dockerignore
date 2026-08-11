@@ -1,0 +1,8 @@
+# Keep secrets, local envs, and test/dev cruft OUT of the built image.
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+tests/
+.pytest_cache/
