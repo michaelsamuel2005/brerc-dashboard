@@ -1,8 +1,16 @@
+"""
+Normalises species names and resolves occurrence records against 
+the species dictionary, flagging unresolved or malformed entries as fail-closed.
+"""
+
 import pandas as pd
 
 
 def normalise_species_name(names: pd.Series) -> pd.Series:
-
+    """
+    Standardise species name strings by stripping whitespace, 
+    lowering case, and collapsing spaces.
+    """
     return (
         names.astype("string")
         .str.strip()
@@ -14,7 +22,11 @@ def normalise_species_name(names: pd.Series) -> pd.Series:
 def resolve_species_numbers(
     records_df: pd.DataFrame, dictionary_df: pd.DataFrame
 ) -> pd.DataFrame:
-
+    """
+    Matches occurrence records against the species dictionary using normalised names,
+    checks for dictionary collisions, validates species number formats, and 
+    computes resolution match coverage.
+    """
     records_df = records_df.copy()
     dictionary_df = dictionary_df.copy()
 
@@ -28,6 +40,7 @@ def resolve_species_numbers(
         dictionary_df["scientific"]
     )
 
+    # Check for duplicate scientific names in the dictionary
     key_counts = dictionary_df["scientific_key"].value_counts()
     ambiguous_keys = key_counts[key_counts > 1]
 
@@ -42,9 +55,6 @@ def resolve_species_numbers(
             f"drop_duplicates will arbitrarily pick one per key:"
         )
         print(ambiguous_rows.sort_values("scientific_key"))
-        # Decide deliberately how to resolve these, e.g. prefer the row
-        # where species_no/nbn_number agree with a trusted accepted-name
-        # flag, rather than letting drop_duplicates pick row order.
 
     # Create smaller lookup table
     species_lookup = dictionary_df[
@@ -67,18 +77,10 @@ def resolve_species_numbers(
         suffixes=("", "_dict"),
     )
 
-    # Fail-closed flag
+    # Initial fail-closed flag: mark records with missing species numbers as unresolved
     records_df["species_unresolved"] = records_df["species_no"].isna()
 
-    # Fail-closed flag (extended):
-    # Species numbers can appear as:
-    #   - normal numeric IDs (e.g. 6973)
-    #   - masked sensitive IDs (e.g. BRERC6973)
-    #
-    # Anything else cannot be trusted as a valid species identifier,
-    # so it is treated as unresolved and will follow the sensitive
-    # fail-closed path.
-
+    # Clean up trailing decimals from species numbers if they were read as floats
     species_no_string = (
         records_df["species_no"]
         .astype("string")
@@ -89,15 +91,18 @@ def resolve_species_numbers(
         )
     )
 
+    # Validate species number format: must be either plain digits (e.g. 6973)
+    # or masked sensitive IDs prefixed with 'BRERC' (e.g. BRERCXXXX)
     valid_species_no = species_no_string.str.match(r"^(BRERC)?\d+$")
 
+    # Flag anything that isn't a valid format as unresolved (fail-closed path)
     non_numeric_species_no = records_df["species_no"].notna() & ~valid_species_no
 
     records_df["species_unresolved"] = (
         records_df["species_unresolved"] | non_numeric_species_no
     )
 
-    # --- NEW: D4 "measure match coverage on the full data" ---
+    # Measure and print match coverage on the full dataset
     total = len(records_df)
     unresolved = records_df["species_unresolved"].sum()
     coverage = 1 - (unresolved / total) if total else float("nan")
