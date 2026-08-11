@@ -125,25 +125,32 @@ def test_incremental_load_executes_upsert():
     mock_connection.commit.assert_called_once()
     assert result == 2
 
-
 def test_incremental_load_handles_single_column_table():
     # Confirms incremental_load doesn't break if the table only has a primary key.
-    # Expects DO UPDATE SET string to be empty (which is syntactically an edge case but logic holds).
-    
+    # With no non-primary-key columns to update, the upsert uses DO NOTHING.
+
     df = pd.DataFrame({
         "unique_id": [1, 2]
     })
-    
+
     ui_map = {"primary_key": "unique_id"}
     mock_connection = MagicMock()
     mock_cursor = mock_connection.cursor.return_value.__enter__.return_value
 
-    result = incremental_load(df, mock_connection, ui_map, "id_only_table")
+    result = incremental_load(
+        df,
+        mock_connection,
+        ui_map,
+        "id_only_table",
+    )
 
     expected_sql = (
         "INSERT INTO id_only_table (unique_id) VALUES (%s) "
-        "ON CONFLICT (unique_id) DO UPDATE SET "
+        "ON CONFLICT (unique_id) DO NOTHING"
     )
-    
-    mock_cursor.executemany.assert_called_once_with(expected_sql, [(1,), (2,)])
+
+    mock_cursor.executemany.assert_called_once_with(
+        expected_sql,
+        [(1,), (2,)],
+    )
     assert result == 2

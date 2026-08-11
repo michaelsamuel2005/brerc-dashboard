@@ -32,6 +32,19 @@
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- =============================================================================
+-- SECTION 0 — REMOVE EXISTING PUBLIC VIEWS
+-- =============================================================================
+-- The full reload recreates the underlying tables. Drop the public views first
+-- so PostgreSQL does not attempt to preserve their old column types when the
+-- views are recreated below.
+
+DROP VIEW IF EXISTS public_species CASCADE;
+DROP VIEW IF EXISTS public_records CASCADE;
+DROP VIEW IF EXISTS public_cells CASCADE;
+DROP VIEW IF EXISTS public_provenance CASCADE;
+
+-- =============================================================================
 
 -- =============================================================================
 -- SECTION 1 — BASE TABLES  (written by the pipeline; the "safe copy")

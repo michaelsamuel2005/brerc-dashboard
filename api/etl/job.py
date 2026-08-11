@@ -16,11 +16,6 @@ from etl.load.reload import force_full_reload
 from etl.load.mode import should_run_initial_load
 
 
-# Loaded lazily (not at import time) so importing this module never
-# requires safety.yaml to already exist on disk - only calling
-# get_config() does. lru_cache means it's still only read once per
-# process, just on first use rather than at import.
-
 @lru_cache(maxsize=1)
 def get_config() -> dict:
     return load_safety_config()
@@ -28,14 +23,10 @@ def get_config() -> dict:
 
 def load_source_data(source_connection=None, watermark_date=None):
     """
-    For loading BRERC's raw records:
+    Loads BRERC source records from either CSV or database.
 
-    Reads from CSV if CONFIG["source"]["mode"] == "csv"
-    Queries the source database directly if "database" (production)
-
-    If watermark_date is given, only rows modified on/after that
-    timestamp are returned (incremental load). If watermark_date is
-    None, every row is returned (initial/full load).
+    In database mode, watermark_date can be used to restrict
+    the query to records modified on or after that timestamp.
     """
 
     config = get_config()
@@ -48,8 +39,12 @@ def load_source_data(source_connection=None, watermark_date=None):
         )
 
         if watermark_date is not None:
-            df[modified_column] = pd.to_datetime(df[modified_column])
-            df = df[df[modified_column] >= watermark_date]
+            df[modified_column] = pd.to_datetime(
+                df[modified_column]
+            )
+            df = df[
+                df[modified_column] >= watermark_date
+            ]
 
         return df
 
@@ -63,8 +58,6 @@ def load_source_data(source_connection=None, watermark_date=None):
         query = config["source"]["records_query"]
 
         if watermark_date is not None:
-            # Wrap the configured query so incremental filtering works
-            # regardless of what the base query already selects.
             query = (
                 f"SELECT * FROM ({query}) AS filtered_source "
                 f"WHERE {modified_column} >= %(watermark_date)s"
@@ -81,12 +74,15 @@ def load_source_data(source_connection=None, watermark_date=None):
             source_connection,
         )
 
-    raise ValueError(f"Unknown source.mode: {mode!r}")
+    raise ValueError(
+        f"Unknown source.mode: {mode!r}"
+    )
 
 
 def load_species_dictionary(source_connection=None):
     """
-    Loads species lookup table used for synonym-safe species resolution.
+    Loads the species dictionary used for synonym-safe
+    species resolution.
     """
 
     config = get_config()
@@ -109,23 +105,21 @@ def load_species_dictionary(source_connection=None):
             source_connection,
         )
 
-    raise ValueError(f"Unknown source.mode: {mode!r}")
+    raise ValueError(
+        f"Unknown source.mode: {mode!r}"
+    )
 
 
 def get_current_ui_map(connection):
     """
-    Retrieves current occurrence_public state.
+    Retrieves the current occurrence_public state.
 
-    Used by reconciliation:
+    Returns:
         unique_no -> content_hash
-
-    Allows the ETL to detect:
-        - inserts
-        - updates
-        - deletes
     """
 
     return get_ui_map(connection)
+
 
 def nightly_job():
     print("Starting nightly ETL")
@@ -135,11 +129,19 @@ def nightly_job():
         mode = config["source"].get("mode", "csv")
 
         with get_destination_connection() as connection:
-            table_name = config["destination"]["table"]  # "occurrence_public"
+            table_name = config["destination"]["table"]
 
-            table_exists = check_table_exists(connection, table_name)
+            # Check the destination state.
+            table_exists = check_table_exists(
+                connection,
+                table_name,
+            )
+
             table_has_rows = (
-                check_table_has_rows(connection, table_name)
+                check_table_has_rows(
+                    connection,
+                    table_name,
+                )
                 if table_exists
                 else False
             )
@@ -148,47 +150,59 @@ def nightly_job():
                 table_exists,
                 table_has_rows,
             )
-            load_mode = "initial" if run_initial else "incremental"
 
-            # Only look for a watermark when we're actually attempting an
-            # incremental load AND the source is a database.
-            #
-            # The supplied CSV fixture does not contain the configured
-            # date_mdb_modified column, so CSV mode cannot use a watermark.
-            # Reconciliation still detects inserts, updates and deletes
-            # by comparing content hashes.
+            load_mode = (
+                "initial"
+                if run_initial
+                else "incremental"
+            )
+
             watermark_date = None
 
             if (
                 load_mode == "incremental"
                 and mode == "database"
-                and config["load"].get("incremental_check", True)
+                and config["load"].get(
+                    "incremental_check",
+                    True,
+                )
             ):
-                watermark_date = get_last_load_date(connection)
+                watermark_date = get_last_load_date(
+                    connection
+                )
 
                 if watermark_date is None:
-                    # Table exists/has rows but carries no Load_date yet
-                    # (e.g. pre-migration data) - fall back to a full load
-                    # rather than incrementally filtering against nothing.
                     load_mode = "initial"
 
             elif (
                 load_mode == "incremental"
                 and mode == "database"
             ):
-                # incremental_check is off - always do a full load.
                 load_mode = "initial"
 
+            # The destination-state queries above open a database
+            # transaction. Finish that transaction before opening
+            # the separate admin connection used for the schema
+            # rebuild. Otherwise the first connection can retain
+            # locks on occurrence_public and block the rebuild.
             if load_mode == "initial":
-                print(f"Forcing full reload of {table_name}")
+                connection.commit()
+
+                print(
+                    f"Forcing full reload of {table_name}"
+                )
+
                 force_full_reload()
 
+            # Load source records after the destination has been
+            # rebuilt.
             if mode == "database":
                 with get_source_connection() as source_connection:
                     source_df = load_source_data(
                         source_connection,
                         watermark_date=watermark_date,
                     )
+
                     dictionary_df = load_species_dictionary(
                         source_connection
                     )
@@ -196,11 +210,18 @@ def nightly_job():
                 source_df = load_source_data(
                     watermark_date=None
                 )
+
                 dictionary_df = load_species_dictionary()
 
-            ui_map = get_current_ui_map(connection)
+            # The full reload creates a clean destination, so this
+            # map now represents the current destination state.
+            ui_map = get_current_ui_map(
+                connection
+            )
 
-            print(f"Running pipeline in '{load_mode}' mode")
+            print(
+                f"Running pipeline in '{load_mode}' mode"
+            )
 
             result = run_pipeline(
                 source_df,
@@ -212,8 +233,11 @@ def nightly_job():
 
         print("PIPELINE RESULT:", result)
         print("Nightly ETL completed")
+
         return result
 
     except Exception as error:
-        print(f"Nightly ETL failed: {error}")
+        print(
+            f"Nightly ETL failed: {error}"
+        )
         raise
