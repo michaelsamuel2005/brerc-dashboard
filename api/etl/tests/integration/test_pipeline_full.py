@@ -7,119 +7,202 @@ from tests.conftest import needs_db
 
 
 @needs_db
-@patch("app.db.B6_PUBLIC_RELATIONS", {"occurrence_public", "species", "distribution_cell"})
+@patch(
+    "app.db.B6_PUBLIC_RELATIONS",
+    {"occurrence_public", "species", "distribution_cell"},
+)
 @patch("etl.job.load_source_data")
 @patch("etl.job.load_species_dictionary")
-@patch("etl.matching.species.resolve_species_numbers")
+@patch("etl.pipeline.resolve_species_numbers")
 @patch("etl.job.force_full_reload")
 def test_nightly_job_end_to_end(
-    mock_force_reload, 
-    mock_resolve_species, 
-    mock_load_dict, 
-    mock_load_source, 
-    connection
+    mock_force_reload,
+    mock_resolve_species,
+    mock_load_dict,
+    mock_load_source,
+    connection,
 ):
-    # Confirms the entire ETL pipeline executes successfully end-to-end against a real database.
-    # Expects source records to be cleaned, aggregated, generalised via PostGIS, and persisted, else fails.
+    """
+    End-to-end integration test for the nightly ETL job.
 
-    def side_effect_force_reload(conn):
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                ALTER TABLE IF EXISTS provenance ADD COLUMN IF NOT EXISTS "Load" TEXT;
-                ALTER TABLE IF EXISTS provenance ADD COLUMN IF NOT EXISTS "Load_date" TIMESTAMP;
-                ALTER TABLE IF EXISTS provenance ALTER COLUMN load_number DROP NOT NULL;
-                ALTER TABLE IF EXISTS provenance ALTER COLUMN load_number SET DEFAULT 1;
-                ALTER TABLE IF EXISTS provenance ALTER COLUMN date_of_load DROP NOT NULL;
-                ALTER TABLE IF EXISTS provenance ALTER COLUMN date_of_load SET DEFAULT CURRENT_TIMESTAMP;
-                TRUNCATE TABLE occurrence_public, distribution_cell, species, provenance RESTART IDENTITY CASCADE;
-                """
-            )
-        conn.commit()
+    Uses a real PostgreSQL database while mocking the external source,
+    species dictionary, and species-resolution lookup.
 
-    mock_force_reload.side_effect = side_effect_force_reload
+    Verifies that:
+        1. the nightly job completes;
+        2. the source occurrence is reconciled as an insert;
+        3. the species is included in the aggregation/species layer;
+        4. the occurrence is persisted to occurrence_public;
+        5. the occurrence references the correct species.
+    """
 
-    sample_records = pd.DataFrame({
-        "unique_no": ["99999"],  # String type matching VARCHAR database column
-        "species_no": [100],
-        "scientific_name": ["Erithacus rubecula"],
-        "common_name": ["Robin"],
-        "abundance": ["Common"],
-        "sex_stage": ["Adult"],
-        "record_type": ["Observation"],
-        "vitality": ["Alive"],
-        "record_date": ["15/06/2026"],
-        "date_of_record": ["2026-06-15"],
-        "coarse_locality": ["Bristol"],
-        "effective_resolution_m": [1000],
-        "is_legacy": [False],
-        "eastings": [558200],
-        "northings": [172500],
-        "verified": ["Yes"],
-        "species_unresolved": [False],
-        "taxanb": ["TAX001"],
-    })
+    # ------------------------------------------------------------------
+    # Clean the test database.
+    #
+    # Use DELETE rather than TRUNCATE because the public tables have
+    # foreign-key relationships. DELETE also avoids the locking behaviour
+    # that previously caused the test to hit the statement timeout.
+    # ------------------------------------------------------------------
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM occurrence_public;")
+        cursor.execute("DELETE FROM distribution_cell;")
+        cursor.execute("DELETE FROM species;")
+        cursor.execute("DELETE FROM provenance;")
 
-    sample_dictionary = pd.DataFrame({
-        "species_no": [100],
-        "scientific_name": ["Erithacus rubecula"],
-        "scientific": ["Erithacus rubecula"],
-        "scientific_key": ["erithacus rubecula"],
-        "nbn_number": ["NHMSYS0000530488"],
-        "common_nam": ["Robin"],
-        "taxanb": ["TAX001"],
-        "common_name": ["Robin"],
-        "species_group": ["Bird"],
-        "record_count": [1],
-        "first_year": [2026],
-        "last_year": [2026],
-        "has_image": [False],
-    })
+    connection.commit()
+
+    # The production force_full_reload() is not being tested here.
+    # The database has already been prepared above.
+    mock_force_reload.return_value = None
+
+    # ------------------------------------------------------------------
+    # Mock source records.
+    #
+    # "Accepted" is intentional: the safety/verified filtering stage
+    # only allows accepted records into the public output.
+    # ------------------------------------------------------------------
+    sample_records = pd.DataFrame(
+        {
+            "unique_no": ["99999"],
+            "species_no": [100],
+            "scientific_name": ["Erithacus rubecula"],
+            "common_name": ["Robin"],
+            "abundance": ["Common"],
+            "sex_stage": ["Adult"],
+            "record_type": ["Observation"],
+            "vitality": ["Alive"],
+            "date_of_record": ["15/06/2026"],
+            "coarse_locality": ["Bristol"],
+            "effective_resolution_m": [1000],
+            "is_legacy": [False],
+            "eastings": [558200],
+            "northings": [172500],
+            "verified": ["Accepted"],
+            "species_unresolved": [False],
+            "taxanb": ["TAX001"],
+        }
+    )
+
+    # ------------------------------------------------------------------
+    # Mock species dictionary.
+    # ------------------------------------------------------------------
+    sample_dictionary = pd.DataFrame(
+        {
+            "species_no": [100],
+            "scientific_name": ["Erithacus rubecula"],
+            "scientific": ["Erithacus rubecula"],
+            "scientific_key": ["erithacus rubecula"],
+            "nbn_number": ["NHMSYS0000530488"],
+            "common_nam": ["Robin"],
+            "taxanb": ["TAX001"],
+            "common_name": ["Robin"],
+            "species_group": ["Bird"],
+            "record_count": [1],
+            "first_year": [2026],
+            "last_year": [2026],
+            "has_image": [False],
+        }
+    )
 
     mock_load_source.return_value = sample_records
     mock_load_dict.return_value = sample_dictionary
-    
-    # Mock species resolution to return the sample records successfully resolved
+
+    # ------------------------------------------------------------------
+    # Mock species resolution.
+    #
+    # run_pipeline() imports resolve_species_numbers into etl.pipeline,
+    # so this patch is applied at the location where the function is used.
+    # ------------------------------------------------------------------
     resolved_records = sample_records.copy()
     resolved_records["species_unresolved"] = False
     resolved_records["taxanb"] = "TAX001"
+    resolved_records["species_no"] = 100
+
     mock_resolve_species.return_value = resolved_records
 
-    with patch("etl.job.CONFIG", {
-        "source": {"mode": "csv", "records_path": "dummy.csv", "dictionary_path": "dummy_dict.csv"},
-        "destination": {"table": "occurrence_public"},
-        "load": {"incremental_check": False},
-        "aggregation": {"cell_size_m": 1000},
-        "columns": {
-            "verified": "verified",
-            "eastings": "eastings",
-            "northings": "northings",
-            "record_date": "date_of_record",
-            "modified_date": "modified_date"
+    # ------------------------------------------------------------------
+    # Configuration used by nightly_job().
+    # ------------------------------------------------------------------
+    with patch(
+        "etl.job.get_config",
+        return_value={
+            "source": {
+                "mode": "csv",
+                "records_path": "dummy.csv",
+                "dictionary_path": "dummy_dict.csv",
+            },
+            "destination": {
+                "table": "occurrence_public",
+            },
+            "load": {
+                "incremental_check": False,
+            },
+            "aggregation": {
+                "cell_size_m": 1000,
+            },
+            "columns": {
+                "verified": "verified",
+                "eastings": "eastings",
+                "northings": "northings",
+                "record_date": "date_of_record",
+                "modified_date": "modified_date",
+            },
+            "reconciliation": {
+                "hash_columns": [
+                    "scientific_name",
+                    "abundance",
+                    "sex_stage",
+                    "record_type",
+                    "vitality",
+                    "verified",
+                    "eastings",
+                    "northings",
+                ]
+            },
         },
-        "reconciliation": {
-            "hash_columns": [
-                "scientific_name", 
-                "abundance", 
-                "sex_stage", 
-                "record_type", 
-                "vitality", 
-                "verified", 
-                "eastings", 
-                "northings"
-            ]
-        }
-    }):
+    ):
         result = nightly_job()
 
+    # ------------------------------------------------------------------
+    # Verify the pipeline completed.
+    # ------------------------------------------------------------------
     assert result is not None
     assert "reconciliation" in result
     assert "aggregation" in result
 
+    # ------------------------------------------------------------------
+    # Verify reconciliation detected the source record as an insert.
+    # ------------------------------------------------------------------
+    reconciliation = result["reconciliation"]
+
+    assert "99999" in reconciliation["inserts"]
+    assert reconciliation["updates"] == set()
+    assert reconciliation["deletes"] == set()
+
+    # ------------------------------------------------------------------
+    # Verify aggregation produced a species entry.
+    # ------------------------------------------------------------------
+    species_index = result["aggregation"]["species_index"]
+
+    assert not species_index.empty
+    assert 100 in species_index["species_id"].tolist()
+
+    # ------------------------------------------------------------------
+    # Verify the occurrence was actually persisted.
+    # ------------------------------------------------------------------
     with connection.cursor() as cursor:
-        cursor.execute("SELECT record_id, species_id FROM occurrence_public WHERE record_id = '99999'")
+        cursor.execute(
+            """
+            SELECT record_id, species_id
+            FROM occurrence_public
+            WHERE record_id = %s
+            """,
+            ("99999",),
+        )
+
         row = cursor.fetchone()
-        
+
     assert row is not None
     assert str(row["record_id"]) == "99999"
     assert int(row["species_id"]) == 100
+

@@ -27,7 +27,7 @@ def persist_aggregation_outputs(
 
     species_rows = [
         (
-            to_python_none(row.species_id),
+            None if pd.isna(row.species_id) else str(row.species_id),
             to_python_none(row.scientific_name),
             to_python_none(row.common_name),
             to_python_none(row.species_group),
@@ -45,9 +45,10 @@ def persist_aggregation_outputs(
     # Used below to remove any species that no longer appear at all,
     # so the species table doesn't accumulate stale rows forever.
     current_species_ids = [
-        to_python_none(row.species_id) for row in species_index.itertuples(index=False)
+        str(row.species_id)
+        for row in species_index.itertuples(index=False)
+        if not pd.isna(row.species_id)
     ]
-
     cell_rows = [
         (
             row.grid_cell,
@@ -107,18 +108,19 @@ def persist_aggregation_outputs(
         # all, so the table doesn't silently accumulate stale entries
         # with outdated counts forever ("recompute fully each run").
         #
-        # This is safe even though occurrence_public.species_id
-        # references species: Postgres's default FK behaviour is
-        # RESTRICT, so this DELETE can only ever succeed for a
-        # species_id with zero remaining occurrence_public rows. If
-        # reconciliation somehow left a species referenced but not in
-        # this run's species_index, Postgres blocks the delete rather
-        # than silently breaking the FK - that's the safety net working
-        # as intended, not a bug if it ever fires.
+        # Only delete species that are not referenced by occurrence_public.
+        # This prevents the foreign-key constraint from being violated if
+        # reconciliation still contains an occurrence for a species that
+        # is absent from this run's aggregation.
         cur.execute(
             """
-            DELETE FROM species
-            WHERE species_id != ALL(%s)
+            DELETE FROM species s
+            WHERE s.species_id != ALL(%s)
+            AND NOT EXISTS (
+                SELECT 1
+                FROM occurrence_public o
+                WHERE o.species_id = s.species_id
+            )
             """,
             (current_species_ids,),
         )

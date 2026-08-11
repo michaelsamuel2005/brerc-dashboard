@@ -210,6 +210,7 @@ def nightly_job():
                 load_mode,
             )
 
+        print("PIPELINE RESULT:", result)
         print("Nightly ETL completed")
         return result
 
