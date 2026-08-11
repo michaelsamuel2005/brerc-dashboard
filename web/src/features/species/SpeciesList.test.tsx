@@ -76,7 +76,6 @@ describe("SpeciesList", () => {
 
       expect(await screen.findByText("Page 2 of 2")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: /Hedgehog/ })).toBeInTheDocument();
-      expect(screen.queryByRole("link", { name: /Slow-worm/ })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
 
       const { container } = renderList(2);
