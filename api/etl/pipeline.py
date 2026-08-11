@@ -1,3 +1,10 @@
+"""
+Main execution pipeline orchestrator for the BRERC ETL process. 
+Coordinates data cleaning, species resolution, spatial aggregation, database persistence, 
+provenance tracking, and reconciliation into a single unified transactional run.
+"""
+
+# python -c "from etl.job import nightly_job; nightly_job()"
 from datetime import datetime
 import logging
 import time
@@ -28,18 +35,16 @@ def run_pipeline(
     load_mode,
 ):
     """
-    Runs the complete ETL pipeline.
+    Executes the complete end-to-end ETL pipeline sequence:
+        1. Clean incoming source and dictionary dataframes.
+        2. Resolve species numbers against the master dictionary.
+        3. Build public spatial and taxonomic aggregation summaries.
+        4. Persist species index and aggregation outputs to the database.
+        5. Upsert pipeline execution provenance metadata.
+        6. Run two-pass occurrence record reconciliation against the UI state.
 
-    Steps:
-        1. Clean the source data
-        2. Resolve species numbers
-        3. Rebuild species and aggregation layer
-        4. Reconcile occurrence records
-        5. Persist derived tables
-
-    load_mode is "initial" or "incremental", decided by the caller
-    (nightly_job) based on watermark state, and is stamped onto every
-    row written this run via the "Load" / "Load_date" audit columns.
+    The load_mode ('initial' or 'incremental') is stamped onto every row written 
+    during this execution via the 'Load' and 'Load_date' audit metadata columns.
     """
 
     start_time = time.time()
@@ -50,19 +55,19 @@ def run_pipeline(
     )
 
     try:
-        # Clean incoming tables: Cleans column names
+        # Step 1: Clean raw column names and formats
         logger.info("Cleaning source and dictionary dataframes...")
         cleaned_source = clean_data(source_df)
         cleaned_dictionary = clean_data(dictionary_df)
 
-        # Add species_no using the dictionary lookup
+        # Step 2: Match and resolve species identifiers (species_no)
         logger.info("Resolving species numbers...")
         resolved_source = resolve_species_numbers(
             cleaned_source,
             cleaned_dictionary,
         )
 
-        # Rebuild derived aggregation layer
+        # Step 3: Build derived public aggregation layers
         logger.info("Building public aggregation layer...")
         aggregation_outputs = build_public_aggregation(
             resolved_source,
@@ -72,10 +77,9 @@ def run_pipeline(
             date_column=DATE_COLUMN,
         )
 
-        # Store species + distribution_cell tables
-        # This must happen before occurrence_public because
-        # occurrence_public has a foreign key to species.
-        logger.info("Persisting aggregation outputs and species index to database...")
+        # Step 4: Persist species index and suppression counts.
+        # This MUST happen before occurrence writes because occurrence tables
+        # maintain foreign key constraints pointing to the species table.
         persist_aggregation_outputs(
             connection,
             species_index=aggregation_outputs["species_index"],
@@ -84,10 +88,11 @@ def run_pipeline(
             load_mode=load_mode,
         )
 
+        # Step 5: Update pipeline run metadata provenance
         logger.info("Upserting pipeline provenance metadata...")
         upsert_provenance(connection, load_mode=load_mode)
 
-        # Update occurrence_public
+        # Step 6: Synchronise and reconcile individual occurrence records
         logger.info("Running occurrence record reconciliation...")
         reconciliation_summary = reconcile(
             resolved_source,
@@ -109,6 +114,3 @@ def run_pipeline(
     except Exception as e:
         logger.exception("ETL pipeline failed during execution: %s", e)
         raise
-
-
-# python -c "from etl.job import nightly_job; nightly_job()"

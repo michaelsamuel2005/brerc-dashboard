@@ -1,32 +1,7 @@
 """
-Database connection for the API (B0).
-
-Keeps the connection details in ONE place: all connection fields (host,
-port, dbname, user, password) are read from safety.yaml's `destination:`
-block, so environments can differ (local / staging / prod) just by
-editing config. NOTE: this means safety.yaml holds a real password when
-filled in for a real environment — keep that file out of version control
-(or restrict its permissions) in any environment where it holds real
-credentials.
-
-If DATABASE_URL is set directly in the environment, it takes priority
-over the assembled safety.yaml URL, so deployments that already inject a
-full connection string keep working unchanged.
-
-The API opens a connection per request and closes it. That is simple and
-correct for B0; connection pooling comes later if it is needed.
-
-SAFETY RULES enforced here and in every query:
-
-- queries read ONLY from the public_* views (public_species, public_records,
-  public_cells, public_provenance), never the base tables
-- all SQL is parameterised (%s placeholders) — never string-formatted, which is
-  how SQL injection happens
-- this connection is READ-ONLY (connects as brerc_api_ro). Schema-mutating
-  operations (drop/create/reload) do NOT live here — see
-  etl/load/admin.py::force_full_reload, which uses a separate connection
-  with actual DDL privileges. Keeping admin operations out of the
-  serving layer means a bug or bad request here can never touch schema.
+Read-only database connection management and security validation module for the API layer. 
+Enforces strict read-only access (connecting as brerc_api_ro), parameterised queries, 
+statement timeouts, and validation against approved public B6 views (public_*).
 """
 
 import os
@@ -40,40 +15,24 @@ from psycopg.rows import dict_row
 
 from etl.load.loader import load_safety_config
 
-
-# Load api/.env (if it exists) so credentials can live in a git-ignored file
-# instead of being typed into the shell every time. We point at the .env next
-# to the api/ folder explicitly, so it is found no matter which folder you run from.
-
+# Load api/.env (if present) so credentials can be managed outside version control
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
-
-# CONFIG and _DESTINATION are loaded lazily (not at import time) because
-# safety.yaml may not exist on a fresh clone — importing this module must
-# not require the file to be present. lru_cache means the file is still
-# only read once per process, just on first use instead of at import.
 
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
+    """Cached loader for safety and database configuration settings."""
     return load_safety_config()
 
 
 def _get_destination() -> dict:
+    """Retrieves the destination connection configuration block."""
     return get_config().get("destination", {})
 
+# Statement timeout guard: caps query execution at 10 seconds to prevent runaway queries
+STATEMENT_TIMEOUT_MS = 10_000  # 10s
 
-# How long (ms) a single query may run before Postgres cancels it.
-# Guards against one runaway/badly-indexed query hanging the whole API.
-# Since each request holds its own connection, a stuck query would otherwise
-# tie that connection up indefinitely.
-
-STATEMENT_TIMEOUT_MS = 10_000  # 10s — generous for this dataset's scale
-
-
-# Only these public views may be accessed by the API.
-# The API should never query the underlying B6 base tables directly.
-
+# Strict whitelist: API requests are restricted exclusively to approved public views.
 B6_PUBLIC_RELATIONS = {
     "public_species",
     "public_records",
@@ -84,15 +43,9 @@ B6_PUBLIC_RELATIONS = {
 
 def _build_database_url() -> str:
     """
-    Assemble the UI database connection string entirely from
-    safety.yaml's `destination:` block (host, port, dbname, user,
-    password).
-
-    DATABASE_URL, if set directly in the environment, overrides all of
-    this — useful for deployments that inject a full connection string
-    as one secret.
+    Assembles the database connection string from safety.yaml's destination block 
+    or falls back to the explicit DATABASE_URL environment variable if provided.
     """
-
     explicit_url = os.getenv("DATABASE_URL")
 
     if explicit_url:
@@ -112,27 +65,17 @@ def _build_database_url() -> str:
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
 
-# Built lazily too, since it transitively depends on safety.yaml via
-# _get_destination(). Cached so the URL is only assembled once.
-
-
 @lru_cache(maxsize=1)
 def get_database_url() -> str:
+    """Cached wrapper to retrieve the assembled database connection URL."""
     return _build_database_url()
 
 
 def get_connection() -> psycopg.Connection:
     """
-    Open a read-only connection to the UI database.
-
-    `row_factory=dict_row` makes each returned row behave like a dictionary
-    ({"scientific_name": "...", ...}) instead of a plain tuple, which makes
-    the endpoint code much easier to read.
-
-    `statement_timeout` caps how long any single query may run
-    (see STATEMENT_TIMEOUT_MS above).
+    Opens a read-only connection to the UI database with dictionary row factories 
+    and a strict statement timeout configuration.
     """
-
     return psycopg.connect(
         get_database_url(),
         row_factory=dict_row,
@@ -142,22 +85,15 @@ def get_connection() -> psycopg.Connection:
 
 def _validate_public_relation(table_name: str) -> None:
     """
-    Ensure the requested relation is one of the approved public views.
-
-    The API must never query the underlying B6 base tables.
+    Security check: ensures the requested relation is explicitly whitelisted 
+    among approved public B6 views, preventing direct access to base tables.
     """
-
     if table_name not in B6_PUBLIC_RELATIONS:
         raise ValueError(f"Unsupported public relation: {table_name}")
 
 
 def check_table_exists(connection, table_name: str) -> bool:
-    """
-    Return True if `table_name` exists.
-
-    Only approved public views may be checked.
-    """
-
+    """Checks whether an approved public view exists in the database schema."""
     _validate_public_relation(table_name)
 
     with connection.cursor() as cur:
@@ -170,12 +106,7 @@ def check_table_exists(connection, table_name: str) -> bool:
 
 
 def check_table_has_rows(connection, table_name: str) -> bool:
-    """
-    Return True if `table_name` has at least one row.
-
-    Only approved public views may be queried.
-    """
-
+    """Checks whether an approved public view contains at least one row of data."""
     _validate_public_relation(table_name)
 
     query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;").format(

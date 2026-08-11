@@ -1,26 +1,13 @@
-# etl/provenance.py
 """
-Writes the single-row `provenance` table, which feeds the
-"About this data" section of the public dashboard (public_provenance
-view, per the B6 schema notes).
-
-provenance is DIFFERENT from the other tables this pipeline writes:
-species / occurrence_public / distribution_cell are all derived from
-the actual occurrence data each run. provenance is mostly static,
-human-written text about the project as a whole (where the data comes
-from, its known limitations, how privacy is handled) - the kind of
-thing someone writes once and rarely changes, not something computed
-from a dataframe.
-
->>> THE TEXT BELOW IS A PLACEHOLDER <<<
-sources / caveats / sensitivity_policy_summary need real content from
-whoever owns the public-facing copy for the dashboard - don't ship the
-values below to production as-is.
+Manages the single-row 'provenance' table, which feeds the "About this data" 
+section of the public dashboard. Stores human-written context, data sources, 
+caveats, sensitivity summaries, and execution load audit metadata.
 """
 
 from datetime import date, datetime, timezone
 
-# TODO: replace with the real, agreed wording before this goes live.
+# --- Default Placeholder Content ---
+# NOTE: Update these placeholders with final official text before going live.
 DEFAULT_SOURCES = [
     "BRERC (Bristol Regional Environmental Records Centre)",
 ]
@@ -48,9 +35,9 @@ def upsert_provenance(
     last_updated: date = None,
 ):
     """
-    Writes/refreshes the single provenance row (id is always 1).
-    Call once per pipeline run so last_updated reflects the most
-    recent successful load.
+    Inserts or updates the single static provenance record (fixed id = 1) 
+    in the database. Called once per pipeline run to stamp the latest load date 
+    and execution mode.
     """
     sources = sources or DEFAULT_SOURCES
     caveats = caveats or DEFAULT_CAVEATS

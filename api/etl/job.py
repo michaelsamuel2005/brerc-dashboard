@@ -1,18 +1,14 @@
+"""
+Main entry point and orchestrator for the BRERC ETL pipeline. 
+Manages logging configuration, config caching, source/dictionary data ingestion 
+(supporting both CSV and database modes), incremental vs initial load decisions, 
+and nightly batch job execution.
+"""
+
 from functools import lru_cache
 import logging
-import pandas as pd
 
-# Logging set-up
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-logger = logging.getLogger(__name__)
-
-# Imports
-
+# Imports database connections and pipeline components
 from etl.db import (
     check_table_exists,
     check_table_has_rows,
@@ -26,19 +22,29 @@ from etl.load.reload import force_full_reload
 from etl.pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
 
+import pandas as pd
+
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+logger = logging.getLogger(__name__)
+
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
+    """Cached wrapper to load safety and pipeline configurations."""
     return load_safety_config()
 
 
 def load_source_data(source_connection=None, watermark_date=None):
-    """Loads BRERC source records from either CSV or database.
-
-    In database mode, watermark_date can be used to restrict the query to
-    records modified on or after that timestamp.
     """
-
+    Loads BRERC source occurrence records from either CSV files or a database source.
+    In database mode, watermark_date restricts queries to records modified on or after that timestamp.
+    """
     config = get_config()
     mode = config["source"].get("mode", "csv")
     modified_column = config["columns"]["modified_date"]
@@ -81,8 +87,7 @@ def load_source_data(source_connection=None, watermark_date=None):
 
 
 def load_species_dictionary(source_connection=None):
-    """Loads the species dictionary used for synonym-safe species resolution."""
-
+    """Loads the master species dictionary used for synonym-safe species resolution from CSV or database."""
     config = get_config()
     mode = config["source"].get("mode", "csv")
 
@@ -104,16 +109,22 @@ def load_species_dictionary(source_connection=None):
 
 
 def get_current_ui_map(connection):
-    """Retrieves the current occurrence_public state.
+    """
+    Retrieves the current occurrence_public state.
 
     Returns:
-        unique_no -> content_hash
+        unique_no -> content_hash map
     """
 
     return get_ui_map(connection)
 
 
 def nightly_job():
+    """
+    Orchestrates the nightly ETL pipeline run: inspects database state, 
+    determines initial vs. incremental load mode, handles schema rebuilds if necessary, 
+    ingests source data and dictionaries, executes reconciliation and processing, and logs summaries.
+    """
     logger.info("Starting nightly ETL job pipeline.")
 
     try:
@@ -123,7 +134,7 @@ def nightly_job():
         with get_destination_connection() as connection:
             table_name = config["destination"]["table"]
 
-            # Check the destination state.
+            # Check the current state of the destination table
             table_exists = check_table_exists(
                 connection,
                 table_name,
@@ -147,6 +158,7 @@ def nightly_job():
 
             watermark_date = None
 
+            # Handle incremental checking rules in database mode
             if (
                 load_mode == "incremental"
                 and mode == "database"
@@ -163,16 +175,12 @@ def nightly_job():
             elif load_mode == "incremental" and mode == "database":
                 load_mode = "initial"
 
-            # The destination-state queries above open a database
-            # transaction. Finish that transaction before opening
-            # the separate admin connection used for the schema
-            # rebuild. Otherwise the first connection can retain
-            # locks on occurrence_public and block the rebuild.
+            # Commit destination-state connection before schema rebuild
+            # to avoid locking blocks and connection clashes.
             if load_mode == "initial":
                 connection.commit()
 
                 logger.warning("Forcing full reload of table: %s", table_name)
-
                 force_full_reload()
 
             # Load source records after the destination has been rebuilt.
@@ -186,11 +194,9 @@ def nightly_job():
                     dictionary_df = load_species_dictionary(source_connection)
             else:
                 source_df = load_source_data(watermark_date=None)
-
                 dictionary_df = load_species_dictionary()
 
-            # The full reload creates a clean destination, so this
-            # map now represents the current destination state.
+            # Retrieve current UI map representing the destination state
             ui_map = get_current_ui_map(connection)
 
             logger.info("Running pipeline in '%s' mode.", load_mode)
