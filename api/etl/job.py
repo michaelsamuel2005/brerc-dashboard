@@ -1,19 +1,30 @@
+from functools import lru_cache
+import logging
 import pandas as pd
 
-from functools import lru_cache
+# Logging set-up
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
-from etl.pipeline import run_pipeline
-from etl.load.loader import load_safety_config
-from etl.load.metadata import get_last_load_date
-from etl.reconciliation.state import get_ui_map
+logger = logging.getLogger(__name__)
+
+# Imports
+
 from etl.db import (
-    get_source_connection,
-    get_destination_connection,
     check_table_exists,
     check_table_has_rows,
+    get_destination_connection,
+    get_source_connection,
 )
-from etl.load.reload import force_full_reload
+from etl.load.loader import load_safety_config
+from etl.load.metadata import get_last_load_date
 from etl.load.mode import should_run_initial_load
+from etl.load.reload import force_full_reload
+from etl.pipeline import run_pipeline
+from etl.reconciliation.state import get_ui_map
 
 
 @lru_cache(maxsize=1)
@@ -22,11 +33,10 @@ def get_config() -> dict:
 
 
 def load_source_data(source_connection=None, watermark_date=None):
-    """
-    Loads BRERC source records from either CSV or database.
+    """Loads BRERC source records from either CSV or database.
 
-    In database mode, watermark_date can be used to restrict
-    the query to records modified on or after that timestamp.
+    In database mode, watermark_date can be used to restrict the query to
+    records modified on or after that timestamp.
     """
 
     config = get_config()
@@ -34,25 +44,18 @@ def load_source_data(source_connection=None, watermark_date=None):
     modified_column = config["columns"]["modified_date"]
 
     if mode == "csv":
-        df = pd.read_csv(
-            config["source"]["records_path"]
-        )
+        df = pd.read_csv(config["source"]["records_path"])
 
         if watermark_date is not None:
-            df[modified_column] = pd.to_datetime(
-                df[modified_column]
-            )
-            df = df[
-                df[modified_column] >= watermark_date
-            ]
+            df[modified_column] = pd.to_datetime(df[modified_column])
+            df = df[df[modified_column] >= watermark_date]
 
         return df
 
     if mode == "database":
         if source_connection is None:
             raise ValueError(
-                "source_connection is required when "
-                "source.mode is 'database'"
+                "source_connection is required when source.mode is 'database'"
             )
 
         query = config["source"]["records_query"]
@@ -74,30 +77,22 @@ def load_source_data(source_connection=None, watermark_date=None):
             source_connection,
         )
 
-    raise ValueError(
-        f"Unknown source.mode: {mode!r}"
-    )
+    raise ValueError(f"Unknown source.mode: {mode!r}")
 
 
 def load_species_dictionary(source_connection=None):
-    """
-    Loads the species dictionary used for synonym-safe
-    species resolution.
-    """
+    """Loads the species dictionary used for synonym-safe species resolution."""
 
     config = get_config()
     mode = config["source"].get("mode", "csv")
 
     if mode == "csv":
-        return pd.read_csv(
-            config["source"]["dictionary_path"]
-        )
+        return pd.read_csv(config["source"]["dictionary_path"])
 
     if mode == "database":
         if source_connection is None:
             raise ValueError(
-                "source_connection is required when "
-                "source.mode is 'database'"
+                "source_connection is required when source.mode is 'database'"
             )
 
         return pd.read_sql(
@@ -105,14 +100,11 @@ def load_species_dictionary(source_connection=None):
             source_connection,
         )
 
-    raise ValueError(
-        f"Unknown source.mode: {mode!r}"
-    )
+    raise ValueError(f"Unknown source.mode: {mode!r}")
 
 
 def get_current_ui_map(connection):
-    """
-    Retrieves the current occurrence_public state.
+    """Retrieves the current occurrence_public state.
 
     Returns:
         unique_no -> content_hash
@@ -122,7 +114,7 @@ def get_current_ui_map(connection):
 
 
 def nightly_job():
-    print("Starting nightly ETL")
+    logger.info("Starting nightly ETL job pipeline.")
 
     try:
         config = get_config()
@@ -151,11 +143,7 @@ def nightly_job():
                 table_has_rows,
             )
 
-            load_mode = (
-                "initial"
-                if run_initial
-                else "incremental"
-            )
+            load_mode = "initial" if run_initial else "incremental"
 
             watermark_date = None
 
@@ -167,17 +155,12 @@ def nightly_job():
                     True,
                 )
             ):
-                watermark_date = get_last_load_date(
-                    connection
-                )
+                watermark_date = get_last_load_date(connection)
 
                 if watermark_date is None:
                     load_mode = "initial"
 
-            elif (
-                load_mode == "incremental"
-                and mode == "database"
-            ):
+            elif load_mode == "incremental" and mode == "database":
                 load_mode = "initial"
 
             # The destination-state queries above open a database
@@ -188,14 +171,11 @@ def nightly_job():
             if load_mode == "initial":
                 connection.commit()
 
-                print(
-                    f"Forcing full reload of {table_name}"
-                )
+                logger.warning("Forcing full reload of table: %s", table_name)
 
                 force_full_reload()
 
-            # Load source records after the destination has been
-            # rebuilt.
+            # Load source records after the destination has been rebuilt.
             if mode == "database":
                 with get_source_connection() as source_connection:
                     source_df = load_source_data(
@@ -203,25 +183,17 @@ def nightly_job():
                         watermark_date=watermark_date,
                     )
 
-                    dictionary_df = load_species_dictionary(
-                        source_connection
-                    )
+                    dictionary_df = load_species_dictionary(source_connection)
             else:
-                source_df = load_source_data(
-                    watermark_date=None
-                )
+                source_df = load_source_data(watermark_date=None)
 
                 dictionary_df = load_species_dictionary()
 
             # The full reload creates a clean destination, so this
             # map now represents the current destination state.
-            ui_map = get_current_ui_map(
-                connection
-            )
+            ui_map = get_current_ui_map(connection)
 
-            print(
-                f"Running pipeline in '{load_mode}' mode"
-            )
+            logger.info("Running pipeline in '%s' mode.", load_mode)
 
             result = run_pipeline(
                 source_df,
@@ -231,13 +203,17 @@ def nightly_job():
                 load_mode,
             )
 
-        print("PIPELINE RESULT:", result)
-        print("Nightly ETL completed")
+        reconciliation_summary = result.get("reconciliation", {})
+        logger.info(
+            "Nightly ETL completed successfully. Summary -> Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
+            len(reconciliation_summary.get("inserts", [])),
+            len(reconciliation_summary.get("updates", [])),
+            len(reconciliation_summary.get("deletes", [])),
+            len(reconciliation_summary.get("unchanged", [])),
+        )
 
         return result
 
     except Exception as error:
-        print(
-            f"Nightly ETL failed: {error}"
-        )
+        logger.exception("Nightly ETL failed: %s", error)
         raise

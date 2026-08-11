@@ -1,4 +1,13 @@
+"""
+Functions for comparing source and UI database record hashes
+during ETL reconciliation.
+"""
+
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
 
 def build_id_hash_map(df: pd.DataFrame) -> dict:
 
@@ -22,6 +31,7 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
         df["unique_no"].astype(str),
         df["content_hash"],
     ))
+
 
 """
 Builds a complete unique_no -> content_hash mapping by
@@ -50,7 +60,7 @@ def diff_id_hash_maps(source_map: dict, ui_map: dict):
     source_ids = set(source_map)
     ui_ids = set(ui_map)
 
-    # Records present in today's source data but not in UI dastabase
+    # Records present in today's source data but not in UI database
     inserts = source_ids - ui_ids
     # Records removed from source since previous reconciliation
     deletes = ui_ids - source_ids
@@ -58,16 +68,27 @@ def diff_id_hash_maps(source_map: dict, ui_map: dict):
     possible_updates = source_ids & ui_ids
 
     # Updates is the set which only includes record whose content hash has changed
-    # Create set of unique_no values
-    # For each unique_no in possible_updates
-    # Omly if the source has is different from ui hash
     updates = {
-        unique_no 
-        for unique_no in possible_updates 
+        unique_no
+        for unique_no in possible_updates
         if source_map[unique_no] != ui_map[unique_no]
     }
 
     unchanged = possible_updates - updates
+
+    # --- PROFESSIONAL LOGGING (Lazy % Formatting) ---
+    logger.info(
+        "Reconciliation diff complete: %d records to insert, %d to update, %d to delete.",
+        len(inserts),
+        len(updates),
+        len(deletes),
+    )
+
+    if deletes:
+        logger.warning(
+            "Reconciliation: Identified %d obsolete records to delete from the UI database.",
+            len(deletes),
+        )
 
     return {
         "inserts": inserts,
@@ -75,30 +96,3 @@ def diff_id_hash_maps(source_map: dict, ui_map: dict):
         "deletes": deletes,
         "unchanged": unchanged,
     }
-
-# Gets dataset + ids classified as insert, updates, deletes 
-# def get_reconciliation_records(
-#         source_df: pd.DataFrame,
-#         changes: dict,
-#     ) -> dict:
-
-#     # changes["inserts"]/["updates"] are now sets of STRINGS (see
-#     # build_id_hash_map), so unique_no must be cast to str here too
-#     # before comparing, or .isin() will match nothing.
-#     unique_no_str = source_df["unique_no"].astype(str)
-
-#     # Retrieves the full source rows corresponding to each reconciliation action
-#     inserts = source_df[
-#         unique_no_str.isin(changes["inserts"])
-#     ].copy()
-
-#     updates = source_df[
-#         unique_no_str.isin(changes["updates"])
-#     ].copy()
-
-#     return {
-#         "inserts": inserts,
-#         "updates": updates,
-#         "deletes": changes["deletes"],
-#         "unchanged": changes["unchanged"],
-#     }
