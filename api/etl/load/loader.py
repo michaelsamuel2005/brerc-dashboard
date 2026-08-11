@@ -1,12 +1,17 @@
+"""
+Loads configuration settings from YAML files and handles 
+initial (full wipe) and incremental (upsert) database loading.
+"""
+
 from pathlib import Path
 
-import psycopg
 import yaml
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "safety.yaml"
 
 
 def load_safety_config(path=None):
+    """Loads the safety configuration YAML file, falling back to an example file if needed."""
     if path is None:
         config_path = DEFAULT_CONFIG_PATH
 
@@ -29,14 +34,17 @@ def load_safety_config(path=None):
 
 
 def initial_load(df, connection, table_name: str):
-    """Full load: wipe the table, insert everything in df."""
+    """Performs a full load by wiping the table completely and bulk-inserting all rows."""
     columns = list(df.columns)
     rows = [tuple(row) for row in df.itertuples(index=False)]
 
     cols_sql = ", ".join(columns)
 
     with connection.cursor() as cur:
+        # Wipes the table clean for a fresh start
         cur.execute(f"TRUNCATE TABLE {table_name};")
+
+        # Use PostgreSQL's fast copy command to insert everything at once
         with cur.copy(f"COPY {table_name} ({cols_sql}) FROM STDIN") as copy:
             for row in rows:
                 copy.write_row(row)
@@ -46,11 +54,12 @@ def initial_load(df, connection, table_name: str):
 
 
 def incremental_load(df, connection, ui_map, table_name: str):
-    """Upsert: insert new rows, update existing ones by primary key."""
+    """Performs an upsert: inserts new rows or updates existing ones based on primary keys."""
     primary_key = ui_map["primary_key"]
     columns = list(df.columns)
     rows = [tuple(row) for row in df.itertuples(index=False)]
 
+    # Update all columns except the primary key itself
     update_cols = [c for c in columns if c != primary_key]
     cols_sql = ", ".join(columns)
     placeholders = ", ".join(["%s"] * len(columns))
@@ -68,6 +77,7 @@ def incremental_load(df, connection, ui_map, table_name: str):
     )
 
     with connection.cursor() as cur:
+        # Push rows in bulk, letting PostgreSQL handle conflicts automatically
         cur.executemany(sql, rows)
 
     connection.commit()
