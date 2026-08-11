@@ -43,6 +43,36 @@ DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 
 
 # ---------------------------------------------------------------------------
+# ROW CAPS — the most rows any single request may ever receive
+# ---------------------------------------------------------------------------
+# FOR THE MAINTAINER: these are the limits that stop one request from pulling
+# the whole database out through the API. Every endpoint that returns a list
+# applies one of them, in SQL, on the server. A caller can ask for less, but
+# never for more — asking for 10,000 rows still gets you at most the cap.
+#
+# This matters for two reasons:
+#   1. Performance — one huge query can't tie up the database for everyone.
+#   2. Policy — the public dashboard is for looking things up, not for
+#      downloading BRERC's dataset. There is deliberately no bulk export.
+#
+# Raise a number here if the dashboard genuinely needs more; that is the only
+# place to change it.
+
+# Biggest page any list endpoint will return (/api/species, /api/records).
+MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "100"))
+
+# Biggest number of map squares /api/distribution/cells will return at once.
+# Higher than a page size because the map legitimately draws many squares.
+MAX_CELLS = int(os.getenv("MAX_CELLS", "5000"))
+
+# Caps on the two grouped lists inside /api/summary. Bristol's records span
+# roughly a century, and there are a few dozen species groups, so these are
+# generous — they exist to bound the response, not to trim real data.
+MAX_YEAR_BUCKETS = int(os.getenv("MAX_YEAR_BUCKETS", "300"))
+MAX_GROUPS = int(os.getenv("MAX_GROUPS", "50"))
+
+
+# ---------------------------------------------------------------------------
 # Species image + description proxy (B8). See app/species_info.py.
 # ---------------------------------------------------------------------------
 

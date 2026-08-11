@@ -68,3 +68,31 @@ needs_b7_tiles = pytest.mark.skipif(
     not _function_exists("cells_tile(integer,integer,integer,json)"),
     reason="B7 tile function not loaded — run db/b7_tiles.sql against DATABASE_URL",
 )
+
+
+def _column_exists(relation: str, column: str) -> bool:
+    """True if `relation` (table or view) has a column called `column`."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS n
+                    FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = %s;
+                    """,
+                    (relation, column),
+                )
+                return cur.fetchone()["n"] > 0
+    except Exception:
+        return False
+
+
+# /api/meta/provenance now reports MAX(load_date), which needs the newer schema.
+# Skip (don't fail) if the local database still has the older one, so nobody's
+# suite breaks just because they haven't re-run the SQL yet.
+needs_load_date = pytest.mark.skipif(
+    not _column_exists("public_records", "load_date"),
+    reason="public_records has no load_date — re-run db/b6_schema.sql "
+           "and db/b6_sample_data.sql against DATABASE_URL",
+)

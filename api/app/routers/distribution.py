@@ -14,6 +14,7 @@ import json
 
 from fastapi import APIRouter, Query
 
+from app import config
 from app.db import get_connection
 from app.models import (
     GeoJSONFeatureCollection,
@@ -37,6 +38,12 @@ def distribution_cells(
 
     # One feature per cell: sum the counts across years, and let PostGIS turn the
     # cell polygon straight into a GeoJSON string with ST_AsGeoJSON.
+    #
+    # The LIMIT is a server-side cap (MAX_CELLS in app/config.py). Without it,
+    # asking for every species at once would build one enormous response — slow
+    # for the browser, and effectively a bulk download of the whole grid. The
+    # map itself doesn't rely on this endpoint for wide views; it uses Martin's
+    # vector tiles (B7), which only ever send the squares actually on screen.
     sql = f"""
         SELECT
             cell_id,
@@ -47,12 +54,13 @@ def distribution_cells(
         FROM public_cells
         {where_sql}
         GROUP BY cell_id, geom
-        ORDER BY cell_id;
+        ORDER BY cell_id
+        LIMIT %s;
     """
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, params + [config.MAX_CELLS])
             rows = cur.fetchall()
 
     features = [

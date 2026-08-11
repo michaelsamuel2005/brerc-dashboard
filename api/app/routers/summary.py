@@ -7,6 +7,7 @@ public layer, so nothing sensitive is ever aggregated in.
 
 from fastapi import APIRouter
 
+from app import config
 from app.db import get_connection
 from app.models import Summary, YearCount, TopGroup
 
@@ -27,17 +28,25 @@ def summary() -> Summary:
             span = cur.fetchone()
             year_range = [span["lo"], span["hi"]] if span["lo"] is not None else [0, 0]
 
-            # Records per year (for the year chart).
+            # Records per year (for the year chart). LIMIT is a safety cap only
+            # — see MAX_YEAR_BUCKETS in app/config.py. One row per year, so real
+            # data will never come close to it; it exists so a bad year value in
+            # the data can't produce a gigantic response.
             cur.execute(
                 "SELECT record_year AS yr, COUNT(*) AS cnt "
-                "FROM public_records GROUP BY record_year ORDER BY record_year;"
+                "FROM public_records GROUP BY record_year ORDER BY record_year "
+                "LIMIT %s;",
+                (config.MAX_YEAR_BUCKETS,),
             )
             records_by_year = [YearCount(year=r["yr"], count=r["cnt"]) for r in cur.fetchall()]
 
-            # Biggest species groups (birds, mammals, …).
+            # Biggest species groups (birds, mammals, …). Also capped — there are
+            # only a few dozen groups, so this never trims anything real.
             cur.execute(
                 "SELECT species_group AS grp, SUM(record_count) AS cnt "
-                "FROM public_species GROUP BY species_group ORDER BY cnt DESC, species_group;"
+                "FROM public_species GROUP BY species_group ORDER BY cnt DESC, species_group "
+                "LIMIT %s;",
+                (config.MAX_GROUPS,),
             )
             top_groups = [TopGroup(group=r["grp"], count=int(r["cnt"])) for r in cur.fetchall()]
 
