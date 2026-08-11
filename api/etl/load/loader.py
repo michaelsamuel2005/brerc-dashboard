@@ -14,14 +14,25 @@ DEFAULT_CONFIG_PATH = (
 
 
 def load_safety_config(path=None):
-
     if path is None:
         path = DEFAULT_CONFIG_PATH
 
-    with open(path, "r") as file:
+    config_path = Path(path)
+
+    # Fall back to the example config if the real one isn't present
+    if not config_path.exists():
+        example_path = config_path.with_suffix(config_path.suffix + ".example")
+        if example_path.exists():
+            config_path = example_path
+        else:
+            raise FileNotFoundError(
+                f"Neither configuration file {config_path} "
+                f"nor fallback {example_path} could be found."
+            )
+
+    with open(config_path, "r") as file:
         return yaml.safe_load(file)
-
-
+        
 def initial_load(df, connection, table_name: str):
     """Full load: wipe the table, insert everything in df."""
     columns = list(df.columns)

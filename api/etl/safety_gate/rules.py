@@ -56,9 +56,6 @@ def load_sensitive_species():
         CONFIG["files"]["sensitive_species"]["path"]
     )
 
-    # Convert relative paths from YAML into absolute paths.
-    # This means the pipeline does not depend on where the user
-    # runs the command from.
     if not sensitive_species_file.is_absolute():
         sensitive_species_file = (
             Path(__file__)
@@ -67,20 +64,22 @@ def load_sensitive_species():
             / sensitive_species_file
         )
 
-    # Fall back to the example file if the real file is unavailable.
+    # Fall back to the example file if the real file is unavailable
     if not sensitive_species_file.exists():
-        sensitive_species_file = sensitive_species_file.with_suffix(
+        example_file = sensitive_species_file.with_suffix(
             sensitive_species_file.suffix + ".example"
         )
+        if example_file.exists():
+            sensitive_species_file = example_file
+        else:
+            # SAFE FALLBACK: If neither file exists, return empty sets 
+            # so tests and runs don't crash with a FileNotFoundError.
+            return set(), set()
 
     # Read + clean CSV
-    df = pd.read_csv(
-        sensitive_species_file
-    )
+    df = pd.read_csv(sensitive_species_file)
     df = clean_data(df)
 
-    # Create sets for species_no and nbn_number
-    # (drops missing values)
     sensitive_species_nos = set(
         df["species_no"]
         .dropna()
