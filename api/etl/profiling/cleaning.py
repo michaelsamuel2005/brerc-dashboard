@@ -8,7 +8,10 @@ import pandas as pd
 
 # Cleaning column names:
 def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Standardises column headers by stripping whitespace, converting to lowercase, and formatting spaces."""
+    """
+    Standardises column headers by stripping whitespace, 
+    converting to lowercase, and formatting spaces.
+    """
     cleaned_df = df.copy()
 
     # Strip extra spaces, lowercase everything, and swap spaces for underscores

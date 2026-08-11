@@ -84,7 +84,7 @@ def build_species_index(
     # Ensure each species_id is completely unique; duplicates mean bad data.
     if species_index["species_id"].duplicated().any():
         raise ValueError("Species index contains duplicate species IDs")
-    
+
     # Default image flag to False since image metadata isn't loaded yet.
     species_index["has_image"] = False
 

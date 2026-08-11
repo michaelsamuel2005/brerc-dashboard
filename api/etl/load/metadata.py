@@ -41,9 +41,9 @@ def get_last_load_date(connection):
             """
         )
         row = cur.fetchone()
-        
+
         # Safely handle cases where the table is empty or returns NULL
         if not row or row["last_load_date"] is None:
             return None
-            
+
         return row["last_load_date"]

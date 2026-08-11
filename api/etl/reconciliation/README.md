@@ -1,143 +1,36 @@
-HASHING
-_normalised_hash_value():
-    - If value is missing return empty string
-    - If value is date/time -> convert to ISO format
-    - For everything else, convert to text, remove extra space (from start/end)
+The reconciliation module ensures that the public dashboard database (occurrence_public) stays precisely synchronised with incoming source data without requiring full table wipes on every run. By leveraging deterministic cryptographic hashing and set-based differential analysis, it identifies new records (inserts), modified rows (updates), and removed observations (deletes) before routing changes securely through the safety pipeline.
 
-row_content_hash():
-    - Pulls row values in fixed order 
-    - Normalises them
-    - Joins values into one string
-    - Converts strings into bytes
-    - Produces the final hash string
+File-by-File Breakdown:
+hashing.py (Content Hash Generation)
+- Computes deterministic SHA-256 hashes (add_content_hash) for every record using a fixed configuration of columns, normalising dates and text to prevent false updates due to minor formatting shifts.
 
-add_content_hash():
-    - Adds content_hash column, stores every records hash
-    - Runs row_content_hash() on each row
-    - Stores results in a new column 
+diff.py (Set Differential Analysis)
+- Compares source and database hash maps (diff_id_hash_maps) using fast Python set operations to isolate records requiring insertion, updating, or deletion.
 
+streaming.py (Memory-Safe Chunking)
+- Streams large source files from disk in configurable blocks (iter_source_chunks) or processes in-memory dataframes, cleaning headers and compiling master source hash maps.
 
-RECONCILE
-build_id_hash_map():
-    - Builds dictionary:
-        - Each record id with its current content hash
+state.py (Database State Retrieval)
+- Queries the UI database (get_ui_map) to fetch all existing record IDs and their current content hashes, ensuring type compatibility (str mapping).
 
-diff_id_hash_maps():
-    - Compares current source data with whats in UI table
-    - Gets all IDs in the new source data
-    - Gets all IDs in the UI database 
-    - Inserts: IDs in source, but not in UI
-    - Deletes: IDs in the UI, but no longer in the source
-    - Possible_updates: ID that exist in both (may have changes)
-    - For IDs in both, compare the hashes
-        - If hashes are different underlying raw row has changed -> update record
-    - Unchanged: Records whos hashes are same in both
+map_to_schema.py (Schema Mapping)
+- Transforms and formats safe internal dataframe columns into the exact column schema expected by the public-facing occurrence_public table.
 
-NEED TO IDENITFY THE RECONCILIATION INPUTS LATER
-"""
+reconcile.py (Two-Pass Orchestration)
+- Coordinates the overall reconciliation lifecycle (reconcile), handling Pass 1 diffing and Pass 2 chunked processing, safety gate filtering, and persistence dispatch.
 
-RECONCILIATION: 
-"""
-Nightly reconciliation pipeline.
+The Reconciliation Flow
+When a new source dataset is processed, reconciliation executes through a robust, high-performance two-pass architecture:
 
-Compares the latest BRERC source data against the UI database,
-identifies inserts, updates and deletes, then ensures every new
-or changed record passes through the safety gate before being
-loaded into the public database.
+Pass 1 — Hash Mapping & Diffing (streaming.py, hashing.py, diff.py, db.py):
+- The source dataset is streamed in memory-safe chunks, cleaned, and assigned unique SHA-256 content hashes.
+- Existing records are fetched from the UI database (get_ui_map).
+- Set operations compare source IDs against database IDs to classify changes into inserts (brand-new rows), deletes (missing rows), and possible updates (matching IDs with potentially changed content hashes).
 
+Pass 2 — Processing & Synchronization (pipeline.py, load.py):
+- The pipeline streams source chunks a second time, filtering specifically for rows flagged as inserts or updates.
+- Identified change chunks are pushed through the complete safety pipeline (make_safe_for_publishing), which strips sensitive data, generalises spatial coordinates, and validates species numbers.
+- Safe records are stamped with ETL metadata and written to the database using high-performance staging tables and ON CONFLICT upserts.
 
-# Safety pipeline:
-# Raw records
-#   ↓
-# Species resolution
-#   ↓
-# Sensitivity classification
-#   ↓
-# Coordinate generalisation
-#   ↓
-# Coarse locality generation
-#   ↓
-# Public-column filtering
-#   ↓
-# Database schema mapping
-
-
-""" DIFF
-Compares the current source dataset with the UI database using
-content hashes.
-
-Each record is identified by its unique_no.
-
-The comparison determines which records should be:
-- inserted,
-- updated,
-- deleted, or
-- left unchanged.
-
-Only records requiring inserts or updates are returned for
-the safety pipeline.
-"""
-
-MAP TO sdddsa
-
-"""
-    Maps the safety pipeline's output (PUBLIC_COLUMNS shape) onto
-    occurrence_public's real column names (db/b6_schema.sql).
-
-    grid_ref and locality are both sourced from coarse_locality today
-    (grid square only - unitary authority data doesn't exist yet, see
-    add_coarse_locality's own note). They will diverge naturally once
-    that data lands: grid_ref stays grid-square-only, locality
-    becomes the fuller "authority + grid square" D0 description. No
-    code change needed here when that happens - just a richer
-    coarse_locality value flowing through the same column.
-
-    verified = NOT is_legacy. Safe because filter_accepted_records's
-    accepted/legacy masks are mutually exclusive by construction.
-"""
-
-
-LOAD:
-
-"""
-    Real DB writes against Victor's B6 draft schema (db/b6_schema.sql),
-    specifically the occurrence_public table.
-
-    OPEN QUESTIONS FOR VICTOR (confirm before relying on this):
-      1. occurrence_public has no content_hash column yet - needed
-         for D7 reconciliation to diff against next run. Needs adding:
-             ALTER TABLE occurrence_public ADD COLUMN content_hash TEXT;
-      2. occurrence_public.species_id has a FK to species(species_id).
-         Species rows must be upserted into `species` BEFORE any
-         occurrence_public write, or inserts will fail on the FK.
-         (This file assumes that's handled separately - see
-         upsert_species below - call it first in the orchestrator.)
-
-    Uses upsert (INSERT ... ON CONFLICT DO UPDATE) for both insert
-    and update - simpler than two code paths, and makes a re-run
-    naturally idempotent even for edge cases (e.g. a record that
-    was deleted then re-added with the same id).
-
-
-    """
-Database write functions for the reconciliation pipeline.
-
-Records reaching this module have already passed through the
-safety gate and been mapped to the public database schema.
-
-Responsibilities:
-- Upsert species metadata.
-- Insert or update public occurrence records.
-- Delete records removed from the source dataset.
-"""
-
-    """
-    Must run BEFORE insert_records/update_records, since
-    occurrence_public.species_id has a foreign key to this table.
-    """
-
-
-    # D5: verified-only + legacy-flagged-not-dropped, BEFORE anything
-    # else runs. A record failing both accepted and legacy checks
-    # must never reach classification, generalisation, or the DB.
-"""
+Database Purging (load.py):
+- Obsolete record IDs identified during Pass 1 deletes are purged from occurrence_public in a single efficient SQL operation (DELETE ... WHERE record_id = ANY(...)).

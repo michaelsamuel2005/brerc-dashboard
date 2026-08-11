@@ -31,7 +31,7 @@ def persist_aggregation_outputs(
     suppressed_counts,
     cell_size_m,
     load_mode,
-): 
+):
     """
     Persists aggregated spatial cells and upserts the species index to the database,
     handling foreign key constraints and stale record cleanups.

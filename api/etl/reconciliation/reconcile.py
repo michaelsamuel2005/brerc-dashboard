@@ -1,3 +1,9 @@
+"""
+Core reconciliation orchestration module. 
+Executes a two-pass reconciliation process: compares source and UI database hashes 
+to isolate inserts, updates, and deletes, processes data through safety and publishing gates, 
+and synchronises the database.
+"""
 import logging
 import pandas as pd
 
@@ -33,7 +39,6 @@ logger = logging.getLogger(__name__)
 CONFIG = load_safety_config()
 
 VERIFIED_COLUMN = CONFIG["columns"]["verified"]
-
 EASTING_COLUMN = CONFIG["columns"]["eastings"]
 NORTHING_COLUMN = CONFIG["columns"]["northings"]
 
@@ -46,10 +51,10 @@ def make_safe_for_publishing(
     northing_column: str = NORTHING_COLUMN,
     resolution_column: str = "resolution_m",
 ) -> pd.DataFrame:
-    """Runs raw source rows through the full safety pipeline, then maps
-
-    the result onto occurrence_public's real column names. This is the only
-    path inserts/updates should ever take.
+    """
+    Runs raw source records through the full safety pipeline (verification filtering, 
+    species resolution, sensitivity classification, location generalisation, and masking), 
+    then maps the result onto the public database schema.
     """
 
     if df.empty:
@@ -66,18 +71,14 @@ def make_safe_for_publishing(
             ]
         )
 
-    # D5: Removes records that aren't verified + legacy-flagged
-    # RECORDS must be dropped prior to classification + generalisation
+    # Drop unverified or rejected records prior to classification and generalisation
     filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
 
     # Adds species_no to their name
     resolved = resolve_species_numbers(filtered, dictionary_df)
 
-    # Records without a resolved species_no cannot enter occurrence_public
-    # because occurrence_public.species_id is a required foreign key
-    # linked to the species table.
+    # Filter out records with unresolved species because species_id is a mandatory foreign key
     unresolved_count = resolved["species_no"].isna().sum()
-
     if unresolved_count:
         logger.warning(
             "%d records excluded from public load because species could not be resolved.",
@@ -86,7 +87,7 @@ def make_safe_for_publishing(
 
     resolved = resolved.dropna(subset=["species_no"])
 
-    # Classifying if the species are sensitive or not + blur distance
+    # Classify sensitivity and determine blur thresholds
     classified = classify_chunk(resolved)
 
     # Blur the location of the species
@@ -98,24 +99,23 @@ def make_safe_for_publishing(
         resolution_column=resolution_column,
     )
 
-    # Create a locality string with the blurred coordinates
+    # Build coarse locality strings using the snapped/blurred coordinates
     with_locality = add_coarse_locality(
         generalised,
         easting_column="snapped_easting",
         northing_column="snapped_northing",
     )
 
-    # Removes all columns public shouldn't see (sensitive columns)
+    # Remove sensitive internal columns that shouldn't face the public dashboard
     safe_df = prepare_public_output(with_locality)
 
-    # Sets unique_no as the index, selects content_hash column (uses with_locality DF)
+    # Reattach content hashes mapped from unique record IDs
     hash_lookup = with_locality.set_index("unique_no")["content_hash"]
 
     # For every value look up its hash_lookup, stored as content_hash
     safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
 
-    # Map internal ETL column names to occurrence_public schema names.
-    # This creates species_id from species_no.
+    # Map processed internal columns to the exact column names of 'occurrence_public'
     safe_df = map_to_occurrence_public(safe_df)
 
     # Returned safe df to the reconciliation load functions
@@ -130,18 +130,15 @@ def reconcile(
     load_mode: str,
     load_timestamp,
 ) -> dict:
-    """Note: this function no longer writes to the species table.
-
-    species is fully owned by persist_aggregation_outputs(), which truncates +
-    rebuilds it from the complete current dataset every run - a partial
-    upsert_species() call here would just get overwritten by that step immediately
-    afterward.
+    """
+    Executes the two-pass reconciliation pipeline:
+        - Pass 1: Builds source hash maps and diffs against the UI state to find inserts, updates, and deletes.
+        - Pass 2: Streams chunks, filters for modified/new rows, pushes them through the safety pipeline, 
+        stamps metadata, and performs inserts, updates, and database purges.
     """
 
-    # Pass 1
+    # Pass 1: Hash mapping and set differential analysis
 
-    # Streams through the source data to build the unique_no ->
-    # content_hash lookup map.
     source_map = build_source_hash_map(records_df)
 
     # Compares the UI with the new source data
@@ -159,7 +156,7 @@ def reconcile(
     update_ids = changes["updates"]
     delete_ids = changes["deletes"]
 
-    # Pass 2
+    # Pass 2: Chunked streaming, safety pipeline execution, and persistence
     chunk_count = 0
     for cleaned_chunk in iter_source_chunks(records_df):
         chunk_count += 1
@@ -180,7 +177,7 @@ def reconcile(
             hashed_chunk["unique_no"].astype(str).isin(update_ids)
         ]
 
-        # Process inserts immediately
+        # Process and persist new records
         if not insert_chunk.empty:
             safe_insert = make_safe_for_publishing(
                 insert_chunk,
@@ -199,7 +196,7 @@ def reconcile(
                     connection,
                 )
 
-        # Process updates immediately
+        # Process and persist updated records
         if not update_chunk.empty:
             safe_update = make_safe_for_publishing(
                 update_chunk,
@@ -218,7 +215,7 @@ def reconcile(
                     connection,
                 )
 
-    # Deletes are ID-only (no safety gate needed)
+    # Purge deleted records from the UI database (deletions require ID checks only)
     if delete_ids:
         logger.warning(
             "Executing database purge for %d deleted records.",

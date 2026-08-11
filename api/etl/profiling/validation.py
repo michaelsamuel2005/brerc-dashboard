@@ -30,7 +30,10 @@ def validate_unique_no(df: pd.DataFrame) -> None:
 
 
 def validate_species_name(df: pd.DataFrame) -> None:
-    """Profiles scientific name formats, checks for missing entries, and flags potentially invalid strings."""
+    """
+    Profiles scientific name formats, checks for missing entries, 
+    and flags potentially invalid strings.
+    """
     columns = ["scientific_name", "scientific"]
 
     scientific_column = None
@@ -107,7 +110,10 @@ def validate_record_type(df: pd.DataFrame) -> None:
 def calculate_dictionary_match(
     record_df: pd.DataFrame, dictionary_df: pd.DataFrame
 ) -> None:
-    """Calculates match rates and identifies unmatched names between records and the master dictionary."""
+    """
+    Calculates match rates and identifies unmatched names 
+    between records and the master dictionary.
+    """
     record_column = "scientific_name"
     dictionary_column = "scientific"
 

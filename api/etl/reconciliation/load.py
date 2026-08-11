@@ -1,3 +1,8 @@
+"""
+High-performance database persistence module using temporary staging tables 
+and PostgreSQL's fast COPY command for bulk upserts and deletes.
+"""
+
 import csv
 import io
 import logging
@@ -12,9 +17,9 @@ def _copy_dataframe(
     cursor, df: pd.DataFrame, columns: list, temp_table: str, column_defs: str
 ):
     """
-    Bulk-loads a dataframe into a temp table via COPY,
-    converts dataframe into in-memory CSV. Much faster
-    than executemany() at scale (millions of rows).
+    Bulk-loads a dataframe into a temporary table via PostgreSQL's COPY command 
+    by converting the dataframe into an in-memory CSV buffer. Significantly faster 
+    than row-by-row executemany() for large datasets (millions of rows).
     """
     cursor.execute(
         f"""
@@ -28,6 +33,7 @@ def _copy_dataframe(
     # Creates in memory CSV
     buffer = io.StringIO()
     writer = csv.writer(buffer)
+
     # Comverts Dataframe into CSV rows
     writer.writerows(
         df[columns].astype(object)
@@ -39,39 +45,32 @@ def _copy_dataframe(
     # Moves cursor back to the beginning
     buffer.seek(0)
 
-    # Quote every column name for the COPY list. Harmless for ordinary
-    # lowercase columns, but required for mixed-case columns like
-    # "Load" - unquoted, Postgres would fold it to "load" and it
-    # wouldn't match the (quoted) column_defs above.
+    # Quote every column name to safely support mixed-case identifiers (e.g. "Load")
     quoted_columns = ", ".join(f'"{c}"' for c in columns)
 
-    # Copy (bulk loads) all rows into one operation
+    # Bulk load everything into the staging table in one high-speed operation
     with cursor.copy(
         f"COPY {temp_table} ({quoted_columns}) FROM STDIN WITH CSV"
     ) as copy:
         copy.write(buffer.getvalue())
 
 
-# UPSERT: Try to insert record, if it already exists, update it instead
-# As INSERT and UPDATE share identical SQL using PostgreSQL's
-
-
-# Updates the species lookup table:
 def upsert_species(
     species_df: pd.DataFrame,
     connection,
     load_mode: str,
     load_timestamp,
 ) -> None:
-
+    """
+    Upserts unique species summaries into the database 'species' table 
+    using a staging table and ON CONFLICT conflict resolution.
+    """
     if species_df.empty:
         return
 
     # Converts pandas missing value into python None
     # Since psycopgs can't adapt pd.NA as null
-
     species_df = species_df.astype(object).where(pd.notna(species_df), None)
-
     species_df["species_id"] = species_df["species_id"].astype(str).str.strip()
 
     required = {
@@ -90,10 +89,7 @@ def upsert_species(
     if missing:
         raise KeyError(f"species_df missing required columns: {sorted(missing)}")
 
-    # species_id comes from BRERC's SPECIES_NO field.
-    # It is an identifier, not a number.
-    # BRERC species numbers can contain letters (e.g. Axxxxx),
-    # so they must remain as TEXT.
+    # Ensure species_ids are valid text identifiers
     valid_species_id = species_df["species_id"].notna() & (
         species_df["species_id"].astype(str).str.strip() != ""
     )
@@ -112,7 +108,7 @@ def upsert_species(
     if species_df.empty:
         return
 
-    # Stamp the ETL load audit columns, same as occurrence_public writes.
+    # Stamp audit metadata columns
     species_df = add_load_metadata(species_df, load_mode, load_timestamp)
 
     # Defines the column order
@@ -195,8 +191,8 @@ def upsert_species(
     connection.commit()
 
 
-# Updates the actual biological records of species:
 def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
+    """Helper function to bulk-load and upsert public occurrence records into PostgreSQL."""
     if records_df.empty:
         return
 
@@ -293,20 +289,17 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
 
 
 def insert_records(records_df: pd.DataFrame, connection) -> None:
-    # New records identified during reconciliation are passed here.
-    # The UPSERT function inserts them into occurrence_public.
+    """Inserts new occurrence records identified during reconciliation."""
     _upsert_occurrences(records_df, connection)
 
 
 def update_records(records_df: pd.DataFrame, connection) -> None:
-    # Existing records with changed content hashes are passed here.
-    # The UPSERT function updates the existing occurrence_public row.
+    """Updates existing occurrence records whose content hashes have changed."""
     _upsert_occurrences(records_df, connection)
 
 
 def delete_records(record_ids: set, connection) -> None:
-    # For records present in the UI database but missing from the latest
-    # source dataset are removed during reconciliation
+    """Removes obsolete records from the database that no longer appear in the source data."""
     if not record_ids:
         return
 
