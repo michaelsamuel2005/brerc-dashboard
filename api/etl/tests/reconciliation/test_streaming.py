@@ -92,5 +92,5 @@ def test_build_source_hash_map_chains_generators_correctly(
     list(generator_arg) # Exhaust the generator HERE
     
     # NOW we can verify the chunk size parameter was passed down and hashes were added
-    mock_iter_chunks.assert_called_once_with(250)
+    mock_iter_chunks.assert_called_once_with(None, 250)
     assert mock_add_hash.call_count == 2

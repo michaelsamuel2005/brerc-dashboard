@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 from unittest.mock import patch
 
 from etl.job import nightly_job
@@ -26,7 +25,7 @@ def test_nightly_job_end_to_end(
     End-to-end integration test for the nightly ETL job.
 
     Uses a real PostgreSQL database while mocking the external source,
-    species dictionary, and species-resolution lookup.
+    dictionary, and species-resolution lookup.
 
     Verifies that:
         1. the nightly job completes;
@@ -37,23 +36,24 @@ def test_nightly_job_end_to_end(
     """
 
     # ------------------------------------------------------------------
-    # Clean the test database.
+    # Do not clear the shared staging database here.
     #
-    # Use DELETE rather than TRUNCATE because the public tables have
-    # foreign-key relationships. DELETE also avoids the locking behaviour
-    # that previously caused the test to hit the statement timeout.
+    # The B0 integration tests rely on the sample data already present
+    # in brerc_ui. Clearing the database would remove those records and
+    # cause tests that expect the three sample species to fail.
+    #
+    # This test uses unique test IDs and removes only those records again
+    # at the end of the test.
     # ------------------------------------------------------------------
-    with connection.cursor() as cursor:
-        cursor.execute("DELETE FROM occurrence_public;")
-        cursor.execute("DELETE FROM distribution_cell;")
-        cursor.execute("DELETE FROM species;")
-        cursor.execute("DELETE FROM provenance;")
 
-    connection.commit()
-
-    # The production force_full_reload() is not being tested here.
-    # The database has already been prepared above.
     mock_force_reload.return_value = None
+
+    # Use IDs that should not collide with the shared B0 sample data.
+    #
+    # species_id is stored as TEXT in the database, so keep this as a
+    # string rather than an integer.
+    test_record_id = "99999"
+    test_species_id = "99999"
 
     # ------------------------------------------------------------------
     # Mock source records.
@@ -63,8 +63,8 @@ def test_nightly_job_end_to_end(
     # ------------------------------------------------------------------
     sample_records = pd.DataFrame(
         {
-            "unique_no": ["99999"],
-            "species_no": [100],
+            "unique_no": [test_record_id],
+            "species_no": [test_species_id],
             "scientific_name": ["Erithacus rubecula"],
             "common_name": ["Robin"],
             "abundance": ["Common"],
@@ -88,7 +88,7 @@ def test_nightly_job_end_to_end(
     # ------------------------------------------------------------------
     sample_dictionary = pd.DataFrame(
         {
-            "species_no": [100],
+            "species_no": [test_species_id],
             "scientific_name": ["Erithacus rubecula"],
             "scientific": ["Erithacus rubecula"],
             "scientific_key": ["erithacus rubecula"],
@@ -116,7 +116,7 @@ def test_nightly_job_end_to_end(
     resolved_records = sample_records.copy()
     resolved_records["species_unresolved"] = False
     resolved_records["taxanb"] = "TAX001"
-    resolved_records["species_no"] = 100
+    resolved_records["species_no"] = test_species_id
 
     mock_resolve_species.return_value = resolved_records
 
@@ -161,48 +161,85 @@ def test_nightly_job_end_to_end(
             },
         },
     ):
-        result = nightly_job()
+        try:
+            result = nightly_job()
 
-    # ------------------------------------------------------------------
-    # Verify the pipeline completed.
-    # ------------------------------------------------------------------
-    assert result is not None
-    assert "reconciliation" in result
-    assert "aggregation" in result
+            # ------------------------------------------------------------------
+            # Verify the pipeline completed.
+            # ------------------------------------------------------------------
+            assert result is not None
+            assert "reconciliation" in result
+            assert "aggregation" in result
 
-    # ------------------------------------------------------------------
-    # Verify reconciliation detected the source record as an insert.
-    # ------------------------------------------------------------------
-    reconciliation = result["reconciliation"]
+            # ------------------------------------------------------------------
+            # Verify reconciliation detected the source record as an insert.
+            # ------------------------------------------------------------------
+            reconciliation = result["reconciliation"]
 
-    assert "99999" in reconciliation["inserts"]
-    assert reconciliation["updates"] == set()
-    assert reconciliation["deletes"] == set()
+            assert test_record_id in reconciliation["inserts"]
+            assert reconciliation["updates"] == set()
+            assert reconciliation["deletes"] == set()
 
-    # ------------------------------------------------------------------
-    # Verify aggregation produced a species entry.
-    # ------------------------------------------------------------------
-    species_index = result["aggregation"]["species_index"]
+            # ------------------------------------------------------------------
+            # Verify aggregation produced a species entry.
+            # ------------------------------------------------------------------
+            species_index = result["aggregation"]["species_index"]
 
-    assert not species_index.empty
-    assert 100 in species_index["species_id"].tolist()
+            assert not species_index.empty
+            assert test_species_id in (
+                species_index["species_id"].astype(str).tolist()
+            )
 
-    # ------------------------------------------------------------------
-    # Verify the occurrence was actually persisted.
-    # ------------------------------------------------------------------
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT record_id, species_id
-            FROM occurrence_public
-            WHERE record_id = %s
-            """,
-            ("99999",),
-        )
+            # ------------------------------------------------------------------
+            # Verify the occurrence was actually persisted.
+            # ------------------------------------------------------------------
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT record_id, species_id
+                    FROM occurrence_public
+                    WHERE record_id = %s
+                    """,
+                    (test_record_id,),
+                )
 
-        row = cursor.fetchone()
+                row = cursor.fetchone()
 
-    assert row is not None
-    assert str(row["record_id"]) == "99999"
-    assert int(row["species_id"]) == 100
+            assert row is not None
+            assert str(row["record_id"]) == test_record_id
+            assert str(row["species_id"]) == test_species_id
+
+        finally:
+            # ---------------------------------------------------------------
+            # Restore the shared staging database so this integration test
+            # does not affect other tests that rely on the sample data.
+            #
+            # Delete the dependent records first, then the species row.
+            # ---------------------------------------------------------------
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM occurrence_public
+                    WHERE record_id = %s;
+                    """,
+                    (test_record_id,),
+                )
+
+                cursor.execute(
+                    """
+                    DELETE FROM distribution_cell
+                    WHERE species_id = %s;
+                    """,
+                    (test_species_id,),
+                )
+
+                cursor.execute(
+                    """
+                    DELETE FROM species
+                    WHERE species_id = %s;
+                    """,
+                    (test_species_id,),
+                )
+
+            connection.commit()
 
