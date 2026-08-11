@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { axe } from "jest-axe";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -18,10 +19,16 @@ function renderApp(ui: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      {/* The species detail slice now lives at /species/:speciesId (the species index
+          owns "/"), so land directly on the Slow-worm detail route. */}
+      <MemoryRouter initialEntries={["/species/anguis-fragilis"]}>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
-describe("App — P2 slice (integration, against MSW mock)", () => {
+describe("App — species detail slice (integration, against MSW mock)", () => {
   it(
     "renders the scoped species and BOTH the cell-summary and sample tables with no accessibility violations",
     async () => {

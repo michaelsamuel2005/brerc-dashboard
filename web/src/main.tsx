@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { App } from "./app/App";
 import { Providers } from "./app/providers";
 import "./styles/tokens.css";
@@ -17,7 +18,9 @@ void enableMocking().then(() => {
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <Providers>
-        <App />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
       </Providers>
     </React.StrictMode>,
   );

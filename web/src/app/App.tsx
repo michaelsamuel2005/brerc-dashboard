@@ -1,10 +1,13 @@
 import { Suspense, lazy } from "react";
+import { Route, Routes } from "react-router-dom";
 import { SkipLink } from "../components/SkipLink";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Caveat } from "../components/Caveat";
 import { SpeciesPanel } from "../features/species/SpeciesPanel";
 import { CellSummaryTable } from "../features/species/CellSummaryTable";
 import { RecordsTable } from "../features/species/RecordsTable";
+import { SpeciesList } from "../features/species/SpeciesList";
+import { SpeciesDetailPage } from "../features/species/SpeciesDetailPage";
 import { LoadingState } from "../components/states/States";
 
 // The map bundle (maplibre-gl) is heavy, so it is code-split and loaded lazily.
@@ -28,38 +31,19 @@ export function App() {
       </header>
 
       <main id="main">
-        <span className="eyebrow">Distribution</span>
-        <h1 className="page-title">Where wildlife has been recorded</h1>
-        <p className="page-lead">
-          A single-species slice of the atlas — its picture, where it has been recorded, and the same data as
-          accessible tables.
-        </p>
-
-        <Caveat />
-
-        <div className="slice-grid">
-          <ErrorBoundary label="the species information">
-            <SpeciesPanel speciesId={SPECIES_ID} />
-          </ErrorBoundary>
-          <ErrorBoundary label="the map">
-            <Suspense
-              fallback={
-                <div className="map-card" style={{ display: "grid", placeItems: "center" }}>
-                  <LoadingState label="the map" />
-                </div>
-              }
-            >
-              <DistributionMap speciesId={SPECIES_ID} />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-
-        <ErrorBoundary label="the distribution table">
-          <CellSummaryTable speciesId={SPECIES_ID} />
-        </ErrorBoundary>
-        <ErrorBoundary label="the records table">
-          <RecordsTable speciesId={SPECIES_ID} />
-        </ErrorBoundary>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <ErrorBoundary label="the species list">
+                  <SpeciesList />
+                </ErrorBoundary>
+              </>
+            }
+          />
+          <Route path="/species/:speciesId" element={<SpeciesDetailPage />} />
+        </Routes>
       </main>
 
       <footer className="app-footer">
