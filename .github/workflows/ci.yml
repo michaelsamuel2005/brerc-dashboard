@@ -1,11 +1,105 @@
-name: web CI
+# Continuous Integration for the whole BRERC dashboard — backend AND front end.
+#
+# GitHub runs this automatically on every push and pull request. Three jobs run
+# in parallel:
+#
+#   api-tests  — stands up a throwaway PostGIS database, loads the invented
+#                sample rows, and runs the Python test suite (the contract-shape
+#                tests AND the safety-boundary tests: no recorder names, no
+#                precise coordinates, sensitive rows blurred).
+#   verify     — front-end typecheck, lint, guard, unit tests and build.
+#   e2e        — front-end end-to-end + accessibility tests in a real browser.
+#
+# NOTE ON THE PATH FILTER: this workflow deliberately has NO `paths:` filter, so
+# every job runs on every change. The previous front-end-only version filtered on
+# "web/**", which meant a change to the database schema or the API ran no checks
+# at all — that is how a broken db/b6_sample_data.sql sat on main unnoticed. A
+# few extra CI minutes is a fair price for that not happening again.
+#
+# Nothing here touches real BRERC data; it uses the invented sample rows only.
+#
+# You don't run this file yourself — push your branch and watch the "Actions" tab
+# on GitHub. A green tick means everything passed.
+
+name: CI
+
 on:
   push:
-    paths: ["web/**", ".github/workflows/ci.yml"]
   pull_request:
-    paths: ["web/**", ".github/workflows/ci.yml"]
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # BACKEND — API + database safety boundary
+  # ---------------------------------------------------------------------------
+  api-tests:
+    name: API tests (with sample PostGIS database)
+    runs-on: ubuntu-latest
+
+    # Run every step from inside the api/ folder (that's where the app lives).
+    defaults:
+      run:
+        working-directory: api
+
+    # A disposable PostGIS database, created fresh for this run and thrown away
+    # after. Nothing real ever lives here.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: brerc_ui
+        ports:
+          - 5432:5432
+        # Wait until the database is actually ready before the job starts.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # The API and the tests read this. Same shape as your local .env, pointing
+      # at the throwaway database above.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brerc_ui
+      # Explicitly off, so CI can never reach out to iNaturalist/GBIF/Wikipedia.
+      # The B8 proxy tests use a fake HTTP transport and stay offline either way;
+      # this makes that guarantee visible rather than relying on the default.
+      SPECIES_INFO_ENABLED: "false"
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Load the sample databases (B0 + B6)
+        run: |
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "$DATABASE_URL" -f ../db/b0_staging_setup.sql
+          psql "$DATABASE_URL" -f ../db/b6_schema.sql
+          psql "$DATABASE_URL" -f ../db/b6_sample_data.sql
+          psql "$DATABASE_URL" -f ../db/b7_tiles.sql
+
+      - name: Run the tests
+        # Scoped to the API test suite (this backend workstream, B0/B6-B9).
+        # The ETL pipeline (etl/, B1-B5) has its own tests; add them here once
+        # they run standalone.
+        run: python -m pytest tests -q
+
+  # ---------------------------------------------------------------------------
+  # FRONT END — typecheck, lint, unit tests, build
+  # ---------------------------------------------------------------------------
   verify:
+    name: Front-end checks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,7 +117,12 @@ jobs:
       - run: npm run guard
       - run: npm run test:run
       - run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # FRONT END — end-to-end + accessibility (WCAG 2.2 AA is a legal requirement)
+  # ---------------------------------------------------------------------------
   e2e:
+    name: Front-end end-to-end
     runs-on: ubuntu-latest
     defaults:
       run:

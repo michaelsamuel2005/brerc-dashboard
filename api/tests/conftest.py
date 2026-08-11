@@ -50,3 +50,21 @@ needs_b6_schema = pytest.mark.skipif(
     not _relation_exists("public_records"),
     reason="B6 schema not loaded — run db/b6_schema.sql against DATABASE_URL",
 )
+
+
+def _function_exists(signature: str) -> bool:
+    """True if a function with the given signature exists (e.g. 'f(integer)')."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT to_regprocedure(%s) IS NOT NULL AS present;", (signature,))
+                return bool(cur.fetchone()["present"])
+    except Exception:
+        return False
+
+
+# Skip when the B7 tile function (db/b7_tiles.sql) isn't loaded.
+needs_b7_tiles = pytest.mark.skipif(
+    not _function_exists("cells_tile(integer,integer,integer,json)"),
+    reason="B7 tile function not loaded — run db/b7_tiles.sql against DATABASE_URL",
+)
