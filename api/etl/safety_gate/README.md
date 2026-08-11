@@ -1,44 +1,20 @@
-FOR B2:
+The safety rules module serves as the central configuration gateway for the entire safety pipeline. It bridges organization-specific YAML settings (config/safety_rules.yaml) with the safety gate modules, supplying spatial generalisation floors, restricted record types, and cached sensitive species lists.
 
-Classification:
-    Classify records for sensitivity using vectorised operations.
+Key Responsibilities
+- Spatial Generalisation Constants: Exposes core blur rules, including the mandatory 100m minimum safety floor (D0_FLOOR_M), default sensitive blur distances, and custom species-specific resolutions.
 
-    Records are classified as sensitive if they:
-    - belong to a sensitive species,
-    - have a sensitive record type, or
-    - contain an unresolved species.
+- Restricted Record Types (FLAGGED_RECORD_TYPES): Compiles an immutable frozen set of sensitive record types that automatically trigger privacy shielding.
 
-    Fixed sites (e.g. roosts, holts, nests) are currently blurred year-round.
+- Sensitive Species Caching (load_sensitive_species): Reads, cleans, and caches protected species numbers and NBN numbers from disk using @lru_cache(maxsize=1) for high performance across pipeline runs.
 
-    Seasonal exceptions can be added in future if required by the data provider
+- Graceful File Fallbacks: Automatically attempts to load primary sensitive lists, falls back to .example configuration files if missing, or safely returns empty sets to prevent pipeline crashes during local development and testing.
 
-ADD SANITY CHECKS MAYBE
+How It Works
+1. YAML Loading:
+- Upon import, the module loads global configuration parameters via the core loader to establish spatial thresholds and file paths.
 
-Generalisation:
-    Generalise record locations using a configurable spatial resolution.
+2. On-Demand Caching (@lru_cache):
+- When the safety gate requests sensitive species lists, load_sensitive_species() processes the CSV file once, standardises the headers through the cleaning utility, and caches the resulting sets of species IDs and NBN numbers in memory.
 
-    Coordinates are snapped to a resolution grid in PostGIS before being
-    converted to public longitude/latitude values.
-
-    The D0 minimum precision rule is enforced so that no location can be
-    returned more precisely than the configured safety floor.
-
-    Records with missing coordinates are retained for record counts but
-    returned with null spatial outputs.
-
-PUBLIC_OUTPUT:
-    Final safety boundary before data reaches the public API.
-
-    This module:
-    - only exposes approved public columns
-    - removes internal safety classification fields
-    - ensures precise coordinates never leave the pipeline
-    - removes records without safe coordinates
-
-    Expected pipeline order:
-        cleaning
-        -> species matching
-        -> safety classification
-        -> location generalisation
-        -> locality generation
-        -> public output
+3. Fail-Safe Operation:
+- If configuration or CSV files cannot be found on disk, the module logs/falls back safely to prevent hard exceptions, ensuring that test suites and offline runs complete smoothly.

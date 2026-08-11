@@ -1,13 +1,7 @@
-# etl/safety_gate/generalise.py
 """
-    Snaps easting/northing to a resolution grid in PostGIS (BNG ->
-    WGS84), enforcing the D0 100m floor. Records with missing
-    coordinates are kept (for record counts) but returned with null
-    longitude/latitude - downstream public-output code must filter
-    these out before anything reaches a map. Original row order is
-    preserved on return.
-
-    resolution_m comes from classify_chunk()
+Snaps British National Grid (BNG EPSG:27700) coordinates to a resolution grid 
+using PostGIS, transforms them to WGS84 (EPSG:4326) for mapping, and enforces 
+the mandatory D0 100m safety floor.
 """
 
 import csv
@@ -29,7 +23,6 @@ DEFAULT_SENSITIVE_RESOLUTION_M = config["generalisation"][
 ]
 
 
-# Connection allows python to send SQL to PostGIS/PostgreSQL
 def generalise_locations(
     df: pd.DataFrame,
     connection,
@@ -37,10 +30,15 @@ def generalise_locations(
     northing_column: str,
     resolution_column: str,
 ) -> pd.DataFrame:
+    """
+    Generalises and blurs coordinates using PostGIS spatial functions, 
+    separating locatable records from missing coordinate entries and 
+    preserving original row order.
+    """
 
     if connection is None:
         raise ValueError(
-            "A PostGIS database connection is required" "for location generalisation"
+            "A PostGIS database connection is required for location generalisation"
         )
 
     df = df.copy()
@@ -65,10 +63,9 @@ def generalise_locations(
         .clip(lower=D0_FLOOR_M)
     )
 
-    # Checks for any missing coordinates -> Returns T or F
+    # Flag records with missing coordinates (Returns True or False)
     missing_coordinates = df[easting_column].isna() | df[northing_column].isna()
 
-    # Using logging to capture error
     if missing_coordinates.any():
         logger.warning(
             "%s records have missing coordinates and will be "
@@ -77,22 +74,17 @@ def generalise_locations(
             missing_coordinates.sum(),
         )
 
-    # Tag original row order before splitting, so it can be restored
-    # after the two subsets are recombined at the end.
+    # Tag original row order so it can be restored after recombining subsets
     df["_original_row_order"] = range(len(df))
 
-    # Split the chunk: only rows with real coordinates go through
-    # PostGIS. Rows with missing coordinates are kept (for accurate
-    # record counts) but never get a lon/lat.
+    # Split into locatable rows and rows with missing coordinates
     locatable = df.loc[~missing_coordinates].reset_index(drop=True)
     excluded = df.loc[missing_coordinates].reset_index(drop=True)
 
-    # Assign row_id on the locatable subset - this is the key used to
-    # join PostGIS results back, since locatable no longer necessarily
-    # aligns 1:1-by-position with the original df.
+    # Insert a temporary row_id to map PostGIS results back accurately
     locatable.insert(0, "row_id", range(len(locatable)))
 
-    # Creates temporary PostgreSQL table (Adjust later maybe)
+    # Creates temporary PostgreSQL table
     temp_table = "classified_locations"
 
     # Prepare only the data required by PostGIS
@@ -124,7 +116,7 @@ def generalise_locations(
                 """
             )
 
-            # Creates in-memory text buffer
+            # Stream coordinate data into an in-memory CSV buffer for fast COPY loading
             buffer = io.StringIO()
             writer = csv.writer(buffer)
             # Converts DF rows into CSV-like data
@@ -141,7 +133,9 @@ def generalise_locations(
             ) as copy:
                 copy.write(buffer.getvalue())
 
-            # Generalise the whole chunk in PostGIS
+            # Execute PostGIS spatial operations: set SRID (BNG 27700),
+            # snap points to the resolution grid, transform to WGS84 (4326),
+            # and retain snapped BNG coordinates for coarse locality mapping.
             cursor.execute(
                 f"""
                 SELECT
@@ -234,30 +228,26 @@ def generalise_locations(
         ],
     )
 
-    # Join safe coordinates back to the locatable rows by row_id (key),
-    # not by position - locatable and coordinates_df share row_id.
+    # Merge generalised coordinates back to the locatable set using row_id
     locatable = locatable.merge(
         coordinates_df,
         on="row_id",
         how="left",
     ).drop(columns="row_id")
 
-    # Excluded rows get explicit null coordinates so downstream code
-    # can filter on them rather than relying on a column being absent.
+    # Set explicit null coordinates for excluded rows
     excluded["longitude"] = None
     excluded["latitude"] = None
     excluded["snapped_easting"] = None
     excluded["snapped_northing"] = None
 
-    # Recombine - full record count preserved, only the excluded rows
-    # carry null lon/lat. It is the public-output layer's job to make
-    # sure these never reach a public map.
+    # Recombine locatable and excluded records
     df = pd.concat(
         [locatable, excluded],
         ignore_index=True,
     )
 
-    # Restore original row order, then drop the ordering key.
+    # Restore original row order and clean up staging helper columns
     df = (
         df.sort_values("_original_row_order")
         .drop(columns="_original_row_order")

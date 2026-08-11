@@ -1,13 +1,7 @@
 """
-Records are classified as sensitive if they:
-
-- belong to a sensitive species,
-- have a sensitive record type,
-- are explicitly marked as sensitive by the source, or
-- contain an unresolved species.
-
-Fixed sites (e.g. roosts, holts, nests) are currently blurred year-round.
-Seasonal exceptions can be added in future if required by the data provider.
+Classifies occurrence records for sensitivity by evaluating species lists, 
+unresolved entries, record types, and source flags, and assigns appropriate 
+spatial blurring resolutions.
 """
 
 import pandas as pd
@@ -23,7 +17,11 @@ from etl.safety_gate.rules import (
 def classify_chunk(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
-
+    """
+    Evaluates records against multi-factor sensitivity rules, 
+    tracks specific sensitivity reasons per row, and assigns 
+    blur resolution requirements.
+    """
     df = df.copy()
 
     sensitive_species_nos, _ = load_sensitive_species()
@@ -42,9 +40,7 @@ def classify_chunk(
             f"classify_chunk() missing required columns: {sorted(missing)}"
         )
 
-    # ---------------------
     # Setting up the masks:
-    # ---------------------
 
     # Unresolved species: True for records whose species can't be resolved.
     unresolved_mask = df["species_unresolved"]
@@ -55,14 +51,7 @@ def classify_chunk(
     # Sensitive Record Type: True for records whose record type is classified as sensitive.
     flagged_record_type_mask = df["record_type"].isin(FLAGGED_RECORD_TYPES)
 
-    # Source sensitivity flag: True for records explicitly marked as
-    # sensitive by the source/view.
-    #
-    # The supplied CSV does not contain this column, so it is treated
-    # as False when running against the fixture data.
-    #
-    # The production database/view is expected to provide values such
-    # as "Yes", "yes", True, etc., so normalise the values before checking them.
+    # Source sensitivity flag: True for records explicitly marked as sensitive by the source.
     if "sensitive" in df.columns:
         sensitive_source_mask = (
             df["sensitive"]
@@ -86,12 +75,11 @@ def classify_chunk(
         | sensitive_source_mask
     )
 
-    # Two new columns: Sensitive records are marked, and marked needed
-    # location blurring.
+    # Mark general sensitivity and blurring requirement flags
     df["is_sensitive"] = sensitive_mask
     df["blurred"] = sensitive_mask
 
-    # Store all reasons why a record was classified as sensitive.
+    # Initialize tracking lists for why a record was classified as sensitive
     # Start with an empty list for every record.
     df["sensitivity_reason"] = [[] for _ in range(len(df))]
 
@@ -121,10 +109,10 @@ def classify_chunk(
         "not_sensitive"
     )
 
-    # Every record is set with the minimum (D0) resolution by default.
+    # Assign default minimum (D0) spatial resolution to all records
     df["resolution_m"] = D0_FLOOR_M
 
-    # Increase the blur distance for sensitive records.
+    # Increase blur resolution distance for flagged sensitive records
     df.loc[sensitive_mask, "resolution_m"] = DEFAULT_SENSITIVE_RESOLUTION_M
 
     return df
