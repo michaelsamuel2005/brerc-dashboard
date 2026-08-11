@@ -1,14 +1,9 @@
-import { Suspense, lazy } from "react";
+import { lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 import { SkipLink } from "../components/SkipLink";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { Caveat } from "../components/Caveat";
-import { SpeciesPanel } from "../features/species/SpeciesPanel";
-import { CellSummaryTable } from "../features/species/CellSummaryTable";
-import { RecordsTable } from "../features/species/RecordsTable";
 import { SpeciesList } from "../features/species/SpeciesList";
 import { SpeciesDetailPage } from "../features/species/SpeciesDetailPage";
-import { LoadingState } from "../components/states/States";
 
 // The map bundle (maplibre-gl) is heavy, so it is code-split and loaded lazily.
 const DistributionMap = lazy(() => import("../features/map/DistributionMap"));
