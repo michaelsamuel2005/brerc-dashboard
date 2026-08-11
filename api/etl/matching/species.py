@@ -1,41 +1,31 @@
 import pandas as pd
 
-def normalise_species_name(
-    names: pd.Series
-) -> pd.Series:
+
+def normalise_species_name(names: pd.Series) -> pd.Series:
 
     return (
-        names
-        .astype("string")
+        names.astype("string")
         .str.strip()
         .str.lower()
-        .str.replace(
-            r"\s+",
-            " ",
-            regex=True
-        )
+        .str.replace(r"\s+", " ", regex=True)
     )
 
+
 def resolve_species_numbers(
-    records_df: pd.DataFrame,
-    dictionary_df: pd.DataFrame
+    records_df: pd.DataFrame, dictionary_df: pd.DataFrame
 ) -> pd.DataFrame:
 
     records_df = records_df.copy()
     dictionary_df = dictionary_df.copy()
 
     # Create normalised matching key for records
-    records_df["scientific_name_key"] = (
-        normalise_species_name(
-            records_df["scientific_name"]
-        )
+    records_df["scientific_name_key"] = normalise_species_name(
+        records_df["scientific_name"]
     )
 
     # Create normalised matching key for dictionary
-    dictionary_df["scientific_key"] = (
-        normalise_species_name(
-            dictionary_df["scientific"]
-        )
+    dictionary_df["scientific_key"] = normalise_species_name(
+        dictionary_df["scientific"]
     )
 
     key_counts = dictionary_df["scientific_key"].value_counts()
@@ -57,21 +47,16 @@ def resolve_species_numbers(
         # flag, rather than letting drop_duplicates pick row order.
 
     # Create smaller lookup table
-    species_lookup = (
-        dictionary_df[
-            [
-                "scientific",
-                "scientific_key",
-                "species_no",
-                "nbn_number",
-                "common_nam",
-                "taxanb",
-            ]
+    species_lookup = dictionary_df[
+        [
+            "scientific",
+            "scientific_key",
+            "species_no",
+            "nbn_number",
+            "common_nam",
+            "taxanb",
         ]
-        .drop_duplicates(
-            subset="scientific_key"
-        )
-    )
+    ].drop_duplicates(subset="scientific_key")
 
     # Match record species against dictionary
     records_df = records_df.merge(
@@ -79,13 +64,11 @@ def resolve_species_numbers(
         left_on="scientific_name_key",
         right_on="scientific_key",
         how="left",
-        suffixes=("", "_dict")
+        suffixes=("", "_dict"),
     )
 
     # Fail-closed flag
-    records_df["species_unresolved"] = (
-        records_df["species_no"].isna()
-    )
+    records_df["species_unresolved"] = records_df["species_no"].isna()
 
     # Fail-closed flag (extended):
     # Species numbers can appear as:
@@ -106,19 +89,12 @@ def resolve_species_numbers(
         )
     )
 
-    valid_species_no = (
-        species_no_string
-        .str.match(r"^(BRERC)?\d+$")
-    )
+    valid_species_no = species_no_string.str.match(r"^(BRERC)?\d+$")
 
-    non_numeric_species_no = (
-        records_df["species_no"].notna()
-        & ~valid_species_no
-    )
+    non_numeric_species_no = records_df["species_no"].notna() & ~valid_species_no
 
     records_df["species_unresolved"] = (
-        records_df["species_unresolved"]
-        | non_numeric_species_no
+        records_df["species_unresolved"] | non_numeric_species_no
     )
 
     # --- NEW: D4 "measure match coverage on the full data" ---

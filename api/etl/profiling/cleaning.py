@@ -1,4 +1,5 @@
-import pandas as pd 
+import pandas as pd
+
 
 # Cleaning column names:
 def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -6,13 +7,11 @@ def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
     cleaned_df = df.copy()
 
     cleaned_df.columns = (
-        cleaned_df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace(" ", "_", regex=False)
+        cleaned_df.columns.str.strip().str.lower().str.replace(" ", "_", regex=False)
     )
 
     return cleaned_df
+
 
 # Applying cleaning steps
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:

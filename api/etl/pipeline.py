@@ -26,7 +26,7 @@ def run_pipeline(
     ui_map,
     connection,
     load_mode,
-): 
+):
     """
     Runs the complete ETL pipeline.
 
@@ -75,9 +75,7 @@ def run_pipeline(
         # Store species + distribution_cell tables
         # This must happen before occurrence_public because
         # occurrence_public has a foreign key to species.
-        logger.info(
-            "Persisting aggregation outputs and species index to database..."
-        )
+        logger.info("Persisting aggregation outputs and species index to database...")
         persist_aggregation_outputs(
             connection,
             species_index=aggregation_outputs["species_index"],
@@ -101,9 +99,7 @@ def run_pipeline(
         )
 
         duration = time.time() - start_time
-        logger.info(
-            "ETL pipeline completed successfully in %.2f seconds.", duration
-        )
+        logger.info("ETL pipeline completed successfully in %.2f seconds.", duration)
 
         return {
             "reconciliation": reconciliation_summary,
@@ -113,5 +109,6 @@ def run_pipeline(
     except Exception as e:
         logger.exception("ETL pipeline failed during execution: %s", e)
         raise
+
 
 # python -c "from etl.job import nightly_job; nightly_job()"

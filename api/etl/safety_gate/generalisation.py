@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 D0_FLOOR_M = config["generalisation"]["d0_floor_m"]
 
 # Default blur distance for sensitive records when no specific resolution exists
-DEFAULT_SENSITIVE_RESOLUTION_M = config["generalisation"]["default_sensitive_resolution_m"]
+DEFAULT_SENSITIVE_RESOLUTION_M = config["generalisation"][
+    "default_sensitive_resolution_m"
+]
+
 
 # Connection allows python to send SQL to PostGIS/PostgreSQL
 def generalise_locations(
@@ -37,8 +40,7 @@ def generalise_locations(
 
     if connection is None:
         raise ValueError(
-            "A PostGIS database connection is required"
-            "for location generalisation"
+            "A PostGIS database connection is required" "for location generalisation"
         )
 
     df = df.copy()
@@ -52,9 +54,7 @@ def generalise_locations(
     missing_columns = required_columns - set(df.columns)
 
     if missing_columns:
-        raise ValueError(
-            f"Missing required columns: {missing_columns}"
-        )
+        raise ValueError(f"Missing required columns: {missing_columns}")
 
     # Calculating resolution:
     # If no resolution exist, fill with 1000m
@@ -66,10 +66,7 @@ def generalise_locations(
     )
 
     # Checks for any missing coordinates -> Returns T or F
-    missing_coordinates = (
-        df[easting_column].isna()
-        | df[northing_column].isna()
-    )
+    missing_coordinates = df[easting_column].isna() | df[northing_column].isna()
 
     # Using logging to capture error
     if missing_coordinates.any():
@@ -131,9 +128,7 @@ def generalise_locations(
             buffer = io.StringIO()
             writer = csv.writer(buffer)
             # Converts DF rows into CSV-like data
-            writer.writerows(
-                location_data.itertuples(index=False, name=None)
-            )
+            writer.writerows(location_data.itertuples(index=False, name=None))
             # Moves pointer to beginning of the buffer
             buffer.seek(0)
 
@@ -264,8 +259,7 @@ def generalise_locations(
 
     # Restore original row order, then drop the ordering key.
     df = (
-        df
-        .sort_values("_original_row_order")
+        df.sort_values("_original_row_order")
         .drop(columns="_original_row_order")
         .reset_index(drop=True)
     )

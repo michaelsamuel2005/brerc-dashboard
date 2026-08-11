@@ -8,22 +8,25 @@ from etl.profiling.classify import (
 
 # --- classify_sensitive_species tests ---
 
+
 def test_classify_sensitive_species_applies_all_rules():
     # Confirms the function correctly identifies sensitive records
     # based on four distinct rules.
-    df = pd.DataFrame({
-        "species_no": [100, 200, 200, 200, 200],
-        "nbn_number": ["SAFE", "NBN100", "SAFE", "SAFE", "SAFE"],
-        "record_type": ["SAFE", "SAFE", "FLAGGED", "SAFE", "SAFE"],
-        "species_unresolved": [False, False, False, True, False],
-        "scientific_name": [
-            "Species A",
-            "Species B",
-            "Species C",
-            "Species D",
-            "Species E",
-        ],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [100, 200, 200, 200, 200],
+            "nbn_number": ["SAFE", "NBN100", "SAFE", "SAFE", "SAFE"],
+            "record_type": ["SAFE", "SAFE", "FLAGGED", "SAFE", "SAFE"],
+            "species_unresolved": [False, False, False, True, False],
+            "scientific_name": [
+                "Species A",
+                "Species B",
+                "Species C",
+                "Species D",
+                "Species E",
+            ],
+        }
+    )
 
     # Mock the sensitive species loader and record type rules.
     with patch(
@@ -52,13 +55,15 @@ def test_classify_sensitive_species_applies_all_rules():
 def test_classify_sensitive_species_detects_mismatch():
     # Confirms the function correctly identifies and logs
     # when species_no and nbn_number disagree.
-    df = pd.DataFrame({
-        "species_no": [100],
-        "nbn_number": ["SAFE"],
-        "record_type": ["SAFE"],
-        "species_unresolved": [False],
-        "scientific_name": ["Mismatch Bird"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [100],
+            "nbn_number": ["SAFE"],
+            "record_type": ["SAFE"],
+            "species_unresolved": [False],
+            "scientific_name": ["Mismatch Bird"],
+        }
+    )
 
     with patch(
         "etl.profiling.classify.load_sensitive_species",
@@ -88,13 +93,15 @@ def test_classify_sensitive_species_detects_mismatch():
 
 def test_classify_sensitive_species_does_not_modify_original():
     # Confirms the input dataframe is left unchanged.
-    df = pd.DataFrame({
-        "species_no": [200],
-        "nbn_number": ["SAFE"],
-        "record_type": ["SAFE"],
-        "species_unresolved": [False],
-        "scientific_name": ["Safe Bird"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [200],
+            "nbn_number": ["SAFE"],
+            "record_type": ["SAFE"],
+            "species_unresolved": [False],
+            "scientific_name": ["Safe Bird"],
+        }
+    )
 
     with patch(
         "etl.profiling.classify.load_sensitive_species",

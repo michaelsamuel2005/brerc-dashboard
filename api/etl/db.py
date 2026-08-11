@@ -58,6 +58,7 @@ def get_source_connection() -> psycopg.Connection:
 # DESTINATION / UI DATABASE
 # ============================================================
 
+
 def _build_destination_database_url() -> str:
     """
     Assemble the UI database connection string from
@@ -97,6 +98,7 @@ def get_destination_connection() -> psycopg.Connection:
 # DESTINATION TABLE CHECKS
 # ============================================================
 
+
 def check_table_exists(
     connection: psycopg.Connection,
     table_name: str,
@@ -122,9 +124,7 @@ def check_table_has_rows(
     Check whether a destination table contains at least one row.
     """
 
-    query = sql.SQL(
-        "SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;"
-    ).format(
+    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;").format(
         sql.Identifier(table_name)
     )
 

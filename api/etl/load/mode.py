@@ -2,6 +2,7 @@ from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
 
+
 def should_run_initial_load(
     table_exists: bool,
     table_has_rows: bool,
@@ -15,9 +16,7 @@ def should_run_initial_load(
     - destination table exists but is empty
     """
 
-    incremental_enabled = (
-        CONFIG["load"]["incremental_check"]
-    )
+    incremental_enabled = CONFIG["load"]["incremental_check"]
 
     if not incremental_enabled:
         return True

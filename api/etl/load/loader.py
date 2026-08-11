@@ -3,13 +3,7 @@ from pathlib import Path
 import psycopg
 import yaml
 
-DEFAULT_CONFIG_PATH = (
-    Path(__file__)
-    .resolve()
-    .parents[3]
-    / "config"
-    / "safety.yaml"
-)
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "safety.yaml"
 
 
 def load_safety_config(path=None):
@@ -18,9 +12,7 @@ def load_safety_config(path=None):
 
         # Fall back to the example config if the real one isn't present
         if not config_path.exists():
-            example_path = config_path.with_suffix(
-                config_path.suffix + ".example"
-            )
+            example_path = config_path.with_suffix(config_path.suffix + ".example")
 
             if example_path.exists():
                 config_path = example_path
@@ -64,18 +56,11 @@ def incremental_load(df, connection, ui_map, table_name: str):
     placeholders = ", ".join(["%s"] * len(columns))
 
     if update_cols:
-        update_sql = ", ".join(
-            f"{c} = EXCLUDED.{c}"
-            for c in update_cols
-        )
+        update_sql = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
-        conflict_sql = (
-            f"ON CONFLICT ({primary_key}) DO UPDATE SET {update_sql}"
-        )
+        conflict_sql = f"ON CONFLICT ({primary_key}) DO UPDATE SET {update_sql}"
     else:
-        conflict_sql = (
-            f"ON CONFLICT ({primary_key}) DO NOTHING"
-        )
+        conflict_sql = f"ON CONFLICT ({primary_key}) DO NOTHING"
 
     sql = (
         f"INSERT INTO {table_name} ({cols_sql}) VALUES ({placeholders}) "

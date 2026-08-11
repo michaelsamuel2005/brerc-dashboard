@@ -33,7 +33,7 @@ class TopGroup(BaseModel):
 class Summary(BaseModel):
     totalRecords: int
     totalSpecies: int
-    yearRange: list[int]           # [minYear, maxYear]
+    yearRange: list[int]  # [minYear, maxYear]
     recordsByYear: list[YearCount]
     topGroups: list[TopGroup]
     coverageCaveat: str
@@ -72,7 +72,7 @@ class SpeciesDetail(BaseModel):
     recordCount: int
     firstYear: int
     lastYear: int
-    image: SpeciesImage | None      # None when no licensed image (fail-closed)
+    image: SpeciesImage | None  # None when no licensed image (fail-closed)
     description: str | None
 
 
@@ -86,7 +86,7 @@ class CellProperties(BaseModel):
 
 class GeoJSONFeature(BaseModel):
     type: str = "Feature"
-    geometry: dict                  # GeoJSON Polygon (WGS84 / EPSG:4326)
+    geometry: dict  # GeoJSON Polygon (WGS84 / EPSG:4326)
     properties: CellProperties
 
 
@@ -101,9 +101,9 @@ class RecordItem(BaseModel):
     scientificName: str
     commonName: str | None
     year: int
-    gridRef: str                    # precision = precisionMetres (generalised)
+    gridRef: str  # precision = precisionMetres (generalised)
     precisionMetres: int
-    place: str | None               # COARSE locality only — never precise
+    place: str | None  # COARSE locality only — never precise
     verified: bool
 
 
@@ -118,5 +118,5 @@ class RecordList(BaseModel):
 class Provenance(BaseModel):
     sources: list[str]
     caveats: list[str]
-    lastUpdated: str                # ISO date
+    lastUpdated: str  # ISO date
     sensitivityPolicySummary: str

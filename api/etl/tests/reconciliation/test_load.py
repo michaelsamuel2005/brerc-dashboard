@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from unittest.mock import MagicMock, patch
 
-from etl.reconciliation.load import ( # Update with your actual module path if different
+from etl.reconciliation.load import (  # Update with your actual module path if different
     upsert_species,
     insert_records,
     update_records,
@@ -11,6 +11,7 @@ from etl.reconciliation.load import ( # Update with your actual module path if d
 
 
 # --- upsert_species tests ---
+
 
 def test_upsert_species_returns_without_writing_when_dataframe_empty():
     # Confirms an empty species dataframe performs no database work.
@@ -34,21 +35,22 @@ def test_upsert_species_commits_after_successful_write(mock_add_metadata):
     # Expects cursor.copy to be called for staging, cursor.execute for upsert, and the connection to commit, else fails.
     connection = MagicMock()
 
-    df = pd.DataFrame({
-        "species_id": ["1"],
-        "scientific_name": ["Robin"],
-        "common_name": ["Robin"],
-        "species_group": ["Bird"],
-        "record_count": [10],
-        "first_year": [2020],
-        "last_year": [2024],
-        "has_image": [True],
-    })
+    df = pd.DataFrame(
+        {
+            "species_id": ["1"],
+            "scientific_name": ["Robin"],
+            "common_name": ["Robin"],
+            "species_group": ["Bird"],
+            "record_count": [10],
+            "first_year": [2020],
+            "last_year": [2024],
+            "has_image": [True],
+        }
+    )
 
     # Mock the metadata function to attach the required Load columns to the dataframe
     mock_add_metadata.return_value = df.assign(
-        Load="incremental", 
-        Load_date="2026-08-09"
+        Load="incremental", Load_date="2026-08-09"
     )
 
     upsert_species(
@@ -66,6 +68,7 @@ def test_upsert_species_commits_after_successful_write(mock_add_metadata):
 
 
 # --- insert_records tests ---
+
 
 def test_insert_records_returns_without_writing_when_dataframe_empty():
     # Confirms an empty occurrence dataframe performs no database writes.
@@ -86,16 +89,18 @@ def test_insert_records_raises_keyerror_when_required_columns_missing():
     # Expects a KeyError specifying the missing required columns, else fails.
     connection = MagicMock()
 
-    df = pd.DataFrame({
-        "record_id": [1],
-    })
+    df = pd.DataFrame(
+        {
+            "record_id": [1],
+        }
+    )
 
     with pytest.raises(KeyError) as exc_info:
         insert_records(
             df,
             connection,
         )
-    
+
     assert "missing columns required" in str(exc_info.value)
 
 
@@ -104,18 +109,20 @@ def test_insert_records_commits_after_successful_write():
     # Expects the staging COPY and UPSERT execute commands to run, followed by a commit, else fails.
     connection = MagicMock()
 
-    df = pd.DataFrame({
-        "record_id": ["1"],
-        "species_id": ["5"],
-        "record_year": [2024],
-        "grid_ref": ["ST56"],
-        "locality": ["Bristol"],
-        "precision_metres": [1000],
-        "verified": [True],
-        "content_hash": ["abc123"],
-        "Load": ["incremental"],       # Required by _upsert_occurrences
-        "Load_date": ["2026-08-09"],   # Required by _upsert_occurrences
-    })
+    df = pd.DataFrame(
+        {
+            "record_id": ["1"],
+            "species_id": ["5"],
+            "record_year": [2024],
+            "grid_ref": ["ST56"],
+            "locality": ["Bristol"],
+            "precision_metres": [1000],
+            "verified": [True],
+            "content_hash": ["abc123"],
+            "Load": ["incremental"],  # Required by _upsert_occurrences
+            "Load_date": ["2026-08-09"],  # Required by _upsert_occurrences
+        }
+    )
 
     insert_records(
         df,
@@ -131,23 +138,26 @@ def test_insert_records_commits_after_successful_write():
 
 # --- update_records tests ---
 
+
 def test_update_records_commits_after_successful_write():
     # Confirms records with changed content hashes are processed and updated correctly.
     # Expects identical database interaction patterns to insert_records, else fails.
     connection = MagicMock()
 
-    df = pd.DataFrame({
-        "record_id": ["1"],
-        "species_id": ["5"],
-        "record_year": [2024],
-        "grid_ref": ["ST56"],
-        "locality": ["Bristol"],
-        "precision_metres": [1000],
-        "verified": [True],
-        "content_hash": ["updated_hash"],
-        "Load": ["incremental"],       # Required by _upsert_occurrences
-        "Load_date": ["2026-08-09"],   # Required by _upsert_occurrences
-    })
+    df = pd.DataFrame(
+        {
+            "record_id": ["1"],
+            "species_id": ["5"],
+            "record_year": [2024],
+            "grid_ref": ["ST56"],
+            "locality": ["Bristol"],
+            "precision_metres": [1000],
+            "verified": [True],
+            "content_hash": ["updated_hash"],
+            "Load": ["incremental"],  # Required by _upsert_occurrences
+            "Load_date": ["2026-08-09"],  # Required by _upsert_occurrences
+        }
+    )
 
     update_records(
         df,
@@ -162,6 +172,7 @@ def test_update_records_commits_after_successful_write():
 
 
 # --- delete_records tests ---
+
 
 def test_delete_records_returns_without_database_call_when_set_empty():
     # Confirms no SQL is executed when the deletion set is completely empty.

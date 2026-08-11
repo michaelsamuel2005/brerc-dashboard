@@ -1,13 +1,14 @@
 import pandas as pd
 import pytest
 
-from etl.safety_gate.location import ( # Update with your actual module path if different
+from etl.safety_gate.location import (  # Update with your actual module path if different
     os_grid_square,
     add_grid_square,
     add_coarse_locality,
 )
 
 # --- os_grid_square tests ---
+
 
 def test_os_grid_square_matches_known_tower_of_london_reference():
     # Confirms conversion against a known, verifiable reference point.
@@ -60,13 +61,16 @@ def test_os_grid_square_returns_na_for_invalid_coordinates():
 
 # --- add_grid_square tests ---
 
+
 def test_add_grid_square_returns_reference_per_row():
     # Confirms add_grid_square produces one grid ref string per row.
     # Expects a non-null string for a row with valid coordinates, else fails.
-    df = pd.DataFrame({
-        "easting": [529090],
-        "northing": [179645],
-    })
+    df = pd.DataFrame(
+        {
+            "easting": [529090],
+            "northing": [179645],
+        }
+    )
     result = add_grid_square(df, "easting", "northing", square_size_m=10_000)
     assert result.iloc[0] == "TQ27"
 
@@ -75,10 +79,12 @@ def test_add_grid_square_returns_na_for_missing_coordinates():
     # Confirms rows with missing easting/northing get pd.NA rather than
     # crashing or silently producing a wrong reference.
     # Expects pd.NA for the missing row, else fails.
-    df = pd.DataFrame({
-        "easting": [pd.NA],
-        "northing": [179645],
-    })
+    df = pd.DataFrame(
+        {
+            "easting": [pd.NA],
+            "northing": [179645],
+        }
+    )
     result = add_grid_square(df, "easting", "northing", square_size_m=10_000)
     assert pd.isna(result.iloc[0])
 
@@ -87,23 +93,28 @@ def test_add_grid_square_preserves_row_count():
     # Confirms one output value per input row, including a mix of
     # valid and missing coordinates.
     # Expects 2 results returned for 2 input rows, else fails.
-    df = pd.DataFrame({
-        "easting": [529090, pd.NA],
-        "northing": [179645, pd.NA],
-    })
+    df = pd.DataFrame(
+        {
+            "easting": [529090, pd.NA],
+            "northing": [179645, pd.NA],
+        }
+    )
     result = add_grid_square(df, "easting", "northing", square_size_m=10_000)
     assert len(result) == 2
 
 
 # --- add_coarse_locality tests ---
 
+
 def test_add_coarse_locality_returns_grid_reference_only():
     # Confirms coarse locality is created exclusively from the generalised grid reference.
     # Expects 'coarse_locality' to contain only the 1km grid square string, else fails.
-    df = pd.DataFrame({
-        "snapped_easting": [529090],
-        "snapped_northing": [179645],
-    })
+    df = pd.DataFrame(
+        {
+            "snapped_easting": [529090],
+            "snapped_northing": [179645],
+        }
+    )
 
     result = add_coarse_locality(df)
 
@@ -114,11 +125,13 @@ def test_add_coarse_locality_returns_grid_reference_only():
 def test_add_coarse_locality_does_not_modify_original_dataframe():
     # Confirms the input dataframe is left completely unchanged (mutation check).
     # Expects the original dataframe to lack the 'coarse_locality' column, else fails.
-    df = pd.DataFrame({
-        "snapped_easting": [529090],
-        "snapped_northing": [179645],
-    })
-    
+    df = pd.DataFrame(
+        {
+            "snapped_easting": [529090],
+            "snapped_northing": [179645],
+        }
+    )
+
     add_coarse_locality(df)
-    
+
     assert "coarse_locality" not in df.columns

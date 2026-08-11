@@ -53,6 +53,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # not require the file to be present. lru_cache means the file is still
 # only read once per process, just on first use instead of at import.
 
+
 @lru_cache(maxsize=1)
 def get_config() -> dict:
     return load_safety_config()
@@ -114,6 +115,7 @@ def _build_database_url() -> str:
 # Built lazily too, since it transitively depends on safety.yaml via
 # _get_destination(). Cached so the URL is only assembled once.
 
+
 @lru_cache(maxsize=1)
 def get_database_url() -> str:
     return _build_database_url()
@@ -146,9 +148,7 @@ def _validate_public_relation(table_name: str) -> None:
     """
 
     if table_name not in B6_PUBLIC_RELATIONS:
-        raise ValueError(
-            f"Unsupported public relation: {table_name}"
-        )
+        raise ValueError(f"Unsupported public relation: {table_name}")
 
 
 def check_table_exists(connection, table_name: str) -> bool:
@@ -178,9 +178,7 @@ def check_table_has_rows(connection, table_name: str) -> bool:
 
     _validate_public_relation(table_name)
 
-    query = sql.SQL(
-        "SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;"
-    ).format(
+    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;").format(
         sql.Identifier(table_name)
     )
 

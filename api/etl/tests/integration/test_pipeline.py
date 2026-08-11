@@ -2,7 +2,9 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from etl.pipeline import run_pipeline # Update with your actual module path if different
+from etl.pipeline import (
+    run_pipeline,
+)  # Update with your actual module path if different
 
 
 @patch("etl.pipeline.clean_data")
@@ -21,7 +23,7 @@ def test_run_pipeline_executes_all_steps_in_order(
 ):
     # Confirms run_pipeline correctly orchestrates cleaning, resolution, aggregation, provenance, and reconciliation.
     # Expects all subsystems to be called sequentially and a summary dictionary returned, else fails.
-    
+
     source_df = pd.DataFrame({"raw": [1]})
     dictionary_df = pd.DataFrame({"dict": [1]})
     ui_map = {"1": "hash"}
@@ -31,13 +33,18 @@ def test_run_pipeline_executes_all_steps_in_order(
     # Mock return values for intermediate pipeline steps
     mock_clean.side_effect = lambda df: df  # Pass-through clean
     mock_resolve.return_value = pd.DataFrame({"resolved": [1]})
-    
+
     fake_agg_outputs = {
         "species_index": pd.DataFrame({"species": [1]}),
-        "aggregation": pd.DataFrame({"count": [10]})
+        "aggregation": pd.DataFrame({"count": [10]}),
     }
     mock_build_agg.return_value = fake_agg_outputs
-    mock_reconcile.return_value = {"inserts": {"1"}, "updates": set(), "deletes": set(), "unchanged": set()}
+    mock_reconcile.return_value = {
+        "inserts": {"1"},
+        "updates": set(),
+        "deletes": set(),
+        "unchanged": set(),
+    }
 
     result = run_pipeline(source_df, dictionary_df, ui_map, connection, load_mode)
 

@@ -7,7 +7,10 @@ from etl.load.metadata import add_load_metadata
 
 logger = logging.getLogger(__name__)
 
-def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, column_defs: str):
+
+def _copy_dataframe(
+    cursor, df: pd.DataFrame, columns: list, temp_table: str, column_defs: str
+):
     """
     Bulk-loads a dataframe into a temp table via COPY,
     converts dataframe into in-memory CSV. Much faster
@@ -27,8 +30,7 @@ def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, co
     writer = csv.writer(buffer)
     # Comverts Dataframe into CSV rows
     writer.writerows(
-        df[columns]
-        .astype(object)
+        df[columns].astype(object)
         # Comverts pd.NA to NULL
         .where(pd.notna(df[columns]), None)
         # Comverts rows into tuples
@@ -49,8 +51,10 @@ def _copy_dataframe(cursor, df: pd.DataFrame, columns: list, temp_table: str, co
     ) as copy:
         copy.write(buffer.getvalue())
 
+
 # UPSERT: Try to insert record, if it already exists, update it instead
 # As INSERT and UPDATE share identical SQL using PostgreSQL's
+
 
 # Updates the species lookup table:
 def upsert_species(
@@ -61,24 +65,16 @@ def upsert_species(
 ) -> None:
 
     if species_df.empty:
-            return
+        return
 
     # Converts pandas missing value into python None
     # Since psycopgs can't adapt pd.NA as null
 
-    species_df = (
-        species_df
-        .astype(object)
-        .where(pd.notna(species_df), None)
-    )
+    species_df = species_df.astype(object).where(pd.notna(species_df), None)
 
-    species_df["species_id"] = (
-        species_df["species_id"]
-        .astype(str)
-        .str.strip()
-    )
+    species_df["species_id"] = species_df["species_id"].astype(str).str.strip()
 
-    required ={
+    required = {
         "species_id",
         "scientific_name",
         "common_name",
@@ -92,18 +88,14 @@ def upsert_species(
     missing = required - set(species_df.columns)
 
     if missing:
-        raise KeyError(
-            f"species_df missing required columns: {sorted(missing)}"
-        )
+        raise KeyError(f"species_df missing required columns: {sorted(missing)}")
 
     # species_id comes from BRERC's SPECIES_NO field.
     # It is an identifier, not a number.
     # BRERC species numbers can contain letters (e.g. Axxxxx),
     # so they must remain as TEXT.
-    valid_species_id = (
-        species_df["species_id"].notna()
-        &
-        (species_df["species_id"].astype(str).str.strip() != "")
+    valid_species_id = species_df["species_id"].notna() & (
+        species_df["species_id"].astype(str).str.strip() != ""
     )
 
     invalid_count = (~valid_species_id).sum()
@@ -123,7 +115,7 @@ def upsert_species(
     # Stamp the ETL load audit columns, same as occurrence_public writes.
     species_df = add_load_metadata(species_df, load_mode, load_timestamp)
 
-    # Defines the column order 
+    # Defines the column order
     columns = [
         "species_id",
         "scientific_name",
@@ -201,6 +193,7 @@ def upsert_species(
         )
 
     connection.commit()
+
 
 # Updates the actual biological records of species:
 def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:

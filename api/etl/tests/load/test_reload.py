@@ -12,16 +12,13 @@ from etl.load.reload import (
 
 # --- _build_admin_database_url tests ---
 
+
 def test_build_admin_database_url_uses_env_var():
     # Confirms the function prioritizes the DATABASE_URL_ADMIN environment variable.
     # Expects the exact connection string from the environment to be returned, else fails.
     with patch.dict(
         os.environ,
-        {
-            "DATABASE_URL_ADMIN": (
-                "postgresql://test_admin:pass@db:5432/test_db"
-            )
-        },
+        {"DATABASE_URL_ADMIN": ("postgresql://test_admin:pass@db:5432/test_db")},
     ):
         result = _build_admin_database_url()
 
@@ -52,6 +49,7 @@ def test_build_admin_database_url_uses_fallback_config():
 
 # --- get_admin_connection tests ---
 
+
 def test_get_admin_connection_opens_valid_connection():
     # Confirms the function opens a psycopg connection using the correct DDL-capable URL.
     # Expects psycopg.connect to be called exactly once with the built admin URL, else fails.
@@ -68,6 +66,7 @@ def test_get_admin_connection_opens_valid_connection():
 
 
 # --- force_full_reload tests ---
+
 
 def test_force_full_reload_uses_existing_connection():
     # Confirms the function executes schema SQL using a provided database connection without closing it.

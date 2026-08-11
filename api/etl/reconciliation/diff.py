@@ -18,25 +18,26 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
 
     missing = required - set(df.columns)
     if missing:
-        raise KeyError(
-            f"Missing required columns: {sorted(missing)}"
-        )
+        raise KeyError(f"Missing required columns: {sorted(missing)}")
 
     # Creates dictionary, joining two columns, allowing easier access e.g [1:"999"]
     # unique_no is cast to str so it matches the type of record_id coming
     # back from the database (occurrence_public.record_id is VARCHAR) -
     # without this, every record looks like a mismatch (int vs str keys
     # never compare equal), causing false inserts/deletes every run.
-    return dict(zip(
-        df["unique_no"].astype(str),
-        df["content_hash"],
-    ))
+    return dict(
+        zip(
+            df["unique_no"].astype(str),
+            df["content_hash"],
+        )
+    )
 
 
 """
 Builds a complete unique_no -> content_hash mapping by
 combining the hash maps from each DataFrame chunk.
 """
+
 
 # Takes iterable 'chunks" of dataframe combining into one dictionary
 def build_id_hash_map_from_chunks(chunks) -> dict:

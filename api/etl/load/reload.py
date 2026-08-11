@@ -27,6 +27,7 @@ from etl.load.loader import load_safety_config
 # get_config()/_get_admin() does. lru_cache means it's still only read
 # once per process, just on first use rather than at import.
 
+
 @lru_cache(maxsize=1)
 def get_config() -> dict:
     return load_safety_config()
@@ -36,11 +37,7 @@ def _get_admin() -> dict:
     return get_config().get("admin", {})
 
 
-B6_SCHEMA_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "db"
-    / "b6_schema.sql"
-)
+B6_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "b6_schema.sql"
 
 
 def _build_admin_database_url() -> str:

@@ -22,6 +22,7 @@ CONFIG = load_safety_config()
 
 # DONT USE "ñ" that was previously here (invalid)
 
+
 def _normalise_dashes(value: str) -> str:
     """
     Treat en-dash (–) and em-dash (—) the same as a plain hyphen (-).
@@ -31,29 +32,28 @@ def _normalise_dashes(value: str) -> str:
     way before comparison, rather than betting on one or the other.
     """
     return (
-        value
-        .replace("\u2013", "-")  # en-dash –
+        value.replace("\u2013", "-")  # en-dash –
         .replace("\u2014", "-")  # em-dash —
-        .replace("ñ", "-")  
+        .replace("ñ", "-")
     )
+
 
 # Values which are considered verified and safe to include
 ACCEPTED_VERIFIED_VALUES = {
-    _normalise_dashes(value)
-    for value in CONFIG["verified_values"]["accepted"]
+    _normalise_dashes(value) for value in CONFIG["verified_values"]["accepted"]
 }
 
 # Older records which are included but marked as legacy
 LEGACY_VERIFIED_VALUES = {
-    _normalise_dashes(value)
-    for value in CONFIG["verified_values"]["legacy"]
+    _normalise_dashes(value) for value in CONFIG["verified_values"]["legacy"]
 }
 
+
 def filter_accepted_records(
-        df: pd.DataFrame,
-        verified_column: str = "verified",
-    ) -> pd.DataFrame:
-    
+    df: pd.DataFrame,
+    verified_column: str = "verified",
+) -> pd.DataFrame:
+
     # Ensures the verification column exists before filtering
     required_columns = {verified_column}
 
@@ -79,18 +79,14 @@ def filter_accepted_records(
     accepted = verified.isin(ACCEPTED_VERIFIED_VALUES)
 
     # Marking legacy records (NaN, empty, or legacy)
-    legacy = (
-        verified.isna()
-        | verified.eq("")
-        | verified.isin(LEGACY_VERIFIED_VALUES)
-    )
+    legacy = verified.isna() | verified.eq("") | verified.isin(LEGACY_VERIFIED_VALUES)
 
     # Keep both accepted and legacy records
     included = accepted | legacy
 
     # Keep rows were included is true
     filtered_df = df.loc[included].copy()
-    # Get the legacy values, from the filtered_df 
+    # Get the legacy values, from the filtered_df
     filtered_df["is_legacy"] = legacy.loc[filtered_df.index]
 
     return filtered_df

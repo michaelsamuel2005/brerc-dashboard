@@ -57,7 +57,7 @@ def distribution_cells(
 
     features = [
         GeoJSONFeature(
-            geometry=json.loads(row["geojson"]),   # GeoJSON string -> dict
+            geometry=json.loads(row["geojson"]),  # GeoJSON string -> dict
             properties=CellProperties(
                 cellId=row["cell_id"],
                 precisionMetres=row["precision_metres"],

@@ -39,8 +39,7 @@ def rebuild_species_index(
         return
 
     species_index = (
-        species_records
-        .groupby(
+        species_records.groupby(
             [
                 "species_id",
                 "scientific_name",

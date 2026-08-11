@@ -23,7 +23,9 @@ def summary() -> Summary:
             cur.execute("SELECT COUNT(*) AS n FROM public_species;")
             total_species = cur.fetchone()["n"]
 
-            cur.execute("SELECT MIN(record_year) AS lo, MAX(record_year) AS hi FROM public_records;")
+            cur.execute(
+                "SELECT MIN(record_year) AS lo, MAX(record_year) AS hi FROM public_records;"
+            )
             span = cur.fetchone()
             year_range = [span["lo"], span["hi"]] if span["lo"] is not None else [0, 0]
 
@@ -32,14 +34,18 @@ def summary() -> Summary:
                 "SELECT record_year AS yr, COUNT(*) AS cnt "
                 "FROM public_records GROUP BY record_year ORDER BY record_year;"
             )
-            records_by_year = [YearCount(year=r["yr"], count=r["cnt"]) for r in cur.fetchall()]
+            records_by_year = [
+                YearCount(year=r["yr"], count=r["cnt"]) for r in cur.fetchall()
+            ]
 
             # Biggest species groups (birds, mammals, …).
             cur.execute(
                 "SELECT species_group AS grp, SUM(record_count) AS cnt "
                 "FROM public_species GROUP BY species_group ORDER BY cnt DESC, species_group;"
             )
-            top_groups = [TopGroup(group=r["grp"], count=int(r["cnt"])) for r in cur.fetchall()]
+            top_groups = [
+                TopGroup(group=r["grp"], count=int(r["cnt"])) for r in cur.fetchall()
+            ]
 
     return Summary(
         totalRecords=total_records,

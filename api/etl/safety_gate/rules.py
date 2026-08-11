@@ -27,24 +27,20 @@ CONFIG = load_safety_config()
 
 D0_FLOOR_M = CONFIG["generalisation"]["d0_floor_m"]
 
-DEFAULT_SENSITIVE_RESOLUTION_M = (
-    CONFIG["generalisation"]
-    ["default_sensitive_resolution_m"]
-)
+DEFAULT_SENSITIVE_RESOLUTION_M = CONFIG["generalisation"][
+    "default_sensitive_resolution_m"
+]
 
-SPECIES_RESOLUTIONS_M = (
-    CONFIG["species_resolutions"]
-)
+SPECIES_RESOLUTIONS_M = CONFIG["species_resolutions"]
 
 
 # Record type rules
 
-FLAGGED_RECORD_TYPES = frozenset(
-    CONFIG["flagged_record_types"]
-)
+FLAGGED_RECORD_TYPES = frozenset(CONFIG["flagged_record_types"])
 
 
 # Sensitive species
+
 
 @lru_cache(maxsize=1)
 def load_sensitive_species():
@@ -52,16 +48,11 @@ def load_sensitive_species():
     from etl.profiling.cleaning import clean_data
 
     # Get CSV location from YAML
-    sensitive_species_file = Path(
-        CONFIG["files"]["sensitive_species"]["path"]
-    )
+    sensitive_species_file = Path(CONFIG["files"]["sensitive_species"]["path"])
 
     if not sensitive_species_file.is_absolute():
         sensitive_species_file = (
-            Path(__file__)
-            .resolve()
-            .parents[3]
-            / sensitive_species_file
+            Path(__file__).resolve().parents[3] / sensitive_species_file
         )
 
     # Fall back to the example file if the real file is unavailable
@@ -72,7 +63,7 @@ def load_sensitive_species():
         if example_file.exists():
             sensitive_species_file = example_file
         else:
-            # SAFE FALLBACK: If neither file exists, return empty sets 
+            # SAFE FALLBACK: If neither file exists, return empty sets
             # so tests and runs don't crash with a FileNotFoundError.
             return set(), set()
 
@@ -80,15 +71,9 @@ def load_sensitive_species():
     df = pd.read_csv(sensitive_species_file)
     df = clean_data(df)
 
-    sensitive_species_nos = set(
-        df["species_no"]
-        .dropna()
-    )
+    sensitive_species_nos = set(df["species_no"].dropna())
 
-    sensitive_nbn_numbers = set(
-        df["nbn_number"]
-        .dropna()
-    )
+    sensitive_nbn_numbers = set(df["nbn_number"].dropna())
 
     return (
         sensitive_species_nos,

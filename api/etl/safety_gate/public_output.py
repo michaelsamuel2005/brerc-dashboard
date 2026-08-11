@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 # see /api/species, /api/distribution/cells in the contract §10).
 PUBLIC_COLUMNS = [
     "unique_no",
-    "species_no",             # public - shown as speciesId in the contract
+    "species_no",  # public - shown as speciesId in the contract
     "scientific_name",
     "record_type",
     "longitude",
     "latitude",
     "coarse_locality",
-    "effective_resolution_m", # public - shown as precisionMetres in the contract
+    "effective_resolution_m",  # public - shown as precisionMetres in the contract
     "date_of_record",
     "is_legacy",
 ]
@@ -42,11 +42,11 @@ def _validate_public_columns() -> None:
     forbidden = set(PUBLIC_COLUMNS) & FORBIDDEN_COLUMNS
 
     if forbidden:
-        raise ValueError(
-            f"Forbidden columns found in PUBLIC_COLUMNS: {forbidden}"
-        )
+        raise ValueError(f"Forbidden columns found in PUBLIC_COLUMNS: {forbidden}")
+
 
 _validate_public_columns()
+
 
 def add_coarse_locality(
     df: pd.DataFrame,
@@ -64,9 +64,7 @@ def add_coarse_locality(
     missing = required - set(df.columns)
 
     if missing:
-        raise ValueError(
-            f"Missing coordinate columns: {missing}"
-        )
+        raise ValueError(f"Missing coordinate columns: {missing}")
 
     coarse_localities = []
 
@@ -78,9 +76,7 @@ def add_coarse_locality(
     ):
         # If coordinate exist create grid reference, else store missing value
         if pd.notna(easting) and pd.notna(northing):
-            coarse_localities.append(
-                os_grid_square(easting, northing)
-            )
+            coarse_localities.append(os_grid_square(easting, northing))
         else:
             coarse_localities.append(pd.NA)
 
@@ -92,23 +88,14 @@ def add_coarse_locality(
 
 
 def prepare_public_output(df: pd.DataFrame) -> pd.DataFrame:
-    missing = [
-        column
-        for column in PUBLIC_COLUMNS
-        if column not in df.columns
-    ]
+    missing = [column for column in PUBLIC_COLUMNS if column not in df.columns]
 
     if missing:
-        raise KeyError(
-            f"Missing required public columns: {missing}"
-        )
+        raise KeyError(f"Missing required public columns: {missing}")
 
     public_df = df[PUBLIC_COLUMNS].copy()
 
-    no_coordinates = (
-        public_df["longitude"].isna()
-        | public_df["latitude"].isna()
-    )
+    no_coordinates = public_df["longitude"].isna() | public_df["latitude"].isna()
 
     if no_coordinates.any():
         logger.warning(
@@ -118,8 +105,4 @@ def prepare_public_output(df: pd.DataFrame) -> pd.DataFrame:
 
     # Public maps cannot display records without coordinates.
     # These are removed only at the final output boundary.
-    return (
-        public_df
-        .loc[~no_coordinates]
-        .reset_index(drop=True)
-    )
+    return public_df.loc[~no_coordinates].reset_index(drop=True)

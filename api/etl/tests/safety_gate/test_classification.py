@@ -53,20 +53,20 @@ def test_classify_chunk_flags_source_sensitive_record(monkeypatch):
     # is flagged sensitive + blurred.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [999],
-        "record_type": ["sighting"],
-        "species_unresolved": [False],
-        "sensitive": ["Yes"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [999],
+            "record_type": ["sighting"],
+            "species_unresolved": [False],
+            "sensitive": ["Yes"],
+        }
+    )
 
     result = classify_chunk(df)
 
     assert result["is_sensitive"].iloc[0] == True
     assert result["blurred"].iloc[0] == True
-    assert result["sensitivity_reason"].iloc[0] == [
-        "source_sensitive"
-    ]
+    assert result["sensitivity_reason"].iloc[0] == ["source_sensitive"]
 
 
 def test_classify_chunk_source_sensitive_gets_default_resolution(
@@ -76,19 +76,18 @@ def test_classify_chunk_source_sensitive_gets_default_resolution(
     # resolution rather than the D0 100m floor.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [999],
-        "record_type": ["sighting"],
-        "species_unresolved": [False],
-        "sensitive": ["Yes"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [999],
+            "record_type": ["sighting"],
+            "species_unresolved": [False],
+            "sensitive": ["Yes"],
+        }
+    )
 
     result = classify_chunk(df)
 
-    assert (
-        result["resolution_m"].iloc[0]
-        == FAKE_DEFAULT_RESOLUTION_M
-    )
+    assert result["resolution_m"].iloc[0] == FAKE_DEFAULT_RESOLUTION_M
 
 
 def test_classify_chunk_source_not_sensitive_remains_ordinary(
@@ -98,25 +97,21 @@ def test_classify_chunk_source_not_sensitive_remains_ordinary(
     # sensitive when none of the other sensitivity rules apply.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [999],
-        "record_type": ["sighting"],
-        "species_unresolved": [False],
-        "sensitive": ["No"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [999],
+            "record_type": ["sighting"],
+            "species_unresolved": [False],
+            "sensitive": ["No"],
+        }
+    )
 
     result = classify_chunk(df)
 
     assert result["is_sensitive"].iloc[0] == False
     assert result["blurred"].iloc[0] == False
-    assert (
-        result["resolution_m"].iloc[0]
-        == FAKE_D0_FLOOR_M
-    )
-    assert (
-        result["sensitivity_reason"].iloc[0]
-        == "not_sensitive"
-    )
+    assert result["resolution_m"].iloc[0] == FAKE_D0_FLOOR_M
+    assert result["sensitivity_reason"].iloc[0] == "not_sensitive"
 
 
 def test_classify_chunk_source_sensitive_is_case_insensitive(
@@ -126,12 +121,14 @@ def test_classify_chunk_source_sensitive_is_case_insensitive(
     # treated as sensitive.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [999, 999, 999],
-        "record_type": ["sighting", "sighting", "sighting"],
-        "species_unresolved": [False, False, False],
-        "sensitive": ["Yes", "yes", " YES "],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [999, 999, 999],
+            "record_type": ["sighting", "sighting", "sighting"],
+            "species_unresolved": [False, False, False],
+            "sensitive": ["Yes", "yes", " YES "],
+        }
+    )
 
     result = classify_chunk(df)
 
@@ -161,24 +158,20 @@ def test_classify_chunk_handles_missing_sensitive_column(
     # source does not provide a "sensitive" column.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [999],
-        "record_type": ["sighting"],
-        "species_unresolved": [False],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [999],
+            "record_type": ["sighting"],
+            "species_unresolved": [False],
+        }
+    )
 
     result = classify_chunk(df)
 
     assert result["is_sensitive"].iloc[0] == False
     assert result["blurred"].iloc[0] == False
-    assert (
-        result["resolution_m"].iloc[0]
-        == FAKE_D0_FLOOR_M
-    )
-    assert (
-        result["sensitivity_reason"].iloc[0]
-        == "not_sensitive"
-    )
+    assert result["resolution_m"].iloc[0] == FAKE_D0_FLOOR_M
+    assert result["sensitivity_reason"].iloc[0] == "not_sensitive"
 
 
 def test_classify_chunk_records_multiple_reasons_including_source_sensitive(
@@ -188,12 +181,14 @@ def test_classify_chunk_records_multiple_reasons_including_source_sensitive(
     # other sensitivity reasons rather than replacing them.
     _patch_rules(monkeypatch)
 
-    df = pd.DataFrame({
-        "species_no": [101],
-        "record_type": ["roost"],
-        "species_unresolved": [False],
-        "sensitive": ["Yes"],
-    })
+    df = pd.DataFrame(
+        {
+            "species_no": [101],
+            "record_type": ["roost"],
+            "species_unresolved": [False],
+            "sensitive": ["Yes"],
+        }
+    )
 
     result = classify_chunk(df)
 

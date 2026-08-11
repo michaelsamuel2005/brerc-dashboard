@@ -13,10 +13,12 @@ import pytest
 
 from app.db import get_connection
 
+
 @pytest.fixture
 def connection():
     with get_connection() as conn:
         yield conn
+
 
 def database_available() -> bool:
     """True if we can open a connection and run a trivial query, else False."""

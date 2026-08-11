@@ -31,6 +31,6 @@ def provenance() -> Provenance:
     return Provenance(
         sources=row["sources"],
         caveats=row["caveats"],
-        lastUpdated=row["last_updated"].isoformat(),   # date -> "2026-07-25"
+        lastUpdated=row["last_updated"].isoformat(),  # date -> "2026-07-25"
         sensitivityPolicySummary=row["sensitivity_policy_summary"],
     )

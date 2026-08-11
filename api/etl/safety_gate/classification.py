@@ -48,23 +48,13 @@ def classify_chunk(
     # ---------------------
 
     # Unresolved species: True for records whose species can't be resolved.
-    unresolved_mask = (
-        df["species_unresolved"]
-    )
+    unresolved_mask = df["species_unresolved"]
 
     # Sensitive species: True for records belonging to a sensitive species.
-    sensitive_species_mask = (
-        df["species_no"].isin(
-            sensitive_species_nos
-        )
-    )
+    sensitive_species_mask = df["species_no"].isin(sensitive_species_nos)
 
     # Sensitive Record Type: True for records whose record type is classified as sensitive.
-    flagged_record_type_mask = (
-        df["record_type"].isin(
-            FLAGGED_RECORD_TYPES
-        )
-    )
+    flagged_record_type_mask = df["record_type"].isin(FLAGGED_RECORD_TYPES)
 
     # Source sensitivity flag: True for records explicitly marked as
     # sensitive by the source/view.
@@ -107,55 +97,35 @@ def classify_chunk(
     df["sensitivity_reason"] = [[] for _ in range(len(df))]
 
     # Add "unresolved_species" to records where the species could not be resolved.
-    df.loc[
-        unresolved_mask,
-        "sensitivity_reason"
-    ] = df.loc[
-        unresolved_mask,
-        "sensitivity_reason"
+    df.loc[unresolved_mask, "sensitivity_reason"] = df.loc[
+        unresolved_mask, "sensitivity_reason"
     ].apply(lambda x: x + ["unresolved_species"])
 
     # Add "sensitive_record_type" to records with a flagged record type.
-    df.loc[
-        flagged_record_type_mask,
-        "sensitivity_reason"
-    ] = df.loc[
-        flagged_record_type_mask,
-        "sensitivity_reason"
+    df.loc[flagged_record_type_mask, "sensitivity_reason"] = df.loc[
+        flagged_record_type_mask, "sensitivity_reason"
     ].apply(lambda x: x + ["sensitive_record_type"])
 
     # Add "sensitive_species" to records containing a sensitive species.
-    df.loc[
-        sensitive_species_mask,
-        "sensitivity_reason"
-    ] = df.loc[
-        sensitive_species_mask,
-        "sensitivity_reason"
+    df.loc[sensitive_species_mask, "sensitivity_reason"] = df.loc[
+        sensitive_species_mask, "sensitivity_reason"
     ].apply(lambda x: x + ["sensitive_species"])
 
     # Add "source_sensitive" to records explicitly marked as sensitive
     # by the source/view.
-    df.loc[
-        sensitive_source_mask,
-        "sensitivity_reason"
-    ] = df.loc[
-        sensitive_source_mask,
-        "sensitivity_reason"
+    df.loc[sensitive_source_mask, "sensitivity_reason"] = df.loc[
+        sensitive_source_mask, "sensitivity_reason"
     ].apply(lambda x: x + ["source_sensitive"])
 
     # Convert empty lists into "not_sensitive" for records that triggered no rules.
-    df.loc[
-        df["sensitivity_reason"].apply(len) == 0,
-        "sensitivity_reason"
-    ] = "not_sensitive"
+    df.loc[df["sensitivity_reason"].apply(len) == 0, "sensitivity_reason"] = (
+        "not_sensitive"
+    )
 
     # Every record is set with the minimum (D0) resolution by default.
     df["resolution_m"] = D0_FLOOR_M
 
     # Increase the blur distance for sensitive records.
-    df.loc[
-        sensitive_mask,
-        "resolution_m"
-    ] = DEFAULT_SENSITIVE_RESOLUTION_M
+    df.loc[sensitive_mask, "resolution_m"] = DEFAULT_SENSITIVE_RESOLUTION_M
 
     return df

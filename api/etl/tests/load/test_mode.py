@@ -1,11 +1,12 @@
 from unittest.mock import patch
 import pytest
 
-from etl.load.mode import ( # Update with your actual module path if different
+from etl.load.mode import (  # Update with your actual module path if different
     should_run_initial_load,
 )
 
 # --- should_run_initial_load tests ---
+
 
 def test_initial_load_when_incremental_disabled():
     # Confirms config can force a full initial load.

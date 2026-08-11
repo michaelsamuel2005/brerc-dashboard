@@ -43,8 +43,7 @@ def aggregate_counts(
 
     if missing_columns:
         raise KeyError(
-            f"Missing columns required for aggregation: "
-            f"{sorted(missing_columns)}"
+            f"Missing columns required for aggregation: " f"{sorted(missing_columns)}"
         )
 
     df = filtered_df.copy()
@@ -73,35 +72,28 @@ def aggregate_counts(
 
     # Remove records that could not be converted into a
     # valid public grid reference.
-    df = df.dropna(
-        subset=["grid_cell"]
-    )
+    df = df.dropna(subset=["grid_cell"])
 
     # Store the south-west corner of each grid cell.
-    df["cell_sw_easting"] = (
-        df[easting_column] // cell_size_m
-    ) * cell_size_m
+    df["cell_sw_easting"] = (df[easting_column] // cell_size_m) * cell_size_m
 
-    df["cell_sw_northing"] = (
-        df[northing_column] // cell_size_m
-    ) * cell_size_m
+    df["cell_sw_northing"] = (df[northing_column] // cell_size_m) * cell_size_m
 
     # Extract the year from the observation date.
-    df["year"] = (
-        pd.to_datetime(
-            df[date_column],
-            dayfirst=True,
-            errors="coerce",
-        )
-        .dt.year
-    )
+    df["year"] = pd.to_datetime(
+        df[date_column],
+        dayfirst=True,
+        errors="coerce",
+    ).dt.year
 
-    df = df.dropna(
-        subset=["year"]
-    )
+    df = df.dropna(subset=["year"])
 
     # Handle both boolean inputs (from unit tests) and string NBN status terms (from CSVs)
-    sample_val = df[verified_column].dropna().iloc[0] if not df[verified_column].dropna().empty else None
+    sample_val = (
+        df[verified_column].dropna().iloc[0]
+        if not df[verified_column].dropna().empty
+        else None
+    )
     if pd.api.types.is_bool_dtype(df[verified_column]) or isinstance(sample_val, bool):
         df["is_verified"] = df[verified_column].fillna(False).astype(bool)
     else:
@@ -115,8 +107,7 @@ def aggregate_counts(
 
     # Count records by species, grid cell, and year
     aggregated = (
-        df
-        .groupby(
+        df.groupby(
             [
                 "species_no",
                 "grid_cell",
@@ -161,9 +152,7 @@ def build_public_aggregation(
         verified_column=verified_column,
     )
 
-    species_index = build_species_index(
-        filtered_records
-    )
+    species_index = build_species_index(filtered_records)
 
     aggregated = aggregate_counts(
         filtered_records,
@@ -191,9 +180,7 @@ def suppress_low_counts(
 ) -> pd.DataFrame:
 
     if "record_count" not in aggregated_df.columns:
-        raise KeyError(
-            "Aggregation dataframe must contain record_count column"
-        )
+        raise KeyError("Aggregation dataframe must contain record_count column")
 
     if threshold is None:
         raise ValueError(
@@ -203,8 +190,6 @@ def suppress_low_counts(
 
     df = aggregated_df.copy()
 
-    visible_cells = (
-        df["record_count"] >= threshold
-    )
+    visible_cells = df["record_count"] >= threshold
 
     return df[visible_cells].copy()

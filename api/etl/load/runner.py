@@ -31,32 +31,24 @@ def _get_destination_table_status(
 
         result = cur.fetchone()
 
-        table_exists = (
-            result[0]
-            if result
-            else False
-        )
+        table_exists = result[0] if result else False
 
         table_has_rows = False
 
         if table_exists:
             cur.execute(
-                f'''
+                f"""
                 SELECT EXISTS (
                     SELECT 1
                     FROM "public"."{table_name}"
                     LIMIT 1
                 )
-                '''
+                """
             )
 
             result = cur.fetchone()
 
-            table_has_rows = (
-                result[0]
-                if result
-                else False
-            )
+            table_has_rows = result[0] if result else False
 
     return table_exists, table_has_rows
 
@@ -76,11 +68,9 @@ def run_load(
         "occurrence_public",
     )
 
-    table_exists, table_has_rows = (
-        _get_destination_table_status(
-            connection,
-            table_name,
-        )
+    table_exists, table_has_rows = _get_destination_table_status(
+        connection,
+        table_name,
     )
 
     if should_run_initial_load(

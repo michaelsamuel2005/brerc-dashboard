@@ -1,8 +1,9 @@
-# pytest etl/tests/profiling/test_cleaning.py -v 
+# pytest etl/tests/profiling/test_cleaning.py -v
 # (remove -v to see if whole test pass)
 
 import pandas as pd
 from etl.profiling.cleaning import clean_data
+
 
 def test_clean_data_lowercases_column_names():
     # Builds fake DF - Column with mixed-case name

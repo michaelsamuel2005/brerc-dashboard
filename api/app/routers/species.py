@@ -85,6 +85,6 @@ def species_detail(species_id: int) -> SpeciesDetail:
         recordCount=row["record_count"],
         firstYear=row["first_year"],
         lastYear=row["last_year"],
-        image=None,        # fail closed — real licensed image is a later B8 sub-task
-        description=None,   # cached description is a later B8 sub-task
+        image=None,  # fail closed — real licensed image is a later B8 sub-task
+        description=None,  # cached description is a later B8 sub-task
     )

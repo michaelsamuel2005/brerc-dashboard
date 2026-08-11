@@ -1,4 +1,3 @@
-
 """
 UNDER THIS FILE CONTAINS ALL THE VALIDATION FUNCTIONS CURRENTLY IN USE:
 
@@ -46,7 +45,9 @@ are any record types missing
     - from df, select recordtype values (column selected) for rows where sensitive = yes
 
 """
+
 import pandas as pd
+
 
 def validate_unique_no(df: pd.DataFrame) -> None:
 
@@ -69,14 +70,12 @@ def validate_unique_no(df: pd.DataFrame) -> None:
     print(f"Duplicate values: {duplicate_count}")
     print(f"Missing values: {missing_count}")
 
+
 def validate_species_name(df: pd.DataFrame) -> None:
 
-    columns = [
-        "scientific_name", 
-        'scientific'
-    ]
+    columns = ["scientific_name", "scientific"]
 
-    scientific_column = None 
+    scientific_column = None
 
     for column in columns:
         if column in df.columns:
@@ -87,46 +86,30 @@ def validate_species_name(df: pd.DataFrame) -> None:
         print("No scientific name column exists")
         return
 
-    missing_count = (
-        df[scientific_column]
-        .isna()
-        .sum()
-    )
+    missing_count = df[scientific_column].isna().sum()
 
     print(f"Missing species names: {missing_count}")
 
     # Basic scientific-name format (REGEX - Genus species)
     pattern = r"^[A-Z][a-z-]+ [a-z-]+$"
 
-    names = (
-        df[scientific_column]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+    names = df[scientific_column].fillna("").astype(str).str.strip()
 
     scientific_pattern = names.str.match(pattern)
     invalid_names = df[~scientific_pattern]
 
     print(f"Potentially invalid names: {len(invalid_names)}")
-    
+
     print("\nPotentially invalid values:")
-    
-    print(
-        invalid_names[
-            scientific_column
-        ].unique()
-    )
+
+    print(invalid_names[scientific_column].unique())
 
     print("\nLooks like scientific names:", scientific_pattern.sum())
-    
-    print(
-        "Percentage:",
-        round(scientific_pattern.mean() * 100, 2),
-        "%"
-    )
-    
-def validate_avon_flag (df: pd.DataFrame) -> None:
+
+    print("Percentage:", round(scientific_pattern.mean() * 100, 2), "%")
+
+
+def validate_avon_flag(df: pd.DataFrame) -> None:
 
     if "outofavon" not in df.columns:
         print("outofavon column does not exist")
@@ -135,7 +118,7 @@ def validate_avon_flag (df: pd.DataFrame) -> None:
     out_of_avon = df["outofavon"]
 
     print("Unique values:", out_of_avon.unique())
-    
+
     print("\nValue counts:")
     print(out_of_avon.value_counts(dropna=False))
 
@@ -143,9 +126,7 @@ def validate_avon_flag (df: pd.DataFrame) -> None:
 
     # Find rows where outofavon is not "yes" or "no"
     # In dataframe get column check if value is in allowed, keep all that aren't
-    invalid_values = df[
-        ~out_of_avon.isin(allowed_values)
-    ]
+    invalid_values = df[~out_of_avon.isin(allowed_values)]
 
     print(f"\nInvalid values: {len(invalid_values)}")
 
@@ -154,7 +135,8 @@ def validate_avon_flag (df: pd.DataFrame) -> None:
     print(f"Valid values: {valid_count}")
     print(f"Total rows: {len(df)}")
 
-def validate_record_type (df: pd.DataFrame) -> None:
+
+def validate_record_type(df: pd.DataFrame) -> None:
 
     if "record_type" not in df.columns:
         print("record_type column does not exist")
@@ -171,10 +153,10 @@ def validate_record_type (df: pd.DataFrame) -> None:
     print("\nMissing values:")
     print(record_type.isna().sum())
 
-def calculate_dictionary_match (
-        record_df: pd.DataFrame,
-        dictionary_df: pd.DataFrame
-    ) -> None:
+
+def calculate_dictionary_match(
+    record_df: pd.DataFrame, dictionary_df: pd.DataFrame
+) -> None:
 
     record_column = "scientific_name"
     dictionary_column = "scientific"
@@ -183,19 +165,9 @@ def calculate_dictionary_match (
     dictionary_species = dictionary_df[dictionary_column]
 
     # Get distinct names from records + dictionary
-    record_names = set(
-        record_species
-        .dropna()
-        .str.strip()
-        .unique()
-    )
+    record_names = set(record_species.dropna().str.strip().unique())
 
-    dictionary_names = set(
-        dictionary_species
-        .dropna()
-        .str.strip()
-        .unique()
-    )
+    dictionary_names = set(dictionary_species.dropna().str.strip().unique())
 
     # Find matches
     matched_names = record_names.intersection(dictionary_names)
@@ -204,11 +176,7 @@ def calculate_dictionary_match (
     unmatched_names = record_names - dictionary_names
 
     # Calculate match rate
-    match_rate = (
-        len(matched_names)
-        / len(record_names)
-        * 100
-    )
+    match_rate = len(matched_names) / len(record_names) * 100
 
     print(f"Distinct record names: {len(record_names)}")
     print(f"Matched names: {len(matched_names)}")
@@ -218,24 +186,21 @@ def calculate_dictionary_match (
     print("\nSample unmatched names:")
     print(list(unmatched_names)[:20])
 
+
 def get_sensitive_record_types(df: pd.DataFrame) -> None:
-    
-    # Note for dropdown menu -> record type is recordtype 
+
+    # Note for dropdown menu -> record type is recordtype
     if "recordtype" not in df.columns:
         print("recordtype column does not exist")
         return
 
     sensitive_record_types = (
-        df.loc[
-            df["sensitive"] == "yes", 
-            "recordtype"
-        ]
-        .dropna()
-        .unique()
+        df.loc[df["sensitive"] == "yes", "recordtype"].dropna().unique()
     )
 
     print(sensitive_record_types)
     print(f"Distinct record names: {len(sensitive_record_types)}")
+
 
 def get_verified_types(df: pd.DataFrame) -> None:
 
@@ -253,5 +218,3 @@ def get_verified_types(df: pd.DataFrame) -> None:
 
     print("\nMissing values:")
     print(verified_type.isna().sum())
-
-

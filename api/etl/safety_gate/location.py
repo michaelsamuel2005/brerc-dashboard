@@ -19,6 +19,7 @@ _DIGITS_BY_SQUARE_SIZE_M = {
     100: 3,
 }
 
+
 def os_grid_square(
     easting: float,
     northing: float,
@@ -44,17 +45,11 @@ def os_grid_square(
 
     digits = _DIGITS_BY_SQUARE_SIZE_M[square_size_m]
 
-    full_ref = str(
-        OSGridReference(easting, northing)
-    )
+    full_ref = str(OSGridReference(easting, northing))
 
     letters, easting_str, northing_str = full_ref.split(" ")
 
-    return (
-        f"{letters}"
-        f"{easting_str[:digits]}"
-        f"{northing_str[:digits]}"
-    )
+    return f"{letters}" f"{easting_str[:digits]}" f"{northing_str[:digits]}"
 
 
 def add_grid_square(
@@ -67,6 +62,7 @@ def add_grid_square(
     Returns a Series of grid reference strings, one per row.
     pd.NA for rows with missing/invalid coordinates.
     """
+
     def _row_ref(row):
         easting = row[easting_column]
         northing = row[northing_column]

@@ -14,32 +14,18 @@ def test_load_sensitive_species_parses_csv_correctly(monkeypatch):
 
     # Safely override CONFIG using monkeypatch
     fake_config = {
-        "files": {
-            "sensitive_species": {
-                "path": "/absolute/path/to/sensitive.csv"
-            }
-        }
+        "files": {"sensitive_species": {"path": "/absolute/path/to/sensitive.csv"}}
     }
     monkeypatch.setattr(rules, "CONFIG", fake_config)
 
-    mock_df = pd.DataFrame({
-        "species_no": [101, 102, None],
-        "nbn_number": ["NBN1", None, "NBN3"]
-    })
+    mock_df = pd.DataFrame(
+        {"species_no": [101, 102, None], "nbn_number": ["NBN1", None, "NBN3"]}
+    )
 
     # Patch pandas.read_csv, clean_data, and file existence checks
-    with patch(
-        "pandas.read_csv",
-        return_value=mock_df
-    ) as mock_read_csv, \
-         patch(
-             "etl.profiling.cleaning.clean_data",
-             return_value=mock_df
-         ) as mock_clean_data, \
-         patch(
-             "pathlib.Path.exists",
-             return_value=True
-         ):
+    with patch("pandas.read_csv", return_value=mock_df) as mock_read_csv, patch(
+        "etl.profiling.cleaning.clean_data", return_value=mock_df
+    ) as mock_clean_data, patch("pathlib.Path.exists", return_value=True):
 
         species_nos, nbn_numbers = load_sensitive_species()
 
@@ -51,4 +37,3 @@ def test_load_sensitive_species_parses_csv_correctly(monkeypatch):
 
     assert species_nos == {101, 102}
     assert nbn_numbers == {"NBN1", "NBN3"}
-

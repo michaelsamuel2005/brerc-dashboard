@@ -11,40 +11,56 @@ from etl.profiling.validation import (
 
 # --- Mock data, defined once, reused by tests below ---
 
-UNIQUE_NO_SAMPLE = pd.DataFrame({
-    "unique_no": [1, 1, 2, None]  # 1 duplicate, 1 missing, 2 unique
-})
+UNIQUE_NO_SAMPLE = pd.DataFrame(
+    {"unique_no": [1, 1, 2, None]}  # 1 duplicate, 1 missing, 2 unique
+)
 
-SPECIES_NAME_SAMPLE = pd.DataFrame({
-    "scientific_name": ["Vulpes vulpes", "notvalidname", None]  # 1 valid, 1 invalid, 1 missing
-})
+SPECIES_NAME_SAMPLE = pd.DataFrame(
+    {
+        "scientific_name": [
+            "Vulpes vulpes",
+            "notvalidname",
+            None,
+        ]  # 1 valid, 1 invalid, 1 missing
+    }
+)
 
-AVON_FLAG_SAMPLE = pd.DataFrame({
-    "outofavon": ["Yes", "No", "Maybe", None]  # 2 valid, 1 invalid, 1 missing
-})
+AVON_FLAG_SAMPLE = pd.DataFrame(
+    {"outofavon": ["Yes", "No", "Maybe", None]}  # 2 valid, 1 invalid, 1 missing
+)
 
-DICTIONARY_MATCH_RECORDS = pd.DataFrame({
-    "scientific_name": ["Vulpes vulpes", "Meles meles", "Unknown sp"]
-})
-DICTIONARY_MATCH_DICTIONARY = pd.DataFrame({
-    "scientific": ["Vulpes vulpes", "Meles meles"]  # 2 of 3 records match
-})
+DICTIONARY_MATCH_RECORDS = pd.DataFrame(
+    {"scientific_name": ["Vulpes vulpes", "Meles meles", "Unknown sp"]}
+)
+DICTIONARY_MATCH_DICTIONARY = pd.DataFrame(
+    {"scientific": ["Vulpes vulpes", "Meles meles"]}  # 2 of 3 records match
+)
 
-SENSITIVE_RECORD_TYPE_SAMPLE = pd.DataFrame({
-    "recordtype": ["roost", "sighting", "roost"],
-    "sensitive": ["yes", "no", "yes"],  # only "roost" is sensitive
-})
+SENSITIVE_RECORD_TYPE_SAMPLE = pd.DataFrame(
+    {
+        "recordtype": ["roost", "sighting", "roost"],
+        "sensitive": ["yes", "no", "yes"],  # only "roost" is sensitive
+    }
+)
 
-RECORD_TYPE_SAMPLE = pd.DataFrame({
-    "record_type": ["sighting", "roost", "sighting", None]  # 2 distinct values, 1 missing
-})
+RECORD_TYPE_SAMPLE = pd.DataFrame(
+    {
+        "record_type": [
+            "sighting",
+            "roost",
+            "sighting",
+            None,
+        ]  # 2 distinct values, 1 missing
+    }
+)
 
-VERIFIED_TYPE_SAMPLE = pd.DataFrame({
-    "verified": ["Accepted", "Accepted", None]  # 1 distinct value, 1 missing
-})
+VERIFIED_TYPE_SAMPLE = pd.DataFrame(
+    {"verified": ["Accepted", "Accepted", None]}  # 1 distinct value, 1 missing
+)
 
 
 # --- Tests ---
+
 
 def test_validate_unique_no_reports_missing_column(capsys):
     # Confirms validate_unique_no handles a dataframe with no unique_no column.

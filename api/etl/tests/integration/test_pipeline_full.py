@@ -186,9 +186,7 @@ def test_nightly_job_end_to_end(
             species_index = result["aggregation"]["species_index"]
 
             assert not species_index.empty
-            assert test_species_id in (
-                species_index["species_id"].astype(str).tolist()
-            )
+            assert test_species_id in (species_index["species_id"].astype(str).tolist())
 
             # ------------------------------------------------------------------
             # Verify the occurrence was actually persisted.
@@ -242,4 +240,3 @@ def test_nightly_job_end_to_end(
                 )
 
             connection.commit()
-

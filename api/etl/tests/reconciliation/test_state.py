@@ -1,10 +1,11 @@
 from unittest.mock import MagicMock
 
-from etl.reconciliation.state import ( # Update with your actual module path if different
+from etl.reconciliation.state import (  # Update with your actual module path if different
     get_ui_map,
 )
 
 # --- get_ui_map tests ---
+
 
 def test_get_ui_map_returns_id_hash_dictionary():
     # Confirms database rows are converted into a record_id to content_hash dictionary.
