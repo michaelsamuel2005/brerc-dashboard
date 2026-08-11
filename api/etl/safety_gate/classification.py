@@ -16,7 +16,6 @@ from etl.safety_gate.rules import (
     DEFAULT_SENSITIVE_RESOLUTION_M,
     FLAGGED_RECORD_TYPES,
     load_sensitive_species,
-    SPECIES_RESOLUTIONS_M,
     D0_FLOOR_M,
 )
 

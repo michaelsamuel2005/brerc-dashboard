@@ -1,3 +1,5 @@
+"""Aggregates occurrence records into public spatial and temporal grids with privacy suppression."""
+
 import pandas as pd
 
 from etl.safety_gate.location import os_grid_square
@@ -13,11 +15,9 @@ CONFIG = load_safety_config()
 
 # Suppresses low-frequency observations to prevent revealing
 # exact locations where only a small number of records exist.
-# Counts below this threshold are removed from the public layer.
 SUPPRESSION_THRESHOLD = CONFIG["aggregation"]["suppression_threshold"]
 
 
-# Converts records into species x grid cell x year counts
 def aggregate_counts(
     filtered_df: pd.DataFrame,
     verified_column: str,
@@ -26,7 +26,7 @@ def aggregate_counts(
     date_column: str,
     cell_size_m=None,
 ) -> pd.DataFrame:
-
+    """Converts accepted records into species x grid cell x year aggregated counts."""
     # Takes the grid size from the YAML
     if cell_size_m is None:
         cell_size_m = CONFIG["aggregation"]["cell_size_m"]
@@ -48,8 +48,7 @@ def aggregate_counts(
 
     df = filtered_df.copy()
 
-    # Removes records without coordinates, these cannot be converted
-    # into grid cells.
+    # Removes records without coordinates, can't be converted to cells
     df = df.dropna(
         subset=[
             easting_column,
@@ -57,7 +56,7 @@ def aggregate_counts(
         ]
     )
 
-    # Convert each coordinate pair into its public grid square.
+    # Converts coordinate pairs into public grid square
     df["grid_cell"] = [
         os_grid_square(
             easting,
@@ -71,15 +70,14 @@ def aggregate_counts(
     ]
 
     # Remove records that could not be converted into a
-    # valid public grid reference.
+    # valid public grid reference
     df = df.dropna(subset=["grid_cell"])
 
-    # Store the south-west corner of each grid cell.
+    # Store the south-west corner of each grid cell
     df["cell_sw_easting"] = (df[easting_column] // cell_size_m) * cell_size_m
-
     df["cell_sw_northing"] = (df[northing_column] // cell_size_m) * cell_size_m
 
-    # Extract the year from the observation date.
+    # Extract observation year
     df["year"] = pd.to_datetime(
         df[date_column],
         dayfirst=True,
@@ -88,7 +86,7 @@ def aggregate_counts(
 
     df = df.dropna(subset=["year"])
 
-    # Handle both boolean inputs (from unit tests) and string NBN status terms (from CSVs)
+    # Determine verification status
     sample_val = (
         df[verified_column].dropna().iloc[0]
         if not df[verified_column].dropna().empty
@@ -105,7 +103,7 @@ def aggregate_counts(
         )
         df["is_verified"] = normalized_verified.isin(ACCEPTED_VERIFIED_VALUES)
 
-    # Count records by species, grid cell, and year
+    # Group and aggregate counts by species, cell, and year
     aggregated = (
         df.groupby(
             [
@@ -131,6 +129,24 @@ def aggregate_counts(
 
     return aggregated
 
+def suppress_low_counts(
+    aggregated_df: pd.DataFrame,
+    threshold: int = SUPPRESSION_THRESHOLD,
+) -> pd.DataFrame:
+    """Removes grid cell counts below the suppression threshold for privacy protection."""
+    if "record_count" not in aggregated_df.columns:
+        raise KeyError("Aggregation dataframe must contain record_count column")
+
+    if threshold is None:
+        raise ValueError(
+            "SUPPRESSION_THRESHOLD is not set - confirm BRERC's "
+            "number before running this for real."
+        )
+
+    df = aggregated_df.copy()
+    visible_cells = df["record_count"] >= threshold
+    return df[visible_cells].copy()
+
 
 def build_public_aggregation(
     df: pd.DataFrame,
@@ -140,10 +156,10 @@ def build_public_aggregation(
     date_column: str,
     cell_size_m=None,
 ) -> dict:
+    """ 
+    Runs the complete public aggregation pipeline including:
+    filtering, indexing, and suppression.
     """
-    Runs the complete B4 aggregation pipeline.
-    """
-
     if cell_size_m is None:
         cell_size_m = CONFIG["aggregation"]["cell_size_m"]
 
@@ -172,24 +188,3 @@ def build_public_aggregation(
         "aggregation": suppressed_counts,
         "species_index": species_index,
     }
-
-
-def suppress_low_counts(
-    aggregated_df: pd.DataFrame,
-    threshold: int = SUPPRESSION_THRESHOLD,
-) -> pd.DataFrame:
-
-    if "record_count" not in aggregated_df.columns:
-        raise KeyError("Aggregation dataframe must contain record_count column")
-
-    if threshold is None:
-        raise ValueError(
-            "SUPPRESSION_THRESHOLD is not set - confirm BRERC's "
-            "number before running this for real."
-        )
-
-    df = aggregated_df.copy()
-
-    visible_cells = df["record_count"] >= threshold
-
-    return df[visible_cells].copy()

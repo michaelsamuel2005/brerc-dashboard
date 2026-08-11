@@ -1,5 +1,14 @@
-# etl/aggregation/persist.py
+"""
+Saves the processed species and grid cell data into the database.
 
+How this works:
+- Grid cells (distribution_cell): We wipe them all out and reload them fresh 
+  every single night, because nothing else depends on them.
+- Species (species): We CANNOT just wipe this table because the individual 
+  occurrence records link directly to it. If we delete it, PostgreSQL will block us.
+  Instead, we update existing species, add new ones, and only delete old species 
+  if they completely vanished from the data and aren't being used by any records.
+"""
 from datetime import datetime, timezone
 import pandas as pd
 
@@ -22,7 +31,11 @@ def persist_aggregation_outputs(
     suppressed_counts,
     cell_size_m,
     load_mode,
-):
+): 
+    """
+    Persists aggregated spatial cells and upserts the species index to the database,
+    handling foreign key constraints and stale record cleanups.
+    """
     now = datetime.now(timezone.utc)
 
     species_rows = [

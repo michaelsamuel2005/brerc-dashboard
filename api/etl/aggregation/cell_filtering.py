@@ -1,17 +1,6 @@
 """
-filter_accepted_records():
-    - Take the records loaded from the source
-    - Return only records allowed to contribute to the public derived layer
-
-Verification status terms per NBN standard:
-    Accepted - correct
-    Accepted - considered correct
-    Unconfirmed - plausible
-    Unconfirmed - not reviewed
-
-Deprecated older groupings still seen in older data: "Accepted",
-"Unconfirmed" (bare, no dash) - included here as fallbacks since
-BRERC's older records may still use them.
+Filters raw source records based on NBN verification standards.
+Determines which rows are permitted to contribute to the public derived layer.
 """
 
 import pandas as pd
@@ -25,11 +14,8 @@ CONFIG = load_safety_config()
 
 def _normalise_dashes(value: str) -> str:
     """
-    Treat en-dash (–) and em-dash (—) the same as a plain hyphen (-).
-    We don't know for certain whether BRERC's real export uses a plain
-    hyphen or a typographic dash in values like "Accepted - correct",
-    so both config values and incoming data are normalised the same
-    way before comparison, rather than betting on one or the other.
+    Treat en-dash (–) and em-dash (—) as the same as a a plain hyphen (-).
+    Due to BRERC real export being unclear with which hyphen it uses.
     """
     return (
         value.replace("\u2013", "-")  # en-dash –
@@ -53,6 +39,17 @@ def filter_accepted_records(
     df: pd.DataFrame,
     verified_column: str = "verified",
 ) -> pd.DataFrame:
+    """
+    Filters source records to retain accepted and legacy statuses, 
+    returning a filtered dataframe with an added 'is_legacy' flag.
+
+    Verification status terms per NBN standard:
+        Accepted - correct
+        Accepted - considered correct
+        Unconfirmed - plausible
+        Unconfirmed - not reviewed
+
+    """
 
     # Ensures the verification column exists before filtering
     required_columns = {verified_column}
@@ -67,7 +64,7 @@ def filter_accepted_records(
 
     df = df.copy()
 
-    # Converts values to strings & removes whitespace
+    # Normalise whitespace and typographic dashes for reliable comparison
     verified = (
         df[verified_column]
         .astype("string")

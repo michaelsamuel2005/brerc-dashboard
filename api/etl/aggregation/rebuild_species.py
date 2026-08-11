@@ -1,3 +1,8 @@
+"""
+Rebuilds the species summary table using only safe records 
+from the public occurrences table.
+"""
+
 from datetime import datetime
 
 import pandas as pd
@@ -11,19 +16,15 @@ def rebuild_species_index(
     load_timestamp=None,
 ) -> None:
     """
-    Rebuilds species summary table from occurrence_public.
-
-    occurrence_public is already the safety boundary,
-    so species metadata is derived only from safe public records.
-
-    load_mode ("initial" or "incremental") and load_timestamp are
-    stamped onto the rebuilt species rows via the "Load" / "Load_date"
-    audit columns, same as occurrence_public. If load_timestamp isn't
-    given, the current time is used.
+    Pulls safe records from occurrence_public, groups them by species 
+    to calculate counts and date ranges, adds default placeholders 
+    for missing fields, and updates the species table.
     """
 
+    # Use current time if no specific timestamp was given for the run
     load_timestamp = load_timestamp or datetime.now()
 
+    # Grab everything needed from the public records table
     species_records = pd.read_sql(
         """
         SELECT
@@ -38,6 +39,7 @@ def rebuild_species_index(
     if species_records.empty:
         return
 
+    # Group by species to tally up total records and find the date range
     species_index = (
         species_records.groupby(
             [
@@ -60,6 +62,7 @@ def rebuild_species_index(
     species_index["species_group"] = "unknown"
     species_index["has_image"] = False
 
+    # Put columns in the exact order the database expects them
     species_index = species_index[
         [
             "species_id",
@@ -73,6 +76,7 @@ def rebuild_species_index(
         ]
     ]
 
+    # Push the finalised summary table into the database
     upsert_species(
         species_index,
         connection,

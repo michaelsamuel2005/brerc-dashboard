@@ -1,5 +1,7 @@
-# Build the species index from species that actually appear
-# in the filtered records, rather than from the full species dictionary.
+"""
+Builds the species index directly from the species that actually appear 
+in the filtered records, rather than from the full species dictionary.
+"""
 
 import pandas as pd
 
@@ -14,13 +16,9 @@ def build_species_index(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Creates an aggregated species table from the records
-    that are actually being loaded into the database.
-
-    One row is created per unique species, containing
-    summary information needed by the species table.
+    Creates a summary table of unique species found in the active records,
+    calculating total counts, year ranges, and mapping columns to database schema.
     """
-
     required_columns = {
         "species_no",
         "scientific_name",
@@ -39,14 +37,12 @@ def build_species_index(
 
     df = df.copy()
 
-    # Remove records without a resolved species number.
-    # These cannot be represented in the species table because
-    # species_id is required as the public species identifier.
+    # Drops records without a resolved species number
+    # species_id is required as the public species identifier
     df = df.dropna(subset=["species_no"])
 
-    # Convert record_date into year.
-    # Aggregation functions can then calculate the earliest
-    # and latest observed years for each species.
+    # Convert dates into years so we can find the
+    # earliest and latest recorded years per species.
     df["record_year"] = pd.to_datetime(
         df[DATE_COLUMN],
         dayfirst=True,
@@ -63,8 +59,7 @@ def build_species_index(
                 "common_name",
                 "taxanb",
             ],
-            # Keeps species even if some metadata fields
-            # such as common name are missing.
+            # Keep species even if some fields like common names are missing
             dropna=False,
         )
         .agg(
@@ -86,19 +81,14 @@ def build_species_index(
         )
     )
 
-    # Ensure each species_id maps to exactly one species entry.
-    # The database species table expects species_id to identify
-    # a single species. Duplicate IDs indicate inconsistent source
-    # data or conflicting dictionary mappings.
+    # Ensure each species_id is completely unique; duplicates mean bad data.
     if species_index["species_id"].duplicated().any():
         raise ValueError("Species index contains duplicate species IDs")
-
-    # No image data is currently being loaded.
-    # Default value is False until image metadata exists.
+    
+    # Default image flag to False since image metadata isn't loaded yet.
     species_index["has_image"] = False
 
-    # Return only columns required by the species table schema.
-    # Ensures output matches what the database insert expects.
+    # Return only the exact columns expected by the database table.
     return species_index[
         [
             "species_id",

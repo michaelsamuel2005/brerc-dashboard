@@ -1,4 +1,4 @@
-# etl/aggregation/geometry.py
+"""Transforms British National Grid (EPSG:27700) grid cells into WGS84 WKT polygons."""
 from pyproj import Transformer
 
 _BNG_TO_WGS84 = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
