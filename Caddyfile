@@ -1,0 +1,23 @@
+# Reverse proxy — serves the whole dashboard from ONE origin (B9).
+# Everything is reached through http://localhost:8080, so the browser sees a
+# single site (no cross-origin problems) — the "same-origin behind a reverse
+# proxy" shape from the architecture decision. In production Caddy also gets
+# free automatic HTTPS by using a real domain instead of :80.
+
+:80 {
+	# The read-only API, e.g.  /api/health , /api/species
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Vector tiles from Martin, e.g.  /tiles/catalog , /tiles/cells_tile/8/126/85
+	# handle_path strips the /tiles prefix before forwarding to Martin.
+	handle_path /tiles/* {
+		reverse_proxy martin:3000
+	}
+
+	# The built front-end (React) would be served here in a full deploy.
+	handle {
+		respond "BRERC dashboard stack is running. Try /api/health or /tiles/catalog" 200
+	}
+}

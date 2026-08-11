@@ -23,15 +23,20 @@ INSERT INTO species (species_id, scientific_name, common_name, species_group,
     (100003, 'Lutra lutra',        'Otter',       'mammals',    2, 2024, 2025, false);
 
 -- Per-record public rows (already generalised: grid ref + coarse locality only).
+-- content_hash is NOT NULL: the pipeline (B3) writes a fingerprint of each row so
+-- it can tell, on the next run, which records actually changed. These hand-made
+-- rows have to set it too, or the insert fails. md5() of the identifying fields
+-- is a stand-in — the real value comes from the reconciliation step.
 INSERT INTO occurrence_public (record_id, species_id, record_year, grid_ref,
-                               precision_metres, locality, verified) VALUES
-    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',               true),
-    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',               true),
-    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',               false),
-    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true),
-    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true),
-    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',            true),
-    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',            false);
+                               precision_metres, locality, verified,
+                               content_hash) VALUES
+    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',               true,  md5('1|100001|2024|ST5872')),
+    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',               true,  md5('2|100001|2023|ST5973')),
+    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',               false, md5('3|100001|2022|ST5771')),
+    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true,  md5('4|100002|2024|ST6074')),
+    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true,  md5('5|100002|2021|ST61')),
+    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',            true,  md5('6|100003|2025|ST5')),
+    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',            false, md5('7|100003|2024|ST5'));
 
 -- Pre-aggregated grid cells (geom = coarse cell polygon in WGS84 / EPSG:4326).
 INSERT INTO distribution_cell (cell_id, species_id, record_year, precision_metres,
