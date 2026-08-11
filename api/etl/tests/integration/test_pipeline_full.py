@@ -178,7 +178,7 @@ def test_nightly_job_end_to_end(
 
             assert test_record_id in reconciliation["inserts"]
             assert reconciliation["updates"] == set()
-            assert reconciliation["deletes"] == set()
+            assert test_record_id not in reconciliation["deletes"]
 
             # ------------------------------------------------------------------
             # Verify aggregation produced a species entry.

@@ -6,9 +6,10 @@ from etl.safety_gate.rules import load_sensitive_species
 
 
 def test_load_sensitive_species_parses_csv_correctly(monkeypatch):
-    # Confirms the function loads, cleans, and extracts sensitive species and NBN sets.
-    # Expects two sets containing the valid non-null column values, else fails.
-
+    """
+    Confirms the function loads, cleans, and extracts sensitive species and NBN sets.
+    Expects two sets containing the valid non-null column values, else fails.
+    """
     # Clear the cached result so this test actually executes the function.
     rules.load_sensitive_species.cache_clear()
 
@@ -24,7 +25,7 @@ def test_load_sensitive_species_parses_csv_correctly(monkeypatch):
 
     # Patch pandas.read_csv, clean_data, and file existence checks
     with patch("pandas.read_csv", return_value=mock_df) as mock_read_csv, patch(
-        "etl.profiling.cleaning.clean_data", return_value=mock_df
+        "etl.safety_gate.rules.clean_data", return_value=mock_df
     ) as mock_clean_data, patch("pathlib.Path.exists", return_value=True):
 
         species_nos, nbn_numbers = load_sensitive_species()

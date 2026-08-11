@@ -1,8 +1,9 @@
+import logging
 import pandas as pd
 import pytest
 from unittest.mock import MagicMock, patch
 
-from etl.reconciliation.reconcile import (  # Update with your actual module path if different
+from etl.reconciliation.reconcile import (
     make_safe_for_publishing,
     reconcile,
 )
@@ -91,40 +92,38 @@ def test_make_safe_for_publishing_executes_pipeline(
 @patch("etl.reconciliation.reconcile.resolve_species_numbers")
 @patch("etl.reconciliation.reconcile.classify_chunk")
 def test_make_safe_for_publishing_drops_unresolved_species(
-    mock_classify, mock_resolve, mock_filter, capsys
+    mock_classify, mock_resolve, mock_filter, caplog
 ):
     # Confirms records lacking a resolved species_no are excluded from the public database.
-    # Expects the unresolved records to be dropped and a warning printed, else fails.
-    df = pd.DataFrame({"id": [1, 2]})
-    connection = MagicMock()
+    # Expects the unresolved records to be dropped and a warning logged, else fails.
+    with caplog.at_level(logging.WARNING):
+        df = pd.DataFrame({"id": [1, 2]})
+        connection = MagicMock()
 
-    mock_filter.return_value = df
-    # One record resolves successfully, the other has NaN for species_no
-    mock_resolve.return_value = pd.DataFrame(
-        {"id": [1, 2], "species_no": ["A123", None]}
-    )
-    mock_classify.return_value = pd.DataFrame({"id": [1], "species_no": ["A123"]})
+        mock_filter.return_value = df
+        # One record resolves successfully, the other has NaN for species_no
+        mock_resolve.return_value = pd.DataFrame(
+            {"id": [1, 2], "species_no": ["A123", None]}
+        )
+        mock_classify.return_value = pd.DataFrame({"id": [1], "species_no": ["A123"]})
 
-    # We only need it to survive up to classify_chunk to prove the dropna worked
-    # so we'll let the rest of the mocked functions crash or mock them with create=True
-    with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
-        "etl.reconciliation.reconcile.add_coarse_locality",
-        return_value=pd.DataFrame({"unique_no": [], "content_hash": []}),
-        create=True,
-    ), patch(
-        "etl.reconciliation.reconcile.prepare_public_output",
-        return_value=pd.DataFrame({"unique_no": []}),
-        create=True,
-    ), patch(
-        "etl.reconciliation.reconcile.map_to_occurrence_public",
-        return_value=pd.DataFrame(),
-        create=True,
-    ):
+        with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
+            "etl.reconciliation.reconcile.add_coarse_locality",
+            return_value=pd.DataFrame({"unique_no": [], "content_hash": []}),
+            create=True,
+        ), patch(
+            "etl.reconciliation.reconcile.prepare_public_output",
+            return_value=pd.DataFrame({"unique_no": []}),
+            create=True,
+        ), patch(
+            "etl.reconciliation.reconcile.map_to_occurrence_public",
+            return_value=pd.DataFrame(),
+            create=True,
+        ):
 
-        make_safe_for_publishing(df, pd.DataFrame(), connection)
+            make_safe_for_publishing(df, pd.DataFrame(), connection)
 
-    captured = capsys.readouterr()
-    assert "1 records excluded from public load" in captured.out
+    assert "1 records excluded from public load" in caplog.text
 
     # Check that classify_chunk only received the 1 valid record
     passed_to_classify = mock_classify.call_args[0][0]
@@ -152,45 +151,44 @@ def test_reconcile_processes_inserts_updates_deletes(
     mock_iter_chunks,
     mock_diff,
     mock_build_hash,
-    capsys,
+    caplog,
 ):
     # Confirms the reconciliation engine correctly delegates chunked records based on their diff status.
     # Expects inserts, updates, and deletes to be correctly routed to their respective load functions, else fails.
+    with caplog.at_level(logging.INFO):
+        # 1 Insert (ID 1), 1 Update (ID 2), 1 Delete (ID 3)
+        mock_build_hash.return_value = {"1": "hash_1", "2": "hash_2", "3": "hash_3"}
+        mock_diff.return_value = {
+            "inserts": {"1"},
+            "updates": {"2"},
+            "deletes": {"3"},
+            "unchanged": set(),
+        }
 
-    # 1 Insert (ID 1), 1 Update (ID 2), 1 Delete (ID 3)
-    mock_build_hash.return_value = {"1": "hash_1", "2": "hash_2", "3": "hash_3"}
-    mock_diff.return_value = {
-        "inserts": {"1"},
-        "updates": {"2"},
-        "deletes": {"3"},
-        "unchanged": set(),
-    }
+        # Simulate a single chunk coming from the source streaming
+        mock_iter_chunks.return_value = [pd.DataFrame({"unique_no": [1, 2]})]
 
-    # Simulate a single chunk coming from the source streaming
-    mock_iter_chunks.return_value = [pd.DataFrame({"unique_no": [1, 2]})]
+        # Fake safety pipeline output
+        mock_make_safe.return_value = pd.DataFrame({"safe_data": [True]})
+        mock_add_metadata.return_value = pd.DataFrame(
+            {"safe_data": [True], "Load": ["test"]}
+        )
 
-    # Fake safety pipeline output
-    mock_make_safe.return_value = pd.DataFrame({"safe_data": [True]})
-    mock_add_metadata.return_value = pd.DataFrame(
-        {"safe_data": [True], "Load": ["test"]}
-    )
+        connection = MagicMock()
 
-    connection = MagicMock()
+        result = reconcile(
+            records_df=None,
+            dictionary_df=pd.DataFrame(),
+            ui_map={"old": "map"},
+            connection=connection,
+            load_mode="incremental",
+            load_timestamp="2026-08-09",
+        )
 
-    result = reconcile(
-        records_df=None,  # Not actually used in pass 2 since it streams
-        dictionary_df=pd.DataFrame(),
-        ui_map={"old": "map"},
-        connection=connection,
-        load_mode="incremental",
-        load_timestamp="2026-08-09",
-    )
-
-    # Asserts printed output counts match
-    captured = capsys.readouterr()
-    assert "INSERTS: 1" in captured.out
-    assert "UPDATES: 1" in captured.out
-    assert "DELETES: 1" in captured.out
+    # Asserts logged summary output counts match
+    assert "Inserts: 1" in caplog.text
+    assert "Updates: 1" in caplog.text
+    assert "Deletes: 1" in caplog.text
 
     # Asserts the correct chunk functions were called
     assert mock_make_safe.call_count == 2  # Once for inserts, once for updates

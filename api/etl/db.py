@@ -66,11 +66,10 @@ def get_source_connection() -> psycopg.Connection:
 
 def _build_destination_database_url() -> str:
     """
-    Assembles the destination UI database connection URL from safety.yaml's 
-    'destination' configuration block or environment variables.
+    Assemble the UI database connection string, checking environment variables 
+    (DESTINATION_DATABASE_URL or generic DATABASE_URL) before falling back to safety.yaml.
     """
-
-    explicit_url = os.getenv("DESTINATION_DATABASE_URL")
+    explicit_url = os.getenv("DESTINATION_DATABASE_URL") or os.getenv("DATABASE_URL")
 
     if explicit_url:
         return explicit_url

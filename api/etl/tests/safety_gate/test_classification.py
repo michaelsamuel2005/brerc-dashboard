@@ -9,7 +9,6 @@ FAKE_SENSITIVE_SPECIES_NOS = {101}
 FAKE_FLAGGED_RECORD_TYPES = {"roost"}
 FAKE_DEFAULT_RESOLUTION_M = 10000
 FAKE_D0_FLOOR_M = 100
-FAKE_SPECIES_RESOLUTIONS_M = {}
 
 
 def _patch_rules(monkeypatch):
@@ -40,11 +39,6 @@ def _patch_rules(monkeypatch):
     monkeypatch.setattr(
         "etl.safety_gate.classification.D0_FLOOR_M",
         FAKE_D0_FLOOR_M,
-    )
-
-    monkeypatch.setattr(
-        "etl.safety_gate.classification.SPECIES_RESOLUTIONS_M",
-        FAKE_SPECIES_RESOLUTIONS_M,
     )
 
 
