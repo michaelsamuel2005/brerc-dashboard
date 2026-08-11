@@ -5,12 +5,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SpeciesList } from "../features/species/SpeciesList";
 import { SpeciesDetailPage } from "../features/species/SpeciesDetailPage";
 
-// The map bundle (maplibre-gl) is heavy, so it is code-split and loaded lazily.
-const DistributionMap = lazy(() => import("../features/map/DistributionMap"));
-
-// P2 vertical slice: ONE species (Slow-worm) end-to-end — every panel is scoped by the
-// SAME speciesId, so nothing silently shows all-species data. Runs against the MSW mock.
-const SPECIES_ID = "anguis-fragilis";
 
 export function App() {
   return (
