@@ -11,8 +11,8 @@ export function SummaryBanner() {
     <section aria-labelledby="summary-heading">
       <h2 id="summary-heading">Overview</h2>
       <p>
-        {s.totalRecords.toLocaleString()} records across {s.totalSpecies.toLocaleString()} species,{" "}
-        {s.yearRange.min}&ndash;{s.yearRange.max}.
+        {s.totalRecords.toLocaleString()} records across {s.totalSpecies.toLocaleString()} species
+        {s.yearRange ? <>, {s.yearRange.min}&ndash;{s.yearRange.max}</> : null}.
       </p>
       <p>
         <strong>Please note:</strong> {s.coverageCaveat}

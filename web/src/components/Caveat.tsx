@@ -2,9 +2,9 @@
 export function Caveat() {
   return (
     <aside className="caveat" aria-label="How to read this data">
-      <strong>How to read this.</strong> Records show <em>where people looked</em>, not true distribution or
-      abundance. The locations of sensitive species are generalised to protect them, and every cell is drawn at its
-      true precision — a larger square means a coarser record, never a false-precision pin.
+      <strong>How to read this.</strong> Records show <em>where wildlife has been recorded</em> and reflect recording
+      activity, not complete distribution or abundance. Locations are shown at their public capture resolution — a
+      larger square represents a broader capture area, not an exact-location pin.
     </aside>
   );
 }

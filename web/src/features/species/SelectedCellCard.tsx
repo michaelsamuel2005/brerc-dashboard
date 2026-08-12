@@ -8,17 +8,20 @@ import { precisionLabel } from "../../lib/geo/gridref";
 // aria-live announces the change.
 export function SelectedCellCard({
   speciesId,
+  year = null,
   selectedCellId,
   onClear,
 }: {
   speciesId: string;
+  year?: number | null;
   selectedCellId: string | null;
   onClear: () => void;
 }) {
-  const query = useDistributionCells({ species: speciesId });
+  const query = useDistributionCells({ species: speciesId, year: year ?? undefined });
   const cell = selectedCellId ? query.data?.cells.find((c) => c.cellId === selectedCellId) ?? null : null;
+  const verificationAvailable = query.data?.verificationAvailable;
   const verifiedPct =
-    cell && cell.verifiedCount !== undefined && cell.recordCount > 0
+    verificationAvailable && cell && cell.verifiedCount !== undefined && cell.recordCount > 0
       ? Math.round((cell.verifiedCount / cell.recordCount) * 100)
       : null;
 
@@ -39,7 +42,7 @@ export function SelectedCellCard({
       <p className="cell-card__id">{cell ? cell.cellId : "None selected"}</p>
       <dl className="cell-card__stats">
         <div>
-          <dt>Resolution</dt>
+          <dt>Capture resolution</dt>
           <dd>{cell ? precisionLabel(cell.precisionMetres) : "—"}</dd>
         </div>
         <div>
@@ -47,9 +50,13 @@ export function SelectedCellCard({
           <dd>{cell ? cell.recordCount.toLocaleString("en-GB") : "—"}</dd>
         </div>
         <div>
-          <dt>Verified</dt>
+          <dt>{cell && verificationAvailable === false ? "Verification unavailable" : "Verified"}</dt>
           <dd>
-            {cell ? `${cell.verifiedCount?.toLocaleString("en-GB") ?? "—"}${verifiedPct !== null ? ` (${verifiedPct}%)` : ""}` : "—"}
+            {cell
+              ? verificationAvailable === false
+                ? "Not available"
+                : `${cell.verifiedCount?.toLocaleString("en-GB") ?? "—"}${verifiedPct !== null ? ` (${verifiedPct}%)` : ""}`
+              : "—"}
           </dd>
         </div>
       </dl>

@@ -1,75 +1,85 @@
-import { Suspense, lazy, useState } from "react";
+import { useEffect } from "react";
+import {
+  Link,
+  Redirect,
+  Route,
+  Switch,
+  useLocation,
+  useParams,
+} from "wouter";
 import { SkipLink } from "../components/SkipLink";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { Caveat } from "../components/Caveat";
-import { SpeciesPanel } from "../features/species/SpeciesPanel";
-import { SelectedCellCard } from "../features/species/SelectedCellCard";
-import { CellSummaryTable } from "../features/species/CellSummaryTable";
-import { RecordsTable } from "../features/species/RecordsTable";
-import { LoadingState } from "../components/states/States";
+import { SpeciesList } from "../features/species/SpeciesList";
+import { SpeciesDashboard } from "./SpeciesDashboard";
 
-// The map bundle (maplibre-gl) is heavy, so it is code-split and loaded lazily.
-const DistributionMap = lazy(() => import("../features/map/DistributionMap"));
+const DEFAULT_SPECIES_PATH = "/species/DEMO-001/anguis-fragilis";
 
-// One species (Slow-worm), map-FIRST: the map + its selected-cell card lead the page (and
-// the DOM), so on mobile the map is immediately reachable; species info is secondary. The
-// map, the cell table and the card share ONE selectedCellId.
-const SPECIES_ID = "anguis-fragilis";
+function SpeciesRoute() {
+  const { speciesId } = useParams<{ speciesId: string; slug: string }>();
+  if (!speciesId) return <Redirect to="/species" replace />;
+  return <SpeciesDashboard key={speciesId} speciesId={speciesId} />;
+}
+
+function PrimaryNavigation() {
+  const [pathname] = useLocation();
+  return (
+    <nav className="app-nav" aria-label="Primary">
+      <Link href="/species" aria-current={pathname === "/species" ? "page" : undefined}>
+        Species
+      </Link>
+    </nav>
+  );
+}
+
+function NotFound() {
+  return (
+    <main id="main" className="directory-page">
+      <span className="eyebrow">Not found</span>
+      <h1 className="page-title" tabIndex={-1}>That page does not exist</h1>
+      <p className="page-lead">Choose a species from the directory to continue.</p>
+      <Link className="btn" href="/species">Browse species</Link>
+    </main>
+  );
+}
+
+/** Focus the new page heading after client-side navigation, just as a full page load would. */
+function RouteFocus() {
+  const [pathname] = useLocation();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const heading = document.querySelector<HTMLElement>("#main h1");
+      heading?.focus({ preventScroll: true });
+      document.title = heading ? `${heading.textContent ?? "BRERC"} | BRERC` : "BRERC";
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
+
+  return null;
+}
 
 export function App() {
-  const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
-
   return (
     <>
       <SkipLink />
       <header className="app-header">
         <div className="row">
-          <span className="brand">
+          <Link className="brand" href={DEFAULT_SPECIES_PATH} aria-label="BRERC prototype home">
             BRERC <span className="tag">Prototype</span>
-          </span>
+          </Link>
+          <PrimaryNavigation />
           <span className="sub">Wildlife of the West of England</span>
         </div>
       </header>
 
-      <main id="main">
-        <span className="eyebrow">Distribution</span>
-        <h1 className="page-title">Where wildlife has been recorded</h1>
-        <p className="page-lead">
-          A single-species slice of the atlas — where it has been recorded, the same data as accessible tables, and its
-          picture.
-        </p>
-
-        <Caveat />
-
-        <div className="slice-grid">
-          <div className="map-col">
-            <ErrorBoundary label="the map">
-              <Suspense
-                fallback={
-                  <div className="map-card" style={{ display: "grid", placeItems: "center" }}>
-                    <LoadingState label="the map" />
-                  </div>
-                }
-              >
-                <DistributionMap speciesId={SPECIES_ID} selectedCellId={selectedCellId} onSelectCell={setSelectedCellId} />
-              </Suspense>
-            </ErrorBoundary>
-            <ErrorBoundary label="the selected-cell details">
-              <SelectedCellCard speciesId={SPECIES_ID} selectedCellId={selectedCellId} onClear={() => setSelectedCellId(null)} />
-            </ErrorBoundary>
-          </div>
-          <ErrorBoundary label="the species information">
-            <SpeciesPanel speciesId={SPECIES_ID} />
-          </ErrorBoundary>
-        </div>
-
-        <ErrorBoundary label="the distribution table">
-          <CellSummaryTable speciesId={SPECIES_ID} selectedCellId={selectedCellId} onSelectCell={setSelectedCellId} />
-        </ErrorBoundary>
-        <ErrorBoundary label="the records table">
-          <RecordsTable speciesId={SPECIES_ID} />
-        </ErrorBoundary>
-      </main>
+      <RouteFocus />
+      <Switch>
+        <Route path="/"><Redirect to={DEFAULT_SPECIES_PATH} replace /></Route>
+        <Route path="/species"><SpeciesList /></Route>
+        <Route path="/species/:speciesId/:slug"><SpeciesRoute /></Route>
+        <Route><NotFound /></Route>
+      </Switch>
 
       <footer className="app-footer">
         <div className="row">

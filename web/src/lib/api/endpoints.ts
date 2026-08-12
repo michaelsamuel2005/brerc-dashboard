@@ -14,12 +14,21 @@ import {
   type RecordPage,
   type SpeciesDetail,
   type SpeciesListPage,
+  type SpeciesSort,
   type Summary,
 } from "./schemas";
 
+export interface SpeciesListParams extends QueryParams {
+  q?: string;
+  group?: string;
+  sort?: SpeciesSort;
+  page?: number;
+  pageSize?: number;
+}
+
 export const getHealth = (): Promise<Health> => getJson("/health", HealthSchema);
 
-export const getSpecies = (params?: QueryParams): Promise<SpeciesListPage> =>
+export const getSpecies = (params?: SpeciesListParams): Promise<SpeciesListPage> =>
   getJson("/species", SpeciesListPageSchema, params);
 
 export const getSpeciesDetail = (speciesId: string): Promise<SpeciesDetail> =>
