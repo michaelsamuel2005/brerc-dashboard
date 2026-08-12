@@ -11,6 +11,7 @@ from etl.reconciliation.map_to_schema import (
 
 
 @patch("etl.reconciliation.map_to_schema.DATE_COLUMN", "record_date")
+@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_maps_columns_correctly():
     # Confirms all required columns are mapped and correctly transformed.
     # Expects the returned dataframe to match the target schema exactly, else fails.
@@ -23,6 +24,7 @@ def test_map_to_occurrence_public_maps_columns_correctly():
             "effective_resolution_m": [1000, 100],
             "is_legacy": [False, True],
             "content_hash": ["hash1", "hash2"],
+            "modified_date": ["2022-08-15", "2023-01-01"],
         }
     )
 
@@ -37,6 +39,7 @@ def test_map_to_occurrence_public_maps_columns_correctly():
         "precision_metres",
         "verified",
         "content_hash",
+        "date_mdb_modified",
     ]
 
     assert result["record_id"].tolist() == [101, 102]
@@ -49,9 +52,11 @@ def test_map_to_occurrence_public_maps_columns_correctly():
     # Confirms verified is the inverse of is_legacy
     assert result["verified"].tolist() == [True, False]
     assert result["content_hash"].tolist() == ["hash1", "hash2"]
+    assert result["date_mdb_modified"].tolist() == ["2022-08-15", "2023-01-01"]
 
 
 @patch("etl.reconciliation.map_to_schema.DATE_COLUMN", "record_date")
+@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_cleans_junk_dates():
     # Confirms junk prefixes on dates are ignored and the year is extracted correctly.
     # Expects the regex to extract the valid date portion and parse the year, else fails.
@@ -64,6 +69,7 @@ def test_map_to_occurrence_public_cleans_junk_dates():
             "effective_resolution_m": [1000],
             "is_legacy": [False],
             "content_hash": ["hash1"],
+            "modified_date": ["2023-10-17"],
         }
     )
 
@@ -73,6 +79,7 @@ def test_map_to_occurrence_public_cleans_junk_dates():
 
 
 @patch("etl.reconciliation.map_to_schema.DATE_COLUMN", "record_date")
+@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_handles_unparseable_dates():
     # Confirms genuinely invalid dates are coerced to NaN instead of crashing.
     # Expects the year for invalid dates to evaluate as null/NaN, else fails.
@@ -85,6 +92,7 @@ def test_map_to_occurrence_public_handles_unparseable_dates():
             "effective_resolution_m": [1000, 100],
             "is_legacy": [False, False],
             "content_hash": ["hash1", "hash2"],
+            "modified_date": ["2023-01-01", "2023-01-02"],
         }
     )
 
@@ -96,6 +104,7 @@ def test_map_to_occurrence_public_handles_unparseable_dates():
 
 
 @patch("etl.reconciliation.map_to_schema.DATE_COLUMN", "record_date")
+@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_does_not_modify_original_dataframe():
     # Confirms the input dataframe is left completely unchanged (mutation check).
     # Expects the original dataframe to lack the new mapped columns, else fails.
@@ -108,6 +117,7 @@ def test_map_to_occurrence_public_does_not_modify_original_dataframe():
             "effective_resolution_m": [1000],
             "is_legacy": [False],
             "content_hash": ["hash1"],
+            "modified_date": ["2022-08-15"],
         }
     )
 
@@ -115,4 +125,5 @@ def test_map_to_occurrence_public_does_not_modify_original_dataframe():
 
     assert "record_id" not in df.columns
     assert "species_id" not in df.columns
+    assert "date_mdb_modified" not in df.columns
     assert df["species_no"].tolist() == [" 123 "]  # Remains unstripped in original

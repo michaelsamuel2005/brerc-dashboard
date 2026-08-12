@@ -7,28 +7,28 @@ from etl.reconciliation.state import (  # Update with your actual module path if
 # --- get_ui_map tests ---
 
 
-def test_get_ui_map_returns_id_hash_dictionary():
-    # Confirms database rows are converted into a record_id to content_hash dictionary.
-    # Expects IDs to be stored as strings to match the occurrence_public TEXT key format, else fails.
+def test_get_ui_map_returns_id_modified_dictionary():
+    # Confirms database rows are converted into a record_id to date_mdb_modified dictionary.
+    # Expects IDs to be stored as strings to match unique_no key format, else fails.
     connection = MagicMock()
 
-    # Mocks the database cursor returning two rows
+    # Mocks the database cursor returning two rows with record_id and date_mdb_modified
     connection.cursor.return_value.__enter__.return_value.fetchall.return_value = [
         {
             "record_id": 1,
-            "content_hash": "hash1",
+            "date_mdb_modified": "2026-01-01 12:00:00",
         },
         {
             "record_id": 2,
-            "content_hash": "hash2",
+            "date_mdb_modified": "2026-01-02 12:00:00",
         },
     ]
 
     result = get_ui_map(connection)
 
     assert result == {
-        "1": "hash1",
-        "2": "hash2",
+        "1": "2026-01-01 12:00:00",
+        "2": "2026-01-02 12:00:00",
     }
 
 

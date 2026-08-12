@@ -119,6 +119,7 @@ def test_insert_records_commits_after_successful_write():
             "precision_metres": [1000],
             "verified": [True],
             "content_hash": ["abc123"],
+            "date_mdb_modified": ["2026-08-09 10:00:00+00"],  # Required by _upsert_occurrences
             "Load": ["incremental"],  # Required by _upsert_occurrences
             "Load_date": ["2026-08-09"],  # Required by _upsert_occurrences
         }
@@ -154,6 +155,7 @@ def test_update_records_commits_after_successful_write():
             "precision_metres": [1000],
             "verified": [True],
             "content_hash": ["updated_hash"],
+            "date_mdb_modified": ["2026-08-09 10:00:00+00"],  # Required by _upsert_occurrences
             "Load": ["incremental"],  # Required by _upsert_occurrences
             "Load_date": ["2026-08-09"],  # Required by _upsert_occurrences
         }

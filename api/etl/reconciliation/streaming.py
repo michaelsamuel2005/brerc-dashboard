@@ -8,7 +8,10 @@ import pandas as pd
 from etl.load.loader import load_safety_config
 from etl.profiling.cleaning import clean_data
 from etl.reconciliation.hashing import add_content_hash
-from etl.reconciliation.diff import build_id_hash_map_from_chunks
+from etl.reconciliation.diff import (
+    build_id_hash_map_from_chunks,
+    build_id_modified_map_from_chunks,  # NEW
+)
 
 CONFIG = load_safety_config()
 
@@ -45,6 +48,9 @@ def build_source_hash_map(source_df=None, chunk_size=None):
     """
     Builds and returns a master dictionary mapping every record's unique identifier 
     to its computed content hash across all streamed source chunks.
+
+    NOTE: content_hash is retained for audit/debug purposes only. It is no longer
+    used to drive insert/update/delete decisions — see build_source_modified_map.
     """
 
     # Nested generator
@@ -56,3 +62,16 @@ def build_source_hash_map(source_df=None, chunk_size=None):
 
     # Processes the cleaned hashed chunks, merging to build final dictionary
     return build_id_hash_map_from_chunks(_hashed_chunks())
+
+
+def build_source_modified_map(source_df=None, chunk_size=None):
+    """
+    Builds and returns a master dictionary mapping every record's unique identifier 
+    to its date_mdb_modified value across all streamed source chunks.
+
+    This is the map used by reconciliation to decide inserts/updates/deletes,
+    per reviewer feedback: PostgreSQL version/hashing-algorithm assumptions are
+    unreliable, whereas the source's own modified-date column is not.
+    """
+    # No hashing needed here — just stream the cleaned chunks straight through
+    return build_id_modified_map_from_chunks(iter_source_chunks(source_df, chunk_size))

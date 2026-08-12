@@ -78,20 +78,19 @@ CREATE TABLE species (
 DROP TABLE IF EXISTS occurrence_public CASCADE;
 CREATE TABLE occurrence_public (
     record_id        VARCHAR   PRIMARY KEY,          -- unique_No (D7 recon key)
-    species_id       TEXT   NOT NULL REFERENCES species(species_id),
-    record_year      INTEGER  NOT NULL,             -- YEAR only — never precise date
-    grid_ref         TEXT     NOT NULL,             -- generalised OS grid ref
-    precision_metres INTEGER  NOT NULL
+    species_id       TEXT      NOT NULL REFERENCES species(species_id),
+    record_year      INTEGER   NOT NULL,             -- YEAR only — never precise date
+    grid_ref         TEXT      NOT NULL,             -- generalised OS grid ref
+    precision_metres INTEGER   NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     locality         TEXT,                          -- coarse: authority + grid sq
-    verified         BOOLEAN  NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
-    content_hash     TEXT     NOT NULL, -- for comparison of current source vs previous database state
-    -- NO eastings, northings, recorder1, bliss, comments, precise_date,
-    -- is_sensitive — absent by construction.
+    verified         BOOLEAN   NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
+    content_hash     TEXT      NOT NULL,             -- Kept for record tracking / audits
+    date_mdb_modified TIMESTAMPTZ NOT NULL,         -- Used for incremental change detection
 
     -- FOR ETL LOAD TRACKING --
-    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
-    "Load_date"     TIMESTAMPTZ NOT NULL
+    "Load"           TEXT      NOT NULL,          -- "initial" or "incremental"
+    "Load_date"      TIMESTAMPTZ NOT NULL
 );
 
 -- 1c. Pre-aggregated distribution grid (species x cell x year). This is the

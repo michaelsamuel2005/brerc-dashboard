@@ -17,7 +17,7 @@ from etl.job import (
 def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
     # Confirms source data is loaded from CSV when source mode is csv.
     # Expects pd.read_csv to be called with the configured records path, else fails.
-    mock_df = pd.DataFrame({"col": [1, 2]})
+    mock_df = pd.DataFrame({"col": [1, 2], "modified": ["2026-01-01", "2026-01-02"]})
     mock_read_csv.return_value = mock_df
 
     with patch(
@@ -104,14 +104,14 @@ def test_load_species_dictionary_database_mode_raises_missing_connection():
 @patch("etl.job.get_ui_map")
 def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
     # Confirms get_current_ui_map properly delegates to get_ui_map.
-    # Expects the dictionary returned by get_ui_map, else fails.
-    mock_get_ui_map.return_value = {"1": "hash1"}
+    # Expects the timestamp dictionary returned by get_ui_map, else fails.
+    mock_get_ui_map.return_value = {"1": "2026-01-01 12:00:00"}
     conn = MagicMock()
 
     result = get_current_ui_map(conn)
 
     mock_get_ui_map.assert_called_once_with(conn)
-    assert result == {"1": "hash1"}
+    assert result == {"1": "2026-01-01 12:00:00"}
 
 
 # --- nightly_job tests ---

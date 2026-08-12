@@ -30,6 +30,7 @@ def test_make_safe_for_publishing_returns_empty_schema_when_input_empty():
         "precision_metres",
         "verified",
         "content_hash",
+        "date_mdb_modified",
     ]
 
 
@@ -50,7 +51,7 @@ def test_make_safe_for_publishing_executes_pipeline(
     mock_filter,
 ):
     # Confirms records successfully pass through all safety gate functions in order.
-    # Expects the final mapped dataframe to be returned after hash mapping, else fails.
+    # Expects the final mapped dataframe to be returned after schema mapping, else fails.
     df = pd.DataFrame({"id": [1]})
     dictionary_df = pd.DataFrame()
     connection = MagicMock()
@@ -61,17 +62,17 @@ def test_make_safe_for_publishing_executes_pipeline(
     mock_classify.return_value = pd.DataFrame({"id": [1]})
     mock_generalise.return_value = pd.DataFrame({"id": [1]})
 
-    # Needs unique_no and content_hash for the hash_lookup mapping step
+    # Needs unique_no, content_hash, and MODIFIED_COLUMN for the lookup step in make_safe_for_publishing
     mock_add_locality.return_value = pd.DataFrame(
-        {"unique_no": [100], "content_hash": ["abc_hash"]}
+        {"unique_no": [100], "content_hash": ["abc_hash"], "date_mdb_modified": ["2026-08-09"]}
     )
 
     # Needs unique_no for the safe_df["unique_no"].map step
     mock_prepare.return_value = pd.DataFrame({"unique_no": [100]})
 
-    # Final schema output
+    # Final schema output including date_mdb_modified
     mock_map.return_value = pd.DataFrame(
-        {"record_id": [100], "content_hash": ["abc_hash"]}
+        {"record_id": [100], "content_hash": ["abc_hash"], "date_mdb_modified": ["2026-08-09"]}
     )
 
     result = make_safe_for_publishing(df, dictionary_df, connection)
@@ -86,6 +87,7 @@ def test_make_safe_for_publishing_executes_pipeline(
 
     assert result["record_id"].tolist() == [100]
     assert result["content_hash"].tolist() == ["abc_hash"]
+    assert result["date_mdb_modified"].tolist() == ["2026-08-09"]
 
 
 @patch("etl.reconciliation.reconcile.filter_accepted_records")
@@ -109,7 +111,7 @@ def test_make_safe_for_publishing_drops_unresolved_species(
 
         with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
             "etl.reconciliation.reconcile.add_coarse_locality",
-            return_value=pd.DataFrame({"unique_no": [], "content_hash": []}),
+            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "date_mdb_modified": []}),
             create=True,
         ), patch(
             "etl.reconciliation.reconcile.prepare_public_output",
@@ -134,8 +136,8 @@ def test_make_safe_for_publishing_drops_unresolved_species(
 # --- reconcile tests ---
 
 
-@patch("etl.reconciliation.reconcile.build_source_hash_map")
-@patch("etl.reconciliation.reconcile.diff_id_hash_maps")
+@patch("etl.reconciliation.reconcile.build_source_modified_map")
+@patch("etl.reconciliation.reconcile.diff_id_modified_maps")
 @patch("etl.reconciliation.reconcile.iter_source_chunks")
 @patch("etl.reconciliation.reconcile.make_safe_for_publishing")
 @patch("etl.reconciliation.reconcile.add_load_metadata")
@@ -150,14 +152,18 @@ def test_reconcile_processes_inserts_updates_deletes(
     mock_make_safe,
     mock_iter_chunks,
     mock_diff,
-    mock_build_hash,
+    mock_build_modified,
     caplog,
 ):
     # Confirms the reconciliation engine correctly delegates chunked records based on their diff status.
     # Expects inserts, updates, and deletes to be correctly routed to their respective load functions, else fails.
     with caplog.at_level(logging.INFO):
         # 1 Insert (ID 1), 1 Update (ID 2), 1 Delete (ID 3)
-        mock_build_hash.return_value = {"1": "hash_1", "2": "hash_2", "3": "hash_3"}
+        mock_build_modified.return_value = {
+            "1": "2026-08-09 10:00:00",
+            "2": "2026-08-09 10:00:00",
+            "3": "2026-08-09 10:00:00",
+        }
         mock_diff.return_value = {
             "inserts": {"1"},
             "updates": {"2"},
@@ -200,18 +206,18 @@ def test_reconcile_processes_inserts_updates_deletes(
     assert result == mock_diff.return_value
 
 
-@patch("etl.reconciliation.reconcile.build_source_hash_map")
-@patch("etl.reconciliation.reconcile.diff_id_hash_maps")
+@patch("etl.reconciliation.reconcile.build_source_modified_map")
+@patch("etl.reconciliation.reconcile.diff_id_modified_maps")
 @patch("etl.reconciliation.reconcile.iter_source_chunks")
 @patch("etl.reconciliation.reconcile.make_safe_for_publishing")
 @patch("etl.reconciliation.reconcile.insert_records")
 def test_reconcile_skips_writes_for_empty_safe_chunks(
-    mock_insert, mock_make_safe, mock_iter_chunks, mock_diff, mock_build_hash
+    mock_insert, mock_make_safe, mock_iter_chunks, mock_diff, mock_build_modified
 ):
     # Confirms the engine skips writing if the safety gate filters out all records in an insert chunk.
     # Expects insert_records to NOT be called if make_safe_for_publishing returns an empty dataframe, else fails.
 
-    mock_build_hash.return_value = {"1": "hash_1"}
+    mock_build_modified.return_value = {"1": "2026-08-09 10:00:00"}
     mock_diff.return_value = {
         "inserts": {"1"},
         "updates": set(),

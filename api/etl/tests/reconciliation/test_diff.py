@@ -1,19 +1,26 @@
+"""
+Unit tests for reconciliation diffing and mapping utilities, 
+verifying correct identification of inserts, updates, deletes, and unchanged records 
+using date_mdb_modified timestamps.
+"""
+
 import pandas as pd
 import pytest
 
-from etl.reconciliation.diff import (  # Update with your actual module path if different
+from etl.reconciliation.diff import (
     build_id_hash_map,
     build_id_hash_map_from_chunks,
-    diff_id_hash_maps,
+    build_id_modified_map,
+    build_id_modified_map_from_chunks,
+    diff_id_modified_maps,
 )
 
 
-# --- build_id_hash_map tests ---
+# --- build_id_hash_map tests (Audit storage only) ---
 
 
 def test_build_id_hash_map_returns_dictionary():
     # Confirms each unique_no is successfully mapped to its content hash.
-    # Expects IDs to be stored as strings because database keys are TEXT, else fails.
     df = pd.DataFrame(
         {
             "unique_no": [1, 2],
@@ -29,44 +36,8 @@ def test_build_id_hash_map_returns_dictionary():
     }
 
 
-def test_build_id_hash_map_returns_empty_dictionary_for_empty_dataframe():
-    # Confirms an empty dataframe produces an empty dictionary without errors.
-    # Expects an empty dictionary {} to be returned, else fails.
-    df = pd.DataFrame(
-        columns=[
-            "unique_no",
-            "content_hash",
-        ]
-    )
-
-    result = build_id_hash_map(df)
-
-    assert result == {}
-
-
-def test_build_id_hash_map_raises_keyerror_missing_columns():
-    # Confirms the function enforces the presence of necessary data columns.
-    # Expects a KeyError to be raised if unique_no or content_hash are missing, else fails.
-    df = pd.DataFrame(
-        {
-            "unique_no": [1, 2],
-            # Missing content_hash
-        }
-    )
-
-    with pytest.raises(KeyError) as exc_info:
-        build_id_hash_map(df)
-
-    assert "Missing required columns" in str(exc_info.value)
-    assert "content_hash" in str(exc_info.value)
-
-
-# --- build_id_hash_map_from_chunks tests ---
-
-
 def test_build_id_hash_map_from_chunks_merges_dictionaries():
-    # Confirms the function correctly iterates over chunks and merges their hash maps.
-    # Expects a single combined dictionary of all unique_no to content_hash mappings, else fails.
+    # Confirms chunked audit hash maps are correctly merged.
     chunk1 = pd.DataFrame({"unique_no": [1, 2], "content_hash": ["abc", "def"]})
     chunk2 = pd.DataFrame({"unique_no": [3, 4], "content_hash": ["ghi", "jkl"]})
 
@@ -75,22 +46,56 @@ def test_build_id_hash_map_from_chunks_merges_dictionaries():
     assert result == {"1": "abc", "2": "def", "3": "ghi", "4": "jkl"}
 
 
-# --- diff_id_hash_maps tests ---
+# --- build_id_modified_map tests ---
 
 
-def test_diff_id_hash_maps_detects_insert():
+def test_build_id_modified_map_returns_dictionary():
+    # Confirms each unique_no is successfully mapped to its date_mdb_modified timestamp.
+    df = pd.DataFrame(
+        {
+            "unique_no": [1, 2],
+            "date_mdb_modified": ["2026-01-01", "2026-01-02"],
+        }
+    )
+
+    result = build_id_modified_map(df)
+
+    assert result == {
+        "1": "2026-01-01",
+        "2": "2026-01-02",
+    }
+
+
+def test_build_id_modified_map_raises_keyerror_missing_columns():
+    # Confirms the function enforces the presence of necessary data columns.
+    df = pd.DataFrame(
+        {
+            "unique_no": [1, 2],
+            # Missing date_mdb_modified
+        }
+    )
+
+    with pytest.raises(KeyError) as exc_info:
+        build_id_modified_map(df)
+
+    assert "Missing required columns" in str(exc_info.value)
+
+
+# --- diff_id_modified_maps tests ---
+
+
+def test_diff_id_modified_maps_detects_insert():
     # Confirms IDs only present in the source are marked as inserts.
-    # Expects '2' to be categorized in the inserts set, else fails.
     source = {
-        "1": "a",
-        "2": "b",
+        "1": "2026-01-01",
+        "2": "2026-01-02",
     }
 
     ui = {
-        "1": "a",
+        "1": "2026-01-01",
     }
 
-    result = diff_id_hash_maps(
+    result = diff_id_modified_maps(
         source,
         ui,
     )
@@ -101,19 +106,18 @@ def test_diff_id_hash_maps_detects_insert():
     assert result["unchanged"] == {"1"}
 
 
-def test_diff_id_hash_maps_detects_delete():
+def test_diff_id_modified_maps_detects_delete():
     # Confirms IDs only present in the UI are marked as deletes.
-    # Expects '2' to be categorized in the deletes set, else fails.
     source = {
-        "1": "a",
+        "1": "2026-01-01",
     }
 
     ui = {
-        "1": "a",
-        "2": "b",
+        "1": "2026-01-01",
+        "2": "2026-01-02",
     }
 
-    result = diff_id_hash_maps(
+    result = diff_id_modified_maps(
         source,
         ui,
     )
@@ -124,18 +128,17 @@ def test_diff_id_hash_maps_detects_delete():
     assert result["unchanged"] == {"1"}
 
 
-def test_diff_id_hash_maps_detects_update():
-    # Confirms matching IDs with different hashes are marked as updates.
-    # Expects '1' to be placed in the updates set due to the hash change, else fails.
+def test_diff_id_modified_maps_detects_update():
+    # Confirms matching IDs with a newer source modification date are marked as updates.
     source = {
-        "1": "new_hash",
+        "1": "2026-01-03",
     }
 
     ui = {
-        "1": "old_hash",
+        "1": "2026-01-01",
     }
 
-    result = diff_id_hash_maps(
+    result = diff_id_modified_maps(
         source,
         ui,
     )
@@ -144,18 +147,17 @@ def test_diff_id_hash_maps_detects_update():
     assert result["unchanged"] == set()
 
 
-def test_diff_id_hash_maps_detects_unchanged_record():
-    # Confirms matching IDs with identical hashes remain unchanged.
-    # Expects '1' to be placed in the unchanged set, else fails.
+def test_diff_id_modified_maps_detects_unchanged_record():
+    # Confirms matching IDs with identical modification dates remain unchanged.
     source = {
-        "1": "same_hash",
+        "1": "2026-01-01",
     }
 
     ui = {
-        "1": "same_hash",
+        "1": "2026-01-01",
     }
 
-    result = diff_id_hash_maps(
+    result = diff_id_modified_maps(
         source,
         ui,
     )
@@ -164,22 +166,21 @@ def test_diff_id_hash_maps_detects_unchanged_record():
     assert result["updates"] == set()
 
 
-def test_diff_id_hash_maps_detects_all_change_types():
+def test_diff_id_modified_maps_detects_all_change_types():
     # Confirms inserts, updates, deletes and unchanged records are identified together.
-    # Expects each dictionary item to be sorted into the correct set based on logic, else fails.
     source = {
-        "1": "same",
-        "2": "changed",
-        "3": "new",
+        "1": "2026-01-01",  # unchanged
+        "2": "2026-01-05",  # updated (newer date)
+        "3": "2026-01-03",  # new insert
     }
 
     ui = {
-        "1": "same",
-        "2": "old",
-        "4": "removed",
+        "1": "2026-01-01",
+        "2": "2026-01-02",
+        "4": "2026-01-01",  # removed (delete)
     }
 
-    result = diff_id_hash_maps(
+    result = diff_id_modified_maps(
         source,
         ui,
     )

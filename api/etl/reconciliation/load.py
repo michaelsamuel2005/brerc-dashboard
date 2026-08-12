@@ -205,6 +205,7 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "precision_metres",
         "verified",
         "content_hash",
+        "date_mdb_modified",
         "Load",
         "Load_date",
     }
@@ -226,6 +227,7 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
         "locality",
         "verified",
         "content_hash",
+        "date_mdb_modified",
         "Load",
         "Load_date",
     ]
@@ -252,6 +254,7 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
                 locality         TEXT,
                 verified         BOOLEAN,
                 content_hash     TEXT,
+                date_mdb_modified TIMESTAMPTZ,
                 "Load"           TEXT,
                 "Load_date"      TIMESTAMPTZ
             """,
@@ -262,26 +265,27 @@ def _upsert_occurrences(records_df: pd.DataFrame, connection) -> None:
             INSERT INTO occurrence_public (
                 record_id, species_id, record_year, grid_ref,
                 precision_metres, locality, verified, content_hash,
-                "Load", "Load_date"
+                date_mdb_modified, "Load", "Load_date"
             )
             SELECT
                 record_id, species_id, record_year, grid_ref,
                 precision_metres, locality, verified, content_hash,
-                "Load", "Load_date"
+                date_mdb_modified, "Load", "Load_date"
             FROM occurrence_staging
 
             -- If the record already exists, update the existing row instead
             -- of inserting a duplicate.
             ON CONFLICT (record_id) DO UPDATE SET
-                species_id       = EXCLUDED.species_id,
-                record_year      = EXCLUDED.record_year,
-                grid_ref         = EXCLUDED.grid_ref,
-                precision_metres = EXCLUDED.precision_metres,
-                locality         = EXCLUDED.locality,
-                verified         = EXCLUDED.verified,
-                content_hash     = EXCLUDED.content_hash,
-                "Load"           = EXCLUDED."Load",
-                "Load_date"      = EXCLUDED."Load_date"
+                species_id        = EXCLUDED.species_id,
+                record_year       = EXCLUDED.record_year,
+                grid_ref          = EXCLUDED.grid_ref,
+                precision_metres  = EXCLUDED.precision_metres,
+                locality          = EXCLUDED.locality,
+                verified          = EXCLUDED.verified,
+                content_hash      = EXCLUDED.content_hash,
+                date_mdb_modified = EXCLUDED.date_mdb_modified,
+                "Load"            = EXCLUDED."Load",
+                "Load_date"       = EXCLUDED."Load_date"
             """
         )
 

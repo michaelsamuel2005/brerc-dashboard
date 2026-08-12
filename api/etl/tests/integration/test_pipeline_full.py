@@ -72,6 +72,7 @@ def test_nightly_job_end_to_end(
             "record_type": ["Observation"],
             "vitality": ["Alive"],
             "date_of_record": ["15/06/2026"],
+            "modified_date": ["2026-06-15 12:00:00+00"],  # <-- Added to satisfy strict schema check
             "coarse_locality": ["Bristol"],
             "effective_resolution_m": [1000],
             "is_legacy": [False],

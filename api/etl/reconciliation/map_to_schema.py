@@ -9,6 +9,7 @@ from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
 DATE_COLUMN = CONFIG["columns"]["record_date"]
+MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
 
 
 def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
@@ -45,5 +46,6 @@ def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
             "precision_metres": df["effective_resolution_m"],
             "verified": ~df["is_legacy"].astype(bool),
             "content_hash": df["content_hash"],
+            "date_mdb_modified": df[MODIFIED_COLUMN],
         }
     )
