@@ -5,13 +5,30 @@ import AxeBuilder from "@axe-core/playwright";
 // bidirectional (map <-> table + card), selecting does not move the user's view, and there
 // are no axe violations at desktop and mobile widths.
 test.describe("BRERC P3 slice", () => {
+  test("species directory deep-link searches and opens a coherent species route", async ({ page }) => {
+    await page.goto("/#/species");
+    await expect(page.getByRole("heading", { name: "Species directory" })).toBeVisible();
+    await page.getByLabel(/Search by common or scientific name/i).fill("Vipera");
+    await page.getByRole("button", { name: "Search" }).click();
+    const adder = page.getByRole("link", { name: /Explore Adder/i });
+    await expect(adder).toBeVisible();
+    await adder.click();
+    await expect(page).toHaveURL(/#\/species\/DEMO-002\/vipera-berus$/);
+    await expect(page.getByRole("heading", { name: "Adder", level: 2 })).toBeVisible();
+    await expect(page.getByText("Vipera berus")).toBeVisible();
+  });
+
   test("renders map + both tables with no axe violations", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /Slow-worm/ })).toBeVisible();
     await expect(page.locator(".maplibregl-canvas").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: /Distribution by grid square/ })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Sample of individual records/ })).toBeVisible();
-    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    await expect(page.getByRole("heading", { name: /Published records/ })).toBeVisible();
+    // Axe's installed rules do not implement target-size geometry; the dedicated
+    // collector supplies SC 2.5.8. Keep every other available 2.2 AA-tagged rule here.
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+      .analyze();
     expect(results.violations).toEqual([]);
   });
 
@@ -60,5 +77,25 @@ test.describe("BRERC P3 slice", () => {
     expect(Math.abs(topAfter - topBefore)).toBeLessThanOrEqual(20);
     await page.getByRole("button", { name: "Clear selection" }).click();
     await expect(page.locator(".cell-card--empty")).toBeVisible();
+  });
+
+  test("year filter: selecting a year cross-filters the map, tables and card, then resets", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    // The chart's accessible equivalent is a disclosure containing a button per year.
+    await page.getByRole("group", { name: /Distribution by grid square/ }).waitFor();
+    const squaresNote = page.locator("#cells-heading + p");
+    await expect(squaresNote).toContainText("186 records");
+    await page.getByRole("heading", { name: /Records submitted by year/ }).scrollIntoViewIfNeeded();
+    await page.locator(".chart-table > summary").click();
+    const yearButton = page.locator(".chart-table").getByRole("button", { name: /2024/ });
+    await yearButton.click();
+    await expect(yearButton).toHaveAttribute("aria-pressed", "true");
+    // The grid-square table is now filtered to that year (fewer than the 186 all-year total).
+    await expect(squaresNote).toContainText("Filtered to 2024");
+    await expect(squaresNote).not.toContainText("186 records");
+    // Toggle back to all years.
+    await yearButton.click();
+    await expect(squaresNote).toContainText("186 records");
   });
 });

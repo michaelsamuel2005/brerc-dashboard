@@ -31,13 +31,18 @@ typed client + TanStack Query hooks, MSW mock, PII-free fixtures.
   keyboard control surface: per-row buttons select/highlight a square.
 - **`features/species/SelectedCellCard.tsx`** — one authoritative selected-cell readout beside
   the map (`aria-live`); selection is shared map⇄table⇄card. No popup, no auto-scroll.
-- **`RecordsTable`** (a labelled sample) + **`SpeciesPanel`** + **`AttributedImage`** (licence/
-  attribution-safe slot with a graceful fallback).
+- **`RecordsTable`** (a policy-gated published-records view) + **`SpeciesPanel`** (credited
+  descriptions or an honest unavailable state) + **`AttributedImage`** (licence/attribution-
+  safe slot with a graceful fallback).
 
 ## C2 (data safety)
-Sensitive-location generalisation is enforced **server-side**; the client makes precise coords/PII
-**impossible** to surface, as a runtime gate:
-- `.strict()` Zod rejects any unexpected key (`Recorder1/BLISS/Eastings/Northings/Comments/sensitivity`).
+Sensitive-location generalisation is enforced **server-side**. The client provides a second,
+structural runtime gate; it does not claim to detect personal information hidden inside an
+otherwise allowed text value:
+- `.strict()` Zod rejects any unexpected key (`Recorder1`, `RecordKey`, `unique_no`, `BLISS`,
+  `easting(s)`, `northing(s)`, `Comments`, `sensitive` or `sensitivity`).
+- Public free-text values must be constructed server-side; raw `Source` text is replaced by
+  the controlled `BRERC` organisational label before the browser contract.
 - A record's grid ref must resolve to **exactly** its `precisionMetres`; a distribution cell's
   `cellId` must too — and the map derives geometry from that ID, so a precise polygon cannot be
   mislabelled as a coarse cell. Everything is **≥ 100 m** (the public floor).
@@ -45,13 +50,17 @@ Sensitive-location generalisation is enforced **server-side**; the client makes 
 - URLs must be **https**. `contract.test.ts` + `npm run guard` enforce this in CI.
 
 ## Verification gates
-`typecheck`, `lint`, `guard`, `test:run` (33 tests) and `build` pass in CI. Browser checks —
+The isolated publication-contract staging run passes strict `typecheck` and **462/462** unit,
+contract and accessibility tests. Repository CI additionally runs `lint`, `guard`, `build` and
+browser checks —
 WebGL render, keyboard, bidirectional map⇄table selection, and a "map click does not scroll the
 page" assertion — run via **Playwright + axe (`npm run e2e`)** at desktop and mobile.
 
 ## API endpoints (all mocked here)
 `/api/summary` · `/api/species` · `/api/species/{id}` · `/api/distribution/cells`
-(returns `{cells:[{cellId, precisionMetres, recordCount, verifiedCount}]}` — IDs, not geometry) ·
+(returns `{verificationAvailable, cells:[{cellId, precisionMetres, recordCount,
+verifiedCount?}]}` — IDs, not geometry; `verifiedCount` is required only when verification is
+available) ·
 `/api/records` · `/api/meta/provenance` · `/api/health`
 
 ## Next

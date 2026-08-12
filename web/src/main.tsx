@@ -1,5 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { Router } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import { App } from "./app/App";
 import { Providers } from "./app/providers";
 import "./styles/tokens.css";
@@ -17,7 +19,9 @@ void enableMocking().then(() => {
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <Providers>
-        <App />
+        <Router hook={useHashLocation}>
+          <App />
+        </Router>
       </Providers>
     </React.StrictMode>,
   );

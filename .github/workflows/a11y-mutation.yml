@@ -1,0 +1,41 @@
+name: accessibility mutation evidence
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: accessibility-mutation
+  cancel-in-progress: false
+
+jobs:
+  focused-operator-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run in a disposable copy with kill verification
+        run: npm run a11y:mutate
+      - name: Upload focused mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brerc-a11y-mutation-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          path: web/test-results/a11y-mutation/

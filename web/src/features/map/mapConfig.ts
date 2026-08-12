@@ -2,27 +2,36 @@
 // (basemap, colour ramp, zoom range) are testable and centralised.
 import type { StyleSpecification, ExpressionSpecification } from "maplibre-gl";
 import type { LayerProps } from "react-map-gl/maplibre";
+export { INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM } from "./mapConstants";
 
-// A no-key light basemap (CARTO Voyager raster). Clean cartography that lets the green
-// data cells stand out — the same family the mid-review prototype validated.
-export const MAP_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: "raster",
-      tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors © CARTO",
-    },
-  },
-  layers: [{ id: "base", type: "raster", source: "carto" }],
-};
-
-// Framed on the demo cells (south Bristol). Cells are always drawn at their true 1 km
-// extent, so zoom only magnifies them — MAX_ZOOM is a basemap-detail bound, not an
-// honesty device (the honesty is that we draw squares, never points).
-export const INITIAL_VIEW = { longitude: -2.585, latitude: 51.454, zoom: 12 };
-export const MAX_ZOOM = 14;
+// A no-key light basemap (CARTO Voyager raster). The evidence runner uses a local,
+// network-independent background with the same attribution semantics; third-party tile
+// availability must never decide whether an accessibility test passes.
+const A11Y_TEST_MODE = import.meta.env.VITE_A11Y_TEST_MODE === "true";
+export const MAP_STYLE: StyleSpecification = A11Y_TEST_MODE
+  ? {
+      version: 8,
+      sources: {
+        credits: {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+          attribution: "© OpenStreetMap contributors © CARTO",
+        },
+      },
+      layers: [{ id: "base", type: "background", paint: { "background-color": "#f2efe5" } }],
+    }
+  : {
+      version: 8,
+      sources: {
+        carto: {
+          type: "raster",
+          tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap contributors © CARTO",
+        },
+      },
+      layers: [{ id: "base", type: "raster", source: "carto" }],
+    };
 
 // Colour-blind-safe sequential green ramp. Meaning is ALSO carried by the legend labels.
 export const CELL_COLOURS: readonly [string, string, string, string] = ["#cfe8c9", "#8fcf93", "#3f9e63", "#1c6b40"];

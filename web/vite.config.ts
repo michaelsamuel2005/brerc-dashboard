@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 // The public front-end build. dev/test run entirely against the MSW mock (A11);
 // production points at the team API via VITE_API_BASE_URL (config-only, R6).
 export default defineConfig({
+  cacheDir: ".vite-cache",
   plugins: [react()],
   test: {
     globals: true,

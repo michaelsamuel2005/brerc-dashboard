@@ -1,7 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { gridRefCentroid, gridRefToPolygon, parseGridRef } from "./osgb";
+import corpus from "../../../../contracts/gridref-validation-corpus.json";
+import { GridCellSchema, PUBLIC_MIN_PRECISION_METRES } from "../api/schemas";
 
 describe("osgb grid-ref geometry", () => {
+  it("draws every contract-valid ref and rejects every invalid one", () => {
+    for (const testCase of corpus) {
+      const expected = testCase.precisionMetres;
+      const parsed = parseGridRef(testCase.ref);
+      const polygon = gridRefToPolygon(testCase.ref);
+      if (expected === null) {
+        expect(parsed, testCase.ref).toBeNull();
+        expect(polygon, testCase.ref).toBeNull();
+      } else {
+        expect(parsed?.size, testCase.ref).toBe(expected);
+        expect(polygon, testCase.ref).toHaveLength(5);
+      }
+    }
+  });
+
+  it("draws every grid cell the public API contract accepts", () => {
+    for (const testCase of corpus) {
+      const result = GridCellSchema.safeParse({
+        cellId: testCase.ref,
+        precisionMetres: testCase.precisionMetres,
+        recordCount: 1,
+        verifiedCount: 0,
+      });
+      const shouldBePublic =
+        testCase.precisionMetres !== null &&
+        testCase.precisionMetres >= PUBLIC_MIN_PRECISION_METRES;
+
+      expect(result.success, testCase.ref).toBe(shouldBePublic);
+      if (result.success) {
+        expect(gridRefToPolygon(result.data.cellId), testCase.ref).toHaveLength(5);
+      }
+    }
+  });
+
   it("parses a 1 km grid ref to its SW easting/northing and size", () => {
     expect(parseGridRef("ST5872")).toEqual({ easting: 358000, northing: 172000, size: 1000 });
   });

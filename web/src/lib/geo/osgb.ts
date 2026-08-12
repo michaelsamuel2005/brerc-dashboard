@@ -4,25 +4,14 @@
 // cell: the geometry always matches the ID. Verified against pyproj in osgb.test.ts.
 const D2R = Math.PI / 180;
 const S2R = Math.PI / (180 * 3600);
-const PER_AXIS_METRES: Record<number, number> = { 1: 10000, 2: 1000, 3: 100, 4: 10, 5: 1 };
+import { parseNumericGridRef } from "./gridref";
 
 /** SW-corner easting/northing (EPSG:27700) + cell size (m) for an OS grid ref, or null. */
 export function parseGridRef(ref: string): { easting: number; northing: number; size: number } | null {
-  const m = /^([A-Z]{2})(\d+)$/.exec(ref.replace(/\s+/g, "").toUpperCase());
-  if (!m) return null;
-  const letters = m[1] as string;
-  const digits = m[2] as string;
-  if (digits.length % 2 !== 0) return null;
-  let l1 = letters.charCodeAt(0) - 65;
-  let l2 = letters.charCodeAt(1) - 65;
-  if (l1 > 7) l1 -= 1;
-  if (l2 > 7) l2 -= 1;
-  const e100 = ((l1 - 2) % 5) * 5 + (l2 % 5);
-  const n100 = 19 - Math.floor(l1 / 5) * 5 - Math.floor(l2 / 5);
-  if (e100 < 0 || n100 < 0) return null;
+  const parsed = parseNumericGridRef(ref);
+  if (!parsed) return null;
+  const { digits, e100, n100, size } = parsed;
   const half = digits.length / 2;
-  const size = PER_AXIS_METRES[half];
-  if (size === undefined) return null;
   const easting = e100 * 100000 + Number(digits.slice(0, half)) * size;
   const northing = n100 * 100000 + Number(digits.slice(half)) * size;
   return { easting, northing, size };

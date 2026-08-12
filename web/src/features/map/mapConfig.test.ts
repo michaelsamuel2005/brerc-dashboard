@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CELL_BREAKS, CELL_COLOURS, LEGEND_BANDS, MAX_ZOOM, cellsFillLayer } from "./mapConfig";
+import { CELL_BREAKS, CELL_COLOURS, LEGEND_BANDS, MAX_ZOOM, MIN_ZOOM, cellsFillLayer } from "./mapConfig";
 
 describe("mapConfig", () => {
-  it("caps zoom so cells never imply a false precision", () => {
+  it("caps zoom at the product-supported basemap detail", () => {
     expect(MAX_ZOOM).toBeLessThanOrEqual(14);
+  });
+
+  it("prevents zooming below the product-approved 44px cell boundary", () => {
+    expect(MIN_ZOOM).toBeGreaterThanOrEqual(11.2);
+    expect(MIN_ZOOM).toBeLessThan(MAX_ZOOM);
   });
 
   it("has one more colour than breaks, and a labelled legend band per colour", () => {

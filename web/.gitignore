@@ -6,3 +6,5 @@ dist
 coverage
 test-results
 playwright-report
+screenshots
+.vite-cache
