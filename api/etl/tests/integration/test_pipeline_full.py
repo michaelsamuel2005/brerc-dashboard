@@ -60,6 +60,9 @@ def test_nightly_job_end_to_end(
     #
     # "Accepted" is intentional: the safety/verified filtering stage
     # only allows accepted records into the public output.
+    #
+    # The real CSV does not contain date_mdb_modified, so the integration
+    # test supplies the production database field explicitly.
     # ------------------------------------------------------------------
     sample_records = pd.DataFrame(
         {
@@ -72,7 +75,7 @@ def test_nightly_job_end_to_end(
             "record_type": ["Observation"],
             "vitality": ["Alive"],
             "date_of_record": ["15/06/2026"],
-            "modified_date": ["2026-06-15 12:00:00+00"],  # <-- Added to satisfy strict schema check
+            "date_mdb_modified": ["2026-06-15 12:00:00+00"],
             "coarse_locality": ["Bristol"],
             "effective_resolution_m": [1000],
             "is_legacy": [False],
@@ -146,7 +149,7 @@ def test_nightly_job_end_to_end(
                 "eastings": "eastings",
                 "northings": "northings",
                 "record_date": "date_of_record",
-                "modified_date": "modified_date",
+                "modified_date": "date_mdb_modified",
             },
             "reconciliation": {
                 "hash_columns": [
@@ -187,7 +190,9 @@ def test_nightly_job_end_to_end(
             species_index = result["aggregation"]["species_index"]
 
             assert not species_index.empty
-            assert test_species_id in (species_index["species_id"].astype(str).tolist())
+            assert test_species_id in (
+                species_index["species_id"].astype(str).tolist()
+            )
 
             # ------------------------------------------------------------------
             # Verify the occurrence was actually persisted.
@@ -195,7 +200,7 @@ def test_nightly_job_end_to_end(
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT record_id, species_id
+                    SELECT record_id, species_id, date_mdb_modified
                     FROM occurrence_public
                     WHERE record_id = %s
                     """,
@@ -207,6 +212,7 @@ def test_nightly_job_end_to_end(
             assert row is not None
             assert str(row["record_id"]) == test_record_id
             assert str(row["species_id"]) == test_species_id
+            assert row["date_mdb_modified"] is not None
 
         finally:
             # ---------------------------------------------------------------

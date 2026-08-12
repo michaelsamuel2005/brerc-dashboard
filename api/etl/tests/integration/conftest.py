@@ -36,14 +36,35 @@ def _reseed_sample_data():
                 """
                 INSERT INTO occurrence_public (record_id, species_id, record_year, grid_ref,
                                                precision_metres, locality, verified,
-                                               content_hash, "Load", "Load_date") VALUES
-                    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',               true,  md5('1|100001|2024|ST5872'), 'initial', '2026-08-09 00:00:00'),
-                    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',               true,  md5('2|100001|2023|ST5973'), 'initial', '2026-08-09 00:00:00'),
-                    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',               false, md5('3|100001|2022|ST5771'), 'initial', '2026-08-09 00:00:00'),
-                    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true,  md5('4|100002|2024|ST6074'), 'initial', '2026-08-09 00:00:00'),
-                    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true,  md5('5|100002|2021|ST61'),   'initial', '2026-08-09 00:00:00'),
-                    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',            true,  md5('6|100003|2025|ST5'),    'initial', '2026-08-09 00:00:00'),
-                    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',            false, md5('7|100003|2024|ST5'),    'initial', '2026-08-09 00:00:00');
+                                               content_hash, date_mdb_modified,
+                                               "Load", "Load_date") VALUES
+                    (1, 100001, 2024, 'ST5872', 1000,  'Bristol (ST58)',
+                     true,  md5('1|100001|2024|ST5872'), '2026-08-01 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (2, 100001, 2023, 'ST5973', 1000,  'Bristol (ST59)',
+                     true,  md5('2|100001|2023|ST5973'), '2026-08-02 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (3, 100001, 2022, 'ST5771', 1000,  'Bristol (ST57)',
+                     false, md5('3|100001|2022|ST5771'), '2026-08-03 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (4, 100002, 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)',
+                     true,  md5('4|100002|2024|ST6074'), '2026-08-04 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (5, 100002, 2021, 'ST61',   10000, 'South Gloucestershire (ST61)',
+                     true,  md5('5|100002|2021|ST61'),   '2026-08-05 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (6, 100003, 2025, 'ST5',    10000, 'Bristol area (ST)',
+                     true,  md5('6|100003|2025|ST5'),    '2026-08-06 10:00:00',
+                     'initial', '2026-08-09 00:00:00'),
+
+                    (7, 100003, 2024, 'ST5',    10000, 'Bristol area (ST)',
+                     false, md5('7|100003|2024|ST5'),    '2026-08-07 10:00:00',
+                     'initial', '2026-08-09 00:00:00');
                 """
             )
 

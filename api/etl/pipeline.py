@@ -56,9 +56,11 @@ def run_pipeline(
 
     try:
         # Step 1: Clean raw column names and formats
+        logger.info("SOURCE columns: %s", sorted(source_df.columns.tolist()))
         logger.info("Cleaning source and dictionary dataframes...")
         cleaned_source = clean_data(source_df)
         cleaned_dictionary = clean_data(dictionary_df)
+        logger.info("CLEANED columns: %s", sorted(cleaned_source.columns.tolist()))
 
         # Step 2: Match and resolve species identifiers (species_no)
         logger.info("Resolving species numbers...")
@@ -66,6 +68,7 @@ def run_pipeline(
             cleaned_source,
             cleaned_dictionary,
         )
+        logger.info("RESOLVED columns: %s", sorted(resolved_source.columns.tolist()))
 
         # Step 3: Build derived public aggregation layers
         logger.info("Building public aggregation layer...")
