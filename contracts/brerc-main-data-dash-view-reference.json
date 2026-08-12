@@ -1,0 +1,34 @@
+{
+  "artifactFormat": "brerc-client-view-reference/v1",
+  "status": "client-supplied-reference-not-live-attestation",
+  "receivedDocument": {
+    "filename": "BRERC-postgres db for 180dc-310726-161446.pdf",
+    "sha256": "567f614773df83609c3dd1a63f6b5d44fd98406d67ef60f2e5eb66f1fcebb72d",
+    "sizeBytes": 334272,
+    "documentDate": "2026-07-31",
+    "containsCompleteCreateViewStatement": true
+  },
+  "sourceObject": {
+    "schema": "dashboard",
+    "name": "main_data_dash",
+    "objectType": "view",
+    "confirmedColumnCount": 39
+  },
+  "repositoryHandling": {
+    "rawPdfCommitted": false,
+    "rawViewSqlCommitted": false,
+    "reason": "Internal SQL and infrastructure names require explicit BRERC permission before repository publication."
+  },
+  "liveCapture": {
+    "definitionDigestProfile": "postgres-pg-get-viewdef-oid-false-exact-utf8-fixed-gucs-sha256-v1",
+    "identityProfile": "brerc-postgres-view-identity-sha256-v1",
+    "captureEvidenceProfile": "brerc-view-capture-canonical-json-sha256-v1",
+    "status": "pending-brerc-live-capture"
+  },
+  "approvedLiveViewIdentity": null,
+  "limitations": [
+    "The PDF checksum proves which client document was reviewed; it is not a SQL digest.",
+    "The pictured CREATE VIEW text is not byte-identical to PostgreSQL pg_get_viewdef output.",
+    "The live database must be captured and explicitly approved by an authorised BRERC owner."
+  ]
+}

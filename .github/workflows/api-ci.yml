@@ -1,0 +1,183 @@
+name: API CI
+
+on:
+  push:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  data-guard:
+    name: No client data, credentials or controlled evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test the tracked-file guard
+        run: python -m unittest scripts.test_guard_no_data_files
+      - name: Reject tracked client data and source secrets
+        run: python scripts/guard_no_data_files.py --repo-root .
+
+  test:
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Test the import guard
+        run: python -m unittest scripts.test_guard_stdlib_only
+      - name: Enforce this Python version's standard-library boundary
+        run: python scripts/guard_stdlib_only.py
+      - name: Run package-aware unit tests
+        run: python -m unittest discover --start-directory tests --top-level-directory . --pattern "test_*.py"
+      - name: Check the browser contract fixture
+        run: python scripts/generate_browser_contract_fixture.py --check ../contracts/etl-browser-contract-fixture.json
+
+  connector:
+    name: Trusted source connector (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the pinned connector adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Run trusted connector tests
+        run: python -m unittest discover --start-directory connector_tests --top-level-directory . --pattern "test_*.py"
+      - name: Confirm the ETL core stayed standard-library-only
+        run: python scripts/guard_stdlib_only.py
+
+  postgres-integration:
+    name: PostgreSQL 16 TLS integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.10-bookworm
+        env:
+          POSTGRES_DB: brerc_connector
+          POSTGRES_PASSWORD: synthetic-admin-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_connector"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the pinned connector adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Provision synthetic TLS source and read-only roles
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          bash connector_tests/setup_postgres16_tls.sh \
+            "${POSTGRES_CONTAINER}" \
+            connector_tests/postgres16_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgres16-tls"
+      - name: Run real Psycopg/PostgreSQL integration
+        run: >-
+          python -m unittest
+          connector_tests.test_postgres16_integration
+
+  lint:
+    name: Ruff lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pinned development tools from package metadata
+        run: python -m pip install --disable-pip-version-check ".[dev]"
+      - run: python -m ruff check .
+      - run: python -m ruff format --check .
+
+  wheel:
+    name: Build and import wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pinned build frontend
+        run: python -m pip install --disable-pip-version-check "build==1.2.2.post1"
+      - name: Build wheel
+        run: python -m build --wheel
+      - name: Install wheel into a clean environment
+        run: |
+          python -m venv "${RUNNER_TEMP}/brerc-api-wheel-smoke"
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/python" -m pip install \
+            --disable-pip-version-check --no-index --no-deps dist/*.whl
+      - name: Import installed package outside the source tree
+        working-directory: ${{ runner.temp }}
+        run: |
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/python" -I \
+            "${GITHUB_WORKSPACE}/api/scripts/smoke_installed_package.py" \
+            --source-root "${GITHUB_WORKSPACE}/api"
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/brerc-source" --help
+      - name: Install connector dependencies and import the adapter from the wheel
+        run: |
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/python" -m pip install \
+            --disable-pip-version-check "psycopg[binary]==3.3.4" "PyYAML==6.0.3"
+          cd "${RUNNER_TEMP}"
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/python" -I -c \
+            "import brerc_source, yaml, psycopg; assert brerc_source.load_source_config"

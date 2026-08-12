@@ -1,0 +1,27 @@
+name: Data guard
+
+# Deliberately unfiltered: a forbidden data file can be added anywhere.
+on:
+  push:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-tracked-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test the data guard
+        run: python -m unittest scripts.test_guard_no_data_files
+      - run: python scripts/guard_no_data_files.py --repo-root .

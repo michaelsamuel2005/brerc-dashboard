@@ -9,9 +9,27 @@ Thumbs.db
 .env
 .env.*
 
+# Trusted PostgreSQL source connector — deployment configuration, credential
+# lookup files and private client keys live in BRERC's secret store, never git.
+# The credential-free configuration.example.yaml and public root CA certificate
+# may be reviewed and versioned separately; these exact deployment names may not.
+/api/configuration.yaml
+.pgpass
+pgpass.conf
+.pg_service.conf
+pg_service.conf
+*.pgpass
+*.pg_service.conf
+*.key
+brerc-source.pgpass
+brerc-source.pg_service.conf
+brerc-source-client.key
+brerc-source-client.crt
+
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 .pytest_cache/
@@ -29,3 +47,70 @@ coverage/
 # The folder and its README are tracked; everything else inside is ignored.
 data/*
 !data/README.md
+
+# --- Client data formats, wherever they land -------------------------------
+# `data/*` above covers the intended location. These patterns catch the same
+# formats anywhere in the tree — a workbook saved next to a notebook, an extract
+# dropped into api/, an archive copied in from Downloads.
+#
+# .github/workflows/data-guard.yml fails CI if one of these is TRACKED, on every
+# push, with no path filter. These rules are what stop it being staged in the
+# first place; the guard is what catches a `git add -f` or a rename that dodges
+# a pattern. Both, because either alone has a hole.
+#
+# If you genuinely need to commit one (a synthetic fixture), force-add it AND add
+# its path to ALLOWED in scripts/guard_no_data_files.py with the reason.
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.ods
+*.csv
+*.tsv
+*.psv
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.parquet
+*.feather
+*.dta
+*.sav
+*.sqlite
+*.sqlite3
+*.db
+*.mdb
+*.accdb
+*.gpkg
+*.geojson
+*.shp
+*.dbf
+*.shx
+*.prj
+*.kml
+*.kmz
+*.gpx
+*.mbtiles
+*.gdb/
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz
+
+# Local git worktrees used for isolated integration work.
+.worktrees/
+
+# BRERC live-view attestation evidence. The raw capture contains internal SQL,
+# database/role names and an object OID. Keep it in BRERC-controlled storage;
+# commit only a reviewed, explicitly authorised approval artefact.
+*.brerc-view-capture.json
+*.brerc-view-definition.sql
+*.brerc-view-approval.pending.json
+*.brerc-view-approval.json
+BRERC-postgres db for 180dc-310726-161446.pdf
