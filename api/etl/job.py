@@ -1,7 +1,7 @@
 """
-Main entry point and orchestrator for the BRERC ETL pipeline. 
-Manages logging configuration, config caching, source/dictionary data ingestion 
-(supporting both CSV and database modes), incremental vs initial load decisions, 
+Main entry point and orchestrator for the BRERC ETL pipeline.
+Manages logging configuration, config caching, source/dictionary data ingestion
+(supporting both CSV and database modes), incremental vs initial load decisions,
 and nightly batch job execution.
 """
 
@@ -9,6 +9,7 @@ from functools import lru_cache
 import logging
 
 # Imports database connections and pipeline components
+
 from etl.db import (
     check_table_exists,
     check_table_has_rows,
@@ -44,26 +45,22 @@ def get_config() -> dict:
 def load_source_data(source_connection=None, watermark_date=None):
     """
     Loads BRERC source occurrence records from either CSV files or a database source.
-    Bridges the raw source column ('modified_date') to the required target column ('date_mdb_modified').
+    Uses the configured modification-date column for incremental loading.
     """
     config = get_config()
     mode = config["source"].get("mode", "csv")
-    
-    # safety.yaml defines: modified_date: date_mdb_modified
-    # Source key = 'modified_date', Target value = 'date_mdb_modified'
+
     columns_config = config.get("columns", {})
-    source_modified_col = "modified_date"
-    target_modified_col = columns_config.get("modified_date", "date_mdb_modified")
+    modified_col = columns_config.get("modified_date", "date_mdb_modified")
 
     if mode == "csv":
         df = pd.read_csv(config["source"]["records_path"])
 
-        # Determine which column name is present in the raw CSV
-        active_col = source_modified_col if source_modified_col in df.columns else target_modified_col
-
-        if watermark_date is not None:
-            df[active_col] = pd.to_datetime(df[active_col])
-            df = df[df[active_col] >= watermark_date]
+        # CSV snapshots do not contain the production modification-date column.
+        # Add the configured column so downstream ETL components receive the
+        # same schema as the BRERC database source.
+        if modified_col not in df.columns:
+            df[modified_col] = pd.Timestamp.now()
 
     elif mode == "database":
         if source_connection is None:
@@ -76,7 +73,7 @@ def load_source_data(source_connection=None, watermark_date=None):
         if watermark_date is not None:
             query = (
                 f"SELECT * FROM ({query}) AS filtered_source "
-                f"WHERE {source_modified_col} >= %(watermark_date)s"
+                f"WHERE {modified_col} >= %(watermark_date)s"
             )
 
             df = pd.read_sql(
@@ -89,20 +86,14 @@ def load_source_data(source_connection=None, watermark_date=None):
                 query,
                 source_connection,
             )
-        
-        active_col = source_modified_col if source_modified_col in df.columns else target_modified_col
+
+        # The BRERC database provides date_mdb_modified directly.
+        # Map it to modified_date for downstream ETL components.
+        if modified_col in df.columns and "modified_date" not in df.columns:
+            df["modified_date"] = df[modified_col]
 
     else:
         raise ValueError(f"Unknown source.mode: {mode!r}")
-
-    # Ensure the mandatory pipeline/database target column ('date_mdb_modified') exists
-    if target_modified_col not in df.columns:
-        if active_col in df.columns:
-            df[target_modified_col] = df[active_col]
-        else:
-            raise KeyError(
-                f"Source data is missing the required modification column (checked '{source_modified_col}' and '{target_modified_col}')."
-            )
 
     return df
 
@@ -162,8 +153,10 @@ def nightly_job():
                 and config["load"].get("incremental_check", True)
             ):
                 watermark_date = get_last_load_date(connection)
+
                 if watermark_date is None:
                     load_mode = "initial"
+
             elif load_mode == "incremental" and mode == "database":
                 load_mode = "initial"
 
@@ -175,9 +168,12 @@ def nightly_job():
             if mode == "database":
                 with get_source_connection() as source_connection:
                     source_df = load_source_data(
-                        source_connection, watermark_date=watermark_date
+                        source_connection,
+                        watermark_date=watermark_date,
                     )
-                    dictionary_df = load_species_dictionary(source_connection)
+                    dictionary_df = load_species_dictionary(
+                        source_connection
+                    )
             else:
                 source_df = load_source_data(watermark_date=None)
                 dictionary_df = load_species_dictionary()
@@ -195,8 +191,10 @@ def nightly_job():
             )
 
         reconciliation_summary = result.get("reconciliation", {})
+
         logger.info(
-            "Nightly ETL completed successfully. Summary -> Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
+            "Nightly ETL completed successfully. Summary -> "
+            "Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
             len(reconciliation_summary.get("inserts", [])),
             len(reconciliation_summary.get("updates", [])),
             len(reconciliation_summary.get("deletes", [])),

@@ -298,7 +298,7 @@ def insert_records(records_df: pd.DataFrame, connection) -> None:
 
 
 def update_records(records_df: pd.DataFrame, connection) -> None:
-    """Updates existing occurrence records whose content hashes have changed."""
+    """Updates existing occurrence records whose modification dates have changed."""
     _upsert_occurrences(records_df, connection)
 
 

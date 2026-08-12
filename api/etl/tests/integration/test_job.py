@@ -12,16 +12,13 @@ from etl.job import (
 
 # --- load_source_data tests ---
 
-
 @patch("etl.job.pd.read_csv")
 def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
-    # Confirms source data is loaded from CSV when source mode is csv.
-    # The real database source provides the modification date column;
-    # the CSV fixture mocks that production field for local testing.
+    # Confirms source data is loaded from CSV when source mode is csv
+    # and safely injects the missing modification column for downstream ETL compatibility.
     mock_df = pd.DataFrame(
         {
             "col": [1, 2],
-            "modified_date": ["2026-01-01", "2026-01-02"],
         }
     )
     mock_read_csv.return_value = mock_df
@@ -42,6 +39,7 @@ def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
 
     mock_read_csv.assert_called_once_with("dummy.csv")
     assert len(result) == 2
+    assert "col" in result.columns
     assert "date_mdb_modified" in result.columns
 
 
@@ -67,14 +65,14 @@ def test_load_source_data_database_mode_raises_valueerror_without_connection():
 
 @patch("etl.job.pd.read_sql")
 def test_load_source_data_database_mode_incremental(mock_read_sql):
-    # Confirms incremental database queries are wrapped with a watermark
-    # filter and that the source modification column is mapped correctly.
+    # Confirms incremental database queries use the real BRERC
+    # date_mdb_modified column and map it to the ETL's modified_date column.
     mock_conn = MagicMock()
 
     mock_read_sql.return_value = pd.DataFrame(
         {
             "unique_no": [1],
-            "modified_date": ["2026-01-01"],
+            "date_mdb_modified": ["2026-01-01"],
         }
     )
 
@@ -98,12 +96,21 @@ def test_load_source_data_database_mode_incremental(mock_read_sql):
 
     called_query = mock_read_sql.call_args[0][0]
 
-    assert "WHERE modified_date >= %(watermark_date)s" in called_query
+    assert "WHERE date_mdb_modified >= %(watermark_date)s" in called_query
+
+    # The real database column should be present in the returned data.
     assert "date_mdb_modified" in result.columns
+
+    # The source database column should also be mapped to
+    # the ETL's internal modification-date column.
+    assert "modified_date" in result.columns
+
+    assert result["modified_date"].equals(
+        result["date_mdb_modified"]
+    )
 
 
 # --- load_species_dictionary tests ---
-
 
 @patch("etl.job.pd.read_csv")
 def test_load_species_dictionary_csv_mode(mock_read_csv):
@@ -149,7 +156,6 @@ def test_load_species_dictionary_database_mode_raises_missing_connection():
 
 # --- get_current_ui_map tests ---
 
-
 @patch("etl.job.get_ui_map")
 def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
     # Confirms get_current_ui_map delegates to get_ui_map.
@@ -168,7 +174,6 @@ def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
 
 
 # --- nightly_job tests ---
-
 
 @patch("etl.job.check_table_exists", return_value=True)
 @patch("etl.job.check_table_has_rows", return_value=True)
