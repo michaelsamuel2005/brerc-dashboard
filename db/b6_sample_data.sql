@@ -17,16 +17,22 @@ INSERT INTO species (species_id, scientific_name, common_name, species_group,
     ('100003', 'Lutra lutra',        'Otter',       'mammals',    2, 2024, 2025, false, 'initial', '2026-08-09 00:00:00');
 
 -- Per-record public rows (includes Load and Load_date, and quoted species_id).
+-- date_mdb_modified is NOT NULL: it is BRERC's own "last modified" timestamp for
+-- each record, and the pipeline now diffs on it to work out what changed since
+-- the previous run. Real rows get it from the source database; these invented
+-- rows just need a plausible value, set here to shortly before the load that
+-- brought them in.
 INSERT INTO occurrence_public (record_id, species_id, record_year, grid_ref,
                                precision_metres, locality, verified,
-                               content_hash, "Load", "Load_date") VALUES
-    (1, '100001', 2024, 'ST5872', 1000,  'Bristol (ST58)',               true,  md5('1|100001|2024|ST5872'), 'initial', '2026-08-09 00:00:00'),
-    (2, '100001', 2023, 'ST5973', 1000,  'Bristol (ST59)',               true,  md5('2|100001|2023|ST5973'), 'initial', '2026-08-09 00:00:00'),
-    (3, '100001', 2022, 'ST5771', 1000,  'Bristol (ST57)',               false, md5('3|100001|2022|ST5771'), 'initial', '2026-08-09 00:00:00'),
-    (4, '100002', 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true,  md5('4|100002|2024|ST6074'), 'initial', '2026-08-09 00:00:00'),
-    (5, '100002', 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true,  md5('5|100002|2021|ST61'),   'initial', '2026-08-09 00:00:00'),
-    (6, '100003', 2025, 'ST5',    10000, 'Bristol area (ST)',            true,  md5('6|100003|2025|ST5'),    'initial', '2026-08-09 00:00:00'),
-    (7, '100003', 2024, 'ST5',    10000, 'Bristol area (ST)',            false, md5('7|100003|2024|ST5'),    'initial', '2026-08-09 00:00:00');
+                               content_hash, date_mdb_modified,
+                               "Load", "Load_date") VALUES
+    (1, '100001', 2024, 'ST5872', 1000,  'Bristol (ST58)',               true,  md5('1|100001|2024|ST5872'), '2026-08-08 09:15:00', 'initial', '2026-08-09 00:00:00'),
+    (2, '100001', 2023, 'ST5973', 1000,  'Bristol (ST59)',               true,  md5('2|100001|2023|ST5973'), '2026-08-08 09:15:00', 'initial', '2026-08-09 00:00:00'),
+    (3, '100001', 2022, 'ST5771', 1000,  'Bristol (ST57)',               false, md5('3|100001|2022|ST5771'), '2026-08-08 09:15:00', 'initial', '2026-08-09 00:00:00'),
+    (4, '100002', 2024, 'ST6074', 1000,  'South Gloucestershire (ST60)', true,  md5('4|100002|2024|ST6074'), '2026-08-08 11:40:00', 'initial', '2026-08-09 00:00:00'),
+    (5, '100002', 2021, 'ST61',   10000, 'South Gloucestershire (ST61)', true,  md5('5|100002|2021|ST61'),   '2026-08-08 11:40:00', 'initial', '2026-08-09 00:00:00'),
+    (6, '100003', 2025, 'ST5',    10000, 'Bristol area (ST)',            true,  md5('6|100003|2025|ST5'),    '2026-08-08 16:05:00', 'initial', '2026-08-09 00:00:00'),
+    (7, '100003', 2024, 'ST5',    10000, 'Bristol area (ST)',            false, md5('7|100003|2024|ST5'),    '2026-08-08 16:05:00', 'initial', '2026-08-09 00:00:00');
 
 -- Pre-aggregated grid cells (includes quoted species_id).
 INSERT INTO distribution_cell (cell_id, species_id, record_year, precision_metres,
