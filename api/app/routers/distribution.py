@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api", tags=["distribution"])
 
 @router.get("/distribution/cells", response_model=GeoJSONFeatureCollection)
 def distribution_cells(
-    speciesId: int | None = Query(None),
+    speciesId: str | None = Query(None),   # TEXT ids — see app/models.py
 ) -> GeoJSONFeatureCollection:
     # Optional species filter — fixed WHERE text, value passed as a parameter.
     where_sql = ""

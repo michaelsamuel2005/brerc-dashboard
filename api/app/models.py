@@ -40,8 +40,15 @@ class Summary(BaseModel):
 
 
 # ---- /api/species and /api/species/{id} ------------------------------------
+# NOTE ON IDs: speciesId and recordId are STRINGS, not numbers.
+# Real BRERC SPECIES_NO / unique_No values are not always numeric (e.g.
+# "NBNSYS0000008319"), which is why species_id and record_id are TEXT in the
+# database. Typed as int, Pydantic quietly accepts numeric-looking ids and then
+# raises a ValidationError — a 500 — on the first genuinely non-numeric one.
+# Michael's Zod schema also expects a string, so this is the shape all three
+# sides of the project agree on.
 class SpeciesListItem(BaseModel):
-    speciesId: int
+    speciesId: str
     scientificName: str
     commonName: str | None
     group: str
@@ -65,7 +72,7 @@ class SpeciesImage(BaseModel):
 
 
 class SpeciesDetail(BaseModel):
-    speciesId: int
+    speciesId: str          # TEXT — see the note above SpeciesListItem
     scientificName: str
     commonName: str | None
     group: str
@@ -97,7 +104,7 @@ class GeoJSONFeatureCollection(BaseModel):
 
 # ---- /api/records ----------------------------------------------------------
 class RecordItem(BaseModel):
-    recordId: int
+    recordId: str           # TEXT — see the note above SpeciesListItem
     scientificName: str
     commonName: str | None
     year: int
