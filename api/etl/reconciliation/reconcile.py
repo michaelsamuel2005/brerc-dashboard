@@ -1,59 +1,99 @@
+"""
+Core reconciliation orchestration module. 
+Executes a two-pass reconciliation process: compares source and UI database modified-dates 
+to isolate inserts, updates, and deletes, processes data through safety and publishing gates, 
+and synchronises the database.
+"""
+import logging
 import pandas as pd
 
-from etl.reconciliation.hashing import add_content_hash
-from etl.reconciliation.diff import (
-    build_id_hash_map,
-    diff_id_hash_maps,
-    get_reconciliation_records,
-)
+# Imports functions to assist on finding out what records have changed
+from etl.reconciliation.diff import diff_id_modified_maps
 from etl.reconciliation.load import (
-    upsert_species,
+    delete_records,
     insert_records,
     update_records,
-    delete_records,
+)
+from etl.reconciliation.streaming import (
+    build_source_hash_map,
+    build_source_modified_map,
+    iter_source_chunks,
 )
 
-# Adjust these three imports to your real module paths -
-# same as classify.py/species.py/generalisation.py/public_output.py
-# used elsewhere in the pipeline.
-from etl.safety_gate.classification import classify_chunk
-from etl.matching.species import resolve_species_numbers
-from etl.safety_gate.generalisation import generalise_locations
-from etl.safety_gate.public_output import add_coarse_locality, prepare_public_output
-
-
+# Imports functions which makes the records safe to view in public dashboard
 from etl.aggregation.cell_filtering import filter_accepted_records
-from etl.reconciliation.map_to_schema import map_to_occurrence_public
+from etl.load.loader import load_safety_config
 
-from etl.aggregation.species_index import build_species_index
+# ETL load metadata ("Load" / "Load_date")
+from etl.load.metadata import add_load_metadata
+from etl.matching.species import resolve_species_numbers
+from etl.reconciliation.map_to_schema import map_to_occurrence_public
+from etl.safety_gate.classification import classify_chunk
+from etl.safety_gate.generalisation import generalise_locations
+from etl.safety_gate.public_output import (
+    add_coarse_locality,
+    prepare_public_output,
+)
+
+logger = logging.getLogger(__name__)
+
+CONFIG = load_safety_config()
+
+MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
+VERIFIED_COLUMN = CONFIG["columns"]["verified"]
+EASTING_COLUMN = CONFIG["columns"]["eastings"]
+NORTHING_COLUMN = CONFIG["columns"]["northings"]
 
 
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     connection,
-    easting_column: str = "eastings",
-    northing_column: str = "northings",
+    easting_column: str = EASTING_COLUMN,
+    northing_column: str = NORTHING_COLUMN,
     resolution_column: str = "resolution_m",
 ) -> pd.DataFrame:
     """
-    Runs raw source rows through the full safety pipeline, then maps
-    the result onto occurrence_public's real column names. This is
-    the only path inserts/updates should ever take.
+    Runs raw source records through the full safety pipeline (verification filtering, 
+    species resolution, sensitivity classification, location generalisation, and masking), 
+    then maps the result onto the public database schema.
     """
+
     if df.empty:
-        return pd.DataFrame(columns=[
-            "record_id", "species_id", "record_year", "grid_ref",
-            "locality", "precision_metres", "verified", "content_hash",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "record_id",
+                "species_id",
+                "record_year",
+                "grid_ref",
+                "locality",
+                "precision_metres",
+                "verified",
+                "content_hash",
+                "date_mdb_modified",
+            ]
+        )
 
-    # D5: verified-only + legacy-flagged-not-dropped, BEFORE anything
-    # else runs. A record failing both accepted and legacy checks
-    # must never reach classification, generalisation, or the DB.
-    filtered = filter_accepted_records(df, verified_column="verified")
+    # Drop unverified or rejected records prior to classification and generalisation
+    filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
 
+    # Adds species_no to their name
     resolved = resolve_species_numbers(filtered, dictionary_df)
+
+    # Filter out records with unresolved species because species_id is a mandatory foreign key
+    unresolved_count = resolved["species_no"].isna().sum()
+    if unresolved_count:
+        logger.warning(
+            "%d records excluded from public load because species could not be resolved.",
+            unresolved_count,
+        )
+
+    resolved = resolved.dropna(subset=["species_no"])
+
+    # Classify sensitivity and determine blur thresholds
     classified = classify_chunk(resolved)
+
+    # Blur the location of the species
     generalised = generalise_locations(
         classified,
         connection,
@@ -61,83 +101,142 @@ def make_safe_for_publishing(
         northing_column=northing_column,
         resolution_column=resolution_column,
     )
+
+    # Build coarse locality strings using the snapped/blurred coordinates
     with_locality = add_coarse_locality(
         generalised,
         easting_column="snapped_easting",
         northing_column="snapped_northing",
     )
 
+    # Remove sensitive internal columns that shouldn't face the public dashboard
     safe_df = prepare_public_output(with_locality)
 
+    # Reattach content hashes mapped from unique record IDs
+    # For every value look up its hash_lookup, stored as content_hash
     hash_lookup = with_locality.set_index("unique_no")["content_hash"]
     safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
 
-    return map_to_occurrence_public(safe_df)
+    modified_lookup = with_locality.set_index("unique_no")[MODIFIED_COLUMN]
+    safe_df["date_mdb_modified"] = safe_df["unique_no"].map(modified_lookup)
+
+    # Map processed internal columns to the exact column names of 'occurrence_public'
+    safe_df = map_to_occurrence_public(safe_df)
+
+    # Returned safe df to the reconciliation load functions
+    return safe_df
 
 
 def reconcile(
-    source_df: pd.DataFrame,
+    records_df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     ui_map: dict,
     connection,
+    load_mode: str,
+    load_timestamp,
 ) -> dict:
+    """
+    Executes the two-pass reconciliation pipeline:
+        - Pass 1: Builds source date_mdb_modified maps and diffs against the UI state 
+        to find inserts, updates, and deletes. (content_hash is also computed here, 
+        but only for storage on the written rows — not for change detection.)
+        - Pass 2: Streams chunks, filters for modified/new rows, pushes them through the 
+        safety pipeline, stamps metadata, and performs inserts, updates, and database purges.
 
-    # 1. Calculate hashes from the raw source data (post-cleaning -
-    #    make sure source_df has already been through clean_data()
-    #    before it reaches here).
-    source_df = add_content_hash(source_df)
+    NOTE: `ui_map` must be a dict of unique_no -> date_mdb_modified (not content_hash),
+    sourced from occurrence_public.
+    """
 
-    # 2. Build: unique_no -> content_hash
-    source_map = build_id_hash_map(source_df)
+    # Pass 1: Modified-date mapping and set differential analysis (drives inserts/updates/deletes)
 
-    # 3. Compare current source against existing UI records
-    changes = diff_id_hash_maps(source_map, ui_map)
+    source_modified_map = build_source_modified_map(records_df)
 
-    # 4. Select the actual raw rows needed for INSERT/UPDATE
-    records = get_reconciliation_records(source_df, changes)
+    # Compares the UI with the new source data using date_mdb_modified
+    changes = diff_id_modified_maps(source_modified_map, ui_map)
 
-    # 5. Run the safety pipeline BEFORE anything reaches the UI
-    #    database - inserts and updates must never see raw data.
-    safe_inserts = make_safe_for_publishing(
-        records["inserts"], dictionary_df, connection
-    )
-    safe_updates = make_safe_for_publishing(
-        records["updates"], dictionary_df, connection
-    )
-
-    # 6. Apply database changes - only ever safe_* data past this point.
-
-    # Build species rows from the records that are actually being loaded.
-    species_records = pd.concat(
-        [
-            records["inserts"],
-            records["updates"],
-        ],
-        ignore_index=True,
+    logger.info(
+        "Reconciliation Breakdown — Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
+        len(changes["inserts"]),
+        len(changes["updates"]),
+        len(changes["deletes"]),
+        len(changes["unchanged"]),
     )
 
-    if not species_records.empty:
-        filtered_species_records = filter_accepted_records(
-            species_records,
-            verified_column="verified",
+    insert_ids = changes["inserts"]
+    update_ids = changes["updates"]
+    delete_ids = changes["deletes"]
+
+    # Content hash map — built separately, used only to populate the stored
+    # content_hash column on written rows (audit/debug), NOT for change detection.
+    source_hash_map = build_source_hash_map(records_df)
+
+    # Pass 2: Chunked streaming, safety pipeline execution, and persistence
+    chunk_count = 0
+    for cleaned_chunk in iter_source_chunks(records_df):
+        chunk_count += 1
+        hashed_chunk = cleaned_chunk.copy()
+
+        # Attach content hashes calculated during pass 1 (storage only)
+        hashed_chunk["content_hash"] = (
+            hashed_chunk["unique_no"].astype(str).map(source_hash_map)
         )
 
-        resolved_species_records = resolve_species_numbers(
-            filtered_species_records,
-            dictionary_df,
+        # Find new records
+        insert_chunk = hashed_chunk[
+            hashed_chunk["unique_no"].astype(str).isin(insert_ids)
+        ]
+
+        # Find modified records
+        update_chunk = hashed_chunk[
+            hashed_chunk["unique_no"].astype(str).isin(update_ids)
+        ]
+
+        # Process and persist new records
+        if not insert_chunk.empty:
+            safe_insert = make_safe_for_publishing(
+                insert_chunk,
+                dictionary_df,
+                connection,
+            )
+
+            if not safe_insert.empty:
+                safe_insert = add_load_metadata(
+                    safe_insert,
+                    load_mode,
+                    load_timestamp,
+                )
+                insert_records(
+                    safe_insert,
+                    connection,
+                )
+
+        # Process and persist updated records
+        if not update_chunk.empty:
+            safe_update = make_safe_for_publishing(
+                update_chunk,
+                dictionary_df,
+                connection,
+            )
+
+            if not safe_update.empty:
+                safe_update = add_load_metadata(
+                    safe_update,
+                    load_mode,
+                    load_timestamp,
+                )
+                update_records(
+                    safe_update,
+                    connection,
+                )
+
+    # Purge deleted records from the UI database (deletions require ID checks only)
+    if delete_ids:
+        logger.warning(
+            "Executing database purge for %d deleted records.",
+            len(delete_ids),
         )
 
-        species_index = build_species_index(
-            resolved_species_records
-        )
-
-        upsert_species(
-            species_index,
-            connection,
-        )
-
-    insert_records(safe_inserts, connection)
-    update_records(safe_updates, connection)
-    delete_records(records["deletes"], connection)
+    delete_records(delete_ids, connection)
+    logger.info("Reconciliation pass completed successfully.")
 
     return changes

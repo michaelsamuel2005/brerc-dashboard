@@ -1,49 +1,56 @@
-# Build the species index from species that actually appear
-# in the filtered records, rather than from the full species dictionary.
+"""
+Builds the species index directly from the species that actually appear 
+in the filtered records, rather than from the full species dictionary.
+"""
 
-"""
-Ensure it matches the expected species: DATABASE| SOURCE(CVS column names)
-- species_id - species_no
-- scientific_name - scientific_name
-- common_name - common_name 
-- species_group - Represented by TAXANB in the dictionary
-- record_count
-- first_year
-- last_year
-- has_image
-"""
 import pandas as pd
+
+from etl.load.loader import load_safety_config
+
+CONFIG = load_safety_config()
+
+DATE_COLUMN = CONFIG["columns"]["record_date"]
+
 
 def build_species_index(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Builds one species row for each species that appears
-    in the records being loaded.
-
-    Database mapping:
-        species_id     <- species_no
-        scientific_name <- scientific_name
-        common_name    <- common_name
-        species_group  <- taxanb
-        record_count   <- count of records (how many records of said species)
-        first_year     <- earliest record year
-        last_year      <- latest record year
-        has_image      <- False until image data exists
+    Creates a summary table of unique species found in the active records,
+    calculating total counts, year ranges, and mapping columns to database schema.
     """
+    required_columns = {
+        "species_no",
+        "scientific_name",
+        "common_name",
+        "taxanb",
+        "unique_no",
+        DATE_COLUMN,
+    }
+
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
+        raise KeyError(
+            f"Missing columns required for species index: " f"{sorted(missing_columns)}"
+        )
 
     df = df.copy()
 
-    # Convert dates BEFORE calculating min/max.
-    df["record_year"] = (
-        pd.to_datetime(
-            df["record_date"],
-            dayfirst=True,
-            errors="coerce",
-        )
-        .dt.year
-    )
+    # Drops records without a resolved species number
+    # species_id is required as the public species identifier
+    df = df.dropna(subset=["species_no"])
 
+    # Convert dates into years so we can find the
+    # earliest and latest recorded years per species.
+    df["record_year"] = pd.to_datetime(
+        df[DATE_COLUMN],
+        dayfirst=True,
+        errors="coerce",
+    ).dt.year.astype("Int64")
+
+    # Groups records belonging to the same species.
+    # Each group represents one species entry in the species table.
     species_index = (
         df.groupby(
             [
@@ -52,14 +59,20 @@ def build_species_index(
                 "common_name",
                 "taxanb",
             ],
+            # Keep species even if some fields like common names are missing
             dropna=False,
         )
         .agg(
+            # Count how many occurrence records belong to this species.
             record_count=("unique_no", "count"),
+            # Find the earliest year this species was recorded.
             first_year=("record_year", "min"),
+            # Find the most recent year this species was recorded.
             last_year=("record_year", "max"),
         )
         .reset_index()
+        # Rename columns to match the database schema.
+        # species_no becomes species_id in the public database.
         .rename(
             columns={
                 "species_no": "species_id",
@@ -68,9 +81,14 @@ def build_species_index(
         )
     )
 
-    # No image data is currently being loaded.
+    # Ensure each species_id is completely unique; duplicates mean bad data.
+    if species_index["species_id"].duplicated().any():
+        raise ValueError("Species index contains duplicate species IDs")
+
+    # Default image flag to False since image metadata isn't loaded yet.
     species_index["has_image"] = False
 
+    # Return only the exact columns expected by the database table.
     return species_index[
         [
             "species_id",

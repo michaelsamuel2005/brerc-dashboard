@@ -3,32 +3,44 @@ from etl.matching.species import normalise_species_name, resolve_species_numbers
 
 # --- Mock data ---
 
-RECORDS_SAMPLE = pd.DataFrame({
-    "scientific_name": ["Vulpes vulpes", "  MELES meles ", "Unknown sp", "Meles   meles"]
-    # row 0: exact match
-    # row 1: extra spaces + different case, should still match via normalisation
-    # row 2: no match in dictionary -> unresolved
-    # row 3: internal double-space, should still match via normalisation
-})
+RECORDS_SAMPLE = pd.DataFrame(
+    {
+        "scientific_name": [
+            "Vulpes vulpes",
+            "  MELES meles ",
+            "Unknown sp",
+            "Meles   meles",
+        ]
+        # row 0: exact match
+        # row 1: extra spaces + different case, should still match via normalisation
+        # row 2: no match in dictionary -> unresolved
+        # row 3: internal double-space, should still match via normalisation
+    }
+)
 
-DICTIONARY_SAMPLE = pd.DataFrame({
-    "scientific": ["Vulpes vulpes", "Meles meles"],
-    "species_no": [101, 102],
-    "nbn_number": ["NBN-101", "NBN-102"],
-    "common_name": ["Red fox", "Badger"],
-    "taxanb": ["TX101", "TX102"],
-})
+DICTIONARY_SAMPLE = pd.DataFrame(
+    {
+        "scientific": ["Vulpes vulpes", "Meles meles"],
+        "species_no": [101, 102],
+        "nbn_number": ["NBN-101", "NBN-102"],
+        "common_nam": ["Red fox", "Badger"],
+        "taxanb": ["TX101", "TX102"],
+    }
+)
 
-DICTIONARY_WITH_DUPLICATE_KEY = pd.DataFrame({
-    "scientific": ["Vulpes vulpes", "vulpes  vulpes"],  # normalise to same key
-    "species_no": [101, 999],
-    "nbn_number": ["NBN-101", "NBN-999"],
-    "common_name": ["Red fox", "Red fox duplicate"],
-    "taxanb": ["TX101", "TX999"],
-})
+DICTIONARY_WITH_DUPLICATE_KEY = pd.DataFrame(
+    {
+        "scientific": ["Vulpes vulpes", "vulpes  vulpes"],  # normalise to same key
+        "species_no": [101, 999],
+        "nbn_number": ["NBN-101", "NBN-999"],
+        "common_nam": ["Red fox", "Red fox duplicate"],
+        "taxanb": ["TX101", "TX999"],
+    }
+)
 
 
 # --- normalise_species_name tests ---
+
 
 def test_normalise_species_name_lowercases():
     # Confirms names are lowercased for matching purposes.
@@ -46,6 +58,7 @@ def test_normalise_species_name_strips_and_collapses_whitespace():
 
 
 # --- resolve_species_numbers tests ---
+
 
 def test_resolve_species_numbers_matches_exact_name(capsys):
     # Confirms an exact scientific_name match resolves to the correct species_no.

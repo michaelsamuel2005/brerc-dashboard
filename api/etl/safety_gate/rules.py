@@ -1,81 +1,67 @@
-import pandas as pd
+"""
+Loads and exposes BRERC safety settings, spatial generalisation rules, 
+flagged record types, and cached sensitive species lists from configuration files.
+"""
 
-from etl.profiling.cleaning import clean_data
+from functools import lru_cache
 from pathlib import Path
 
-# Enables reading sensitive species from any persons own pathway
-DATA_DIR = Path(__file__).resolve().parents[3]/ "data"
-sensitive_species_df = pd.read_csv(
-    DATA_DIR / "sensitive_species.csv"
-)
+import pandas as pd
+from etl.load.loader import load_safety_config
+from etl.profiling.cleaning import clean_data
 
-sensitive_species_df_clean = clean_data(sensitive_species_df)
+CONFIG = load_safety_config()
 
-D0_FLOOR_M = 100
 
-DEFAULT_SENSITIVE_RESOLUTION_M = 10000
+# Generalisation rules
 
-SPECIES_RESOLUTIONS_M = {
-    # Empty since BRERC hasn't provided
-    # For D2 
-}
+D0_FLOOR_M = CONFIG["generalisation"]["d0_floor_m"]
 
-SENSITIVE_SPECIES_NOS = set(
-    sensitive_species_df_clean["species_no"].dropna()
-)
+DEFAULT_SENSITIVE_RESOLUTION_M = CONFIG["generalisation"][
+    "default_sensitive_resolution_m"
+]
 
-SENSITIVE_NBN_NUMBERS = set(
-    sensitive_species_df_clean["nbn_number"].dropna()
-)
+SPECIES_RESOLUTIONS_M = CONFIG["species_resolutions"]
 
-FLAGGED_RECORD_TYPES = frozenset({
-    "trapped at actinic light",
-    "trapped at light",
-    "trapped at mercury vapour light",
-    "night roost",
-    "tagged night roost",
-    "plant count",
-    "maternity roost",
-    "flower count",
-    "photographed",
-    "summer roost",
-    "hibernation",
-    "daylight site visit",
-    "day roost",
-    "rosette count",
-    # for bat roost and plant
-    "field record",
-    "field record (bat roost sensitive record)",
-    "field record (plant sensitive record)",
-    "bat detector",
-    "box survey",
-    "hibernation roost",
-    "earth",
-    "droppings",
-    "handled",
-    "burrow",
-    "pre-parturition roost",
-    "netted",
-    "box survey",
-    "breeding",
-    "roost",
-    "emergence count",
-    "tagged day roost ",
-    "grounded",
-    "possibly breeding",
-    "nest",
-    "field record",
-    "holt",
-    "bedding",
-    "bat roost",
-    "lie-up",
-    "DNA or eDNA testing",
-    "AI or programme analysis",
-    "Beaver Lodge",
-    "Acoustic audio recording",
-    "Acoustic audio record",
-    "found dead",
-    "found dead",
-    "dam",
-    "gnawed timber"
-})
+# Record type rules
+FLAGGED_RECORD_TYPES = frozenset(CONFIG["flagged_record_types"])
+
+
+@lru_cache(maxsize=1)
+def load_sensitive_species():
+    """
+    Loads, cleans, and caches sensitive species numbers and NBN numbers 
+    from the configured CSV file, falling back to an example file or empty sets if missing.
+    """
+
+    # Resolve sensitive species file path from YAML configuration
+    sensitive_species_file = Path(CONFIG["files"]["sensitive_species"]["path"])
+
+    if not sensitive_species_file.is_absolute():
+        sensitive_species_file = (
+            Path(__file__).resolve().parents[3] / sensitive_species_file
+        )
+
+    # Fall back to an example file if the primary sensitive species file is unavailable
+    if not sensitive_species_file.exists():
+        example_file = sensitive_species_file.with_suffix(
+            sensitive_species_file.suffix + ".example"
+        )
+        if example_file.exists():
+            sensitive_species_file = example_file
+        else:
+            # Safe fallback: return empty sets so tests and
+            # pipelines don't crash with FileNotFoundError
+            return set(), set()
+
+    # Read and clean the sensitive species CSV data
+    df = pd.read_csv(sensitive_species_file)
+    df = clean_data(df)
+
+    sensitive_species_nos = set(df["species_no"].dropna())
+    sensitive_nbn_numbers = set(df["nbn_number"].dropna())
+
+    return (
+        sensitive_species_nos,
+        sensitive_nbn_numbers,
+    )

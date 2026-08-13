@@ -1,25 +1,119 @@
-# TODO: pipeline currently broken after restructure — fix imports before next run.
-# 1. `from cleaning import clean_data` -> `from etl.profiling.cleaning import clean_data`
-# 2. `from etl.profiling.filtering import filter_sensitive_species` -> function doesn't
-#    exist under that name. Two candidate classifiers currently live in different files:
-#      - etl/profiling/filtering.py :: classify_sensitive_species  (has NBN-number check)
-#      - etl/safety_gate/classify.py :: classify_chunk              (has blur/resolution_m,
-#        missing NBN-number check)
-#    These need merging (D4 requires the NBN check; downstream needs blur/resolution_m).
-#    Until merged, pick ONE to wire in here — see safety_gate/classify.py for the
-#    fuller TODO on what's missing from each.
-# 3. Also delete stale etl/__pycache__/rules.cpython-313.pyc (leftover from before
-#    rules.py moved into safety_gate/)
+"""
+Main execution pipeline orchestrator for the BRERC ETL process. 
+Coordinates data cleaning, species resolution, spatial aggregation, database persistence, 
+provenance tracking, and reconciliation into a single unified transactional run.
+"""
 
+# python -c "from etl.job import nightly_job; nightly_job()"
+from datetime import datetime
+import logging
+import time
 
-
-# pipeline.py
 from etl.profiling.cleaning import clean_data
-from etl.safety_gate.classification import classify_chunk  # switched to this one
+from etl.reconciliation.reconcile import reconcile
+from etl.aggregation.counts import build_public_aggregation
+from etl.aggregation.persist import persist_aggregation_outputs
+from etl.matching.species import resolve_species_numbers
+from etl.provenance import upsert_provenance
+from etl.load.loader import load_safety_config
 
-def run_pipeline(df):
+logger = logging.getLogger(__name__)
 
-    df = clean_data(df)          # clean first
+CONFIG = load_safety_config()
 
-    df = classify_chunk(df)      # then classify — order matters, see below
-    return df
+VERIFIED_COLUMN = CONFIG["columns"]["verified"]
+EASTING_COLUMN = CONFIG["columns"]["eastings"]
+NORTHING_COLUMN = CONFIG["columns"]["northings"]
+DATE_COLUMN = CONFIG["columns"]["record_date"]
+
+
+def run_pipeline(
+    source_df,
+    dictionary_df,
+    ui_map,
+    connection,
+    load_mode,
+):
+    """
+    Executes the complete end-to-end ETL pipeline sequence:
+        1. Clean incoming source and dictionary dataframes.
+        2. Resolve species numbers against the master dictionary.
+        3. Build public spatial and taxonomic aggregation summaries.
+        4. Persist species index and aggregation outputs to the database.
+        5. Upsert pipeline execution provenance metadata.
+        6. Run two-pass occurrence record reconciliation against the UI state.
+
+    The load_mode ('initial' or 'incremental') is stamped onto every row written 
+    during this execution via the 'Load' and 'Load_date' audit metadata columns.
+    """
+
+    start_time = time.time()
+    logger.info(
+        "Starting ETL pipeline execution with load_mode='%s' (%d source rows).",
+        load_mode,
+        len(source_df),
+    )
+
+    try:
+        # Step 1: Clean raw column names and formats
+        logger.info("SOURCE columns: %s", sorted(source_df.columns.tolist()))
+        logger.info("Cleaning source and dictionary dataframes...")
+        cleaned_source = clean_data(source_df)
+        cleaned_dictionary = clean_data(dictionary_df)
+        logger.info("CLEANED columns: %s", sorted(cleaned_source.columns.tolist()))
+
+        # Step 2: Match and resolve species identifiers (species_no)
+        logger.info("Resolving species numbers...")
+        resolved_source = resolve_species_numbers(
+            cleaned_source,
+            cleaned_dictionary,
+        )
+        logger.info("RESOLVED columns: %s", sorted(resolved_source.columns.tolist()))
+
+        # Step 3: Build derived public aggregation layers
+        logger.info("Building public aggregation layer...")
+        aggregation_outputs = build_public_aggregation(
+            resolved_source,
+            verified_column=VERIFIED_COLUMN,
+            easting_column=EASTING_COLUMN,
+            northing_column=NORTHING_COLUMN,
+            date_column=DATE_COLUMN,
+        )
+
+        # Step 4: Persist species index and suppression counts.
+        # This MUST happen before occurrence writes because occurrence tables
+        # maintain foreign key constraints pointing to the species table.
+        persist_aggregation_outputs(
+            connection,
+            species_index=aggregation_outputs["species_index"],
+            suppressed_counts=aggregation_outputs["aggregation"],
+            cell_size_m=CONFIG["aggregation"]["cell_size_m"],
+            load_mode=load_mode,
+        )
+
+        # Step 5: Update pipeline run metadata provenance
+        logger.info("Upserting pipeline provenance metadata...")
+        upsert_provenance(connection, load_mode=load_mode)
+
+        # Step 6: Synchronise and reconcile individual occurrence records
+        logger.info("Running occurrence record reconciliation...")
+        reconciliation_summary = reconcile(
+            resolved_source,
+            cleaned_dictionary,
+            ui_map,
+            connection,
+            load_mode=load_mode,
+            load_timestamp=datetime.now(),
+        )
+
+        duration = time.time() - start_time
+        logger.info("ETL pipeline completed successfully in %.2f seconds.", duration)
+
+        return {
+            "reconciliation": reconciliation_summary,
+            "aggregation": aggregation_outputs,
+        }
+
+    except Exception as e:
+        logger.exception("ETL pipeline failed during execution: %s", e)
+        raise

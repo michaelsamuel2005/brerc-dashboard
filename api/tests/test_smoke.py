@@ -44,7 +44,7 @@ def test_species_list():
 
 @needs_b6_schema
 def test_species_detail_and_404():
-    assert client.get("/api/species/100001").status_code == 200   # a real sample id
+    assert client.get("/api/species/100001").status_code == 200  # a real sample id
     assert client.get("/api/species/999999").status_code == 404
 
 

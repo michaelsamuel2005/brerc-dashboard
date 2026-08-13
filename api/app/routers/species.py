@@ -131,7 +131,7 @@ def list_species(
 
 
 @router.get("/species/{species_id}", response_model=SpeciesDetail)
-def species_detail(species_id: int) -> SpeciesDetail:
+def species_detail(species_id: str) -> SpeciesDetail:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

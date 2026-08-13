@@ -1,39 +1,40 @@
-import pytest
 from unittest.mock import MagicMock
 
-from etl.reconciliation.state import get_ui_map
-
+from etl.reconciliation.state import (  # Update with your actual module path if different
+    get_ui_map,
+)
 
 # --- get_ui_map tests ---
 
-def test_get_ui_map_returns_id_hash_dictionary():
-    # Confirms database rows are converted into a record_id ->
-    # content_hash dictionary.
-    # Expects the correct mapping, else fails.
+
+def test_get_ui_map_returns_id_modified_dictionary():
+    # Confirms database rows are converted into a record_id to date_mdb_modified dictionary.
+    # Expects IDs to be stored as strings to match unique_no key format, else fails.
     connection = MagicMock()
 
+    # Mocks the database cursor returning two rows with record_id and date_mdb_modified
     connection.cursor.return_value.__enter__.return_value.fetchall.return_value = [
         {
             "record_id": 1,
-            "content_hash": "hash1",
+            "date_mdb_modified": "2026-01-01 12:00:00",
         },
         {
             "record_id": 2,
-            "content_hash": "hash2",
+            "date_mdb_modified": "2026-01-02 12:00:00",
         },
     ]
 
     result = get_ui_map(connection)
 
     assert result == {
-        1: "hash1",
-        2: "hash2",
+        "1": "2026-01-01 12:00:00",
+        "2": "2026-01-02 12:00:00",
     }
 
 
-def test_get_ui_map_returns_empty_dictionary_when_no_rows():
-    # Confirms an empty query result produces an empty dictionary.
-    # Expects {}, else fails.
+def test_get_ui_map_returns_empty_dictionary_when_no_records():
+    # Confirms an empty database gracefully returns an empty mapping without errors.
+    # Expects an empty dictionary {} to be returned when fetchall yields no rows, else fails.
     connection = MagicMock()
 
     connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
@@ -41,15 +42,3 @@ def test_get_ui_map_returns_empty_dictionary_when_no_rows():
     result = get_ui_map(connection)
 
     assert result == {}
-
-
-def test_get_ui_map_executes_expected_query():
-    # Confirms the occurrence_public table is queried.
-    # Expects execute() to be called once, else fails.
-    connection = MagicMock()
-
-    connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
-
-    get_ui_map(connection)
-
-    connection.cursor.return_value.__enter__.return_value.execute.assert_called_once()

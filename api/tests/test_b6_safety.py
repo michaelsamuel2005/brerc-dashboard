@@ -19,8 +19,14 @@ from app.db import get_connection
 
 # Fields that must never be reachable through a public view.
 FORBIDDEN = {
-    "recorder1", "bliss", "eastings", "northings",
-    "comments", "precise_date", "is_sensitive", "sensitive",
+    "recorder1",
+    "bliss",
+    "eastings",
+    "northings",
+    "comments",
+    "precise_date",
+    "is_sensitive",
+    "sensitive",
 }
 PUBLIC_VIEWS = ["public_species", "public_records", "public_cells", "public_provenance"]
 BASE_TABLES = ["species", "occurrence_public", "distribution_cell", "provenance"]
@@ -46,7 +52,9 @@ def test_no_public_row_is_finer_than_the_100m_floor():
     with get_connection() as conn, conn.cursor() as cur:
         for view in ("public_records", "public_cells"):
             # View names come from a fixed list here, not user input.
-            cur.execute(f"SELECT COUNT(*) AS n FROM {view} WHERE precision_metres < 100;")
+            cur.execute(
+                f"SELECT COUNT(*) AS n FROM {view} WHERE precision_metres < 100;"
+            )
             n = cur.fetchone()["n"]
             assert n == 0, f"{view} has {n} row(s) finer than the 100 m floor"
 
@@ -69,6 +77,6 @@ def test_api_role_reads_views_only_and_cannot_write_or_reach_base_tables():
                     "SELECT has_table_privilege(%s, %s, %s) AS ok;",
                     (API_ROLE, table, privilege),
                 )
-                assert not cur.fetchone()["ok"], (
-                    f"{API_ROLE} unexpectedly has {privilege} on base table {table}"
-                )
+                assert not cur.fetchone()[
+                    "ok"
+                ], f"{API_ROLE} unexpectedly has {privilege} on base table {table}"

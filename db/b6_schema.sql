@@ -32,6 +32,19 @@
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- =============================================================================
+-- SECTION 0 — REMOVE EXISTING PUBLIC VIEWS
+-- =============================================================================
+-- The full reload recreates the underlying tables. Drop the public views first
+-- so PostgreSQL does not attempt to preserve their old column types when the
+-- views are recreated below.
+
+DROP VIEW IF EXISTS public_species CASCADE;
+DROP VIEW IF EXISTS public_records CASCADE;
+DROP VIEW IF EXISTS public_cells CASCADE;
+DROP VIEW IF EXISTS public_provenance CASCADE;
+
+-- =============================================================================
 
 -- =============================================================================
 -- SECTION 1 — BASE TABLES  (written by the pipeline; the "safe copy")
@@ -45,14 +58,18 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 --     D4), so it is stable and safe to expose.
 DROP TABLE IF EXISTS species CASCADE;
 CREATE TABLE species (
-    species_id      BIGINT      PRIMARY KEY,        -- real SPECIES_NO (D4)
+    species_id      TEXT      PRIMARY KEY,        -- real SPECIES_NO (D4)
     scientific_name TEXT        NOT NULL,
     common_name     TEXT,
     species_group   TEXT        NOT NULL,           -- e.g. birds / mammals
     record_count    INTEGER     NOT NULL DEFAULT 0,
     first_year      INTEGER,
     last_year       INTEGER,
-    has_image       BOOLEAN     NOT NULL DEFAULT FALSE
+    has_image       BOOLEAN     NOT NULL DEFAULT FALSE,
+
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 -- 1b. Per-record public rows (feeds /api/records). Already generalised by the
@@ -60,17 +77,20 @@ CREATE TABLE species (
 --     No precise point is stored — not even a geometry column.
 DROP TABLE IF EXISTS occurrence_public CASCADE;
 CREATE TABLE occurrence_public (
-    record_id        BIGINT   PRIMARY KEY,          -- unique_No (D7 recon key)
-    species_id       BIGINT   NOT NULL REFERENCES species(species_id),
-    record_year      INTEGER  NOT NULL,             -- YEAR only — never precise date
-    grid_ref         TEXT     NOT NULL,             -- generalised OS grid ref
-    precision_metres INTEGER  NOT NULL
+    record_id        VARCHAR   PRIMARY KEY,          -- unique_No (D7 recon key)
+    species_id       TEXT      NOT NULL REFERENCES species(species_id),
+    record_year      INTEGER   NOT NULL,             -- YEAR only — never precise date
+    grid_ref         TEXT      NOT NULL,             -- generalised OS grid ref
+    precision_metres INTEGER   NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     locality         TEXT,                          -- coarse: authority + grid sq
-    verified         BOOLEAN  NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
-    content_hash     TEXT     NOT NULL -- for comparison of current source vs previous database state
-    -- NO eastings, northings, recorder1, bliss, comments, precise_date,
-    -- is_sensitive — absent by construction.
+    verified         BOOLEAN   NOT NULL DEFAULT FALSE, -- D5 (accepted); legacy marked
+    content_hash     TEXT      NOT NULL,             -- Kept for record tracking / audits
+    date_mdb_modified TIMESTAMPTZ NOT NULL,         -- Used for incremental change detection
+
+    -- FOR ETL LOAD TRACKING --
+    "Load"           TEXT      NOT NULL,          -- "initial" or "incremental"
+    "Load_date"      TIMESTAMPTZ NOT NULL
 );
 
 -- 1c. Pre-aggregated distribution grid (species x cell x year). This is the
@@ -80,17 +100,21 @@ CREATE TABLE occurrence_public (
 DROP TABLE IF EXISTS distribution_cell CASCADE;
 CREATE TABLE distribution_cell (
     cell_id          TEXT     NOT NULL,             -- e.g. "ST57" (grid square)
-    species_id       BIGINT   NOT NULL REFERENCES species(species_id),
+    species_id       TEXT   NOT NULL REFERENCES species(species_id),
     record_year      INTEGER  NOT NULL,
     precision_metres INTEGER  NOT NULL
                      CHECK (precision_metres >= 100),   -- D0 100 m floor
     record_count     INTEGER  NOT NULL CHECK (record_count  >= 0),
     verified_count   INTEGER  NOT NULL CHECK (verified_count >= 0),
     geom             geometry(Polygon, 4326) NOT NULL,  -- cell polygon (WGS84)
-    PRIMARY KEY (cell_id, species_id, record_year)
+    PRIMARY KEY (cell_id, species_id, record_year),
     -- Low-count suppression (k-anonymity) for rare/sensitive cells is applied by
     -- the pipeline (B4) BEFORE writing here; the serving layer trusts safe input
     -- and re-checks the floor. See OPEN QUESTIONS.
+
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 -- 1d. Dataset-level provenance (feeds /api/meta/provenance). Single row.
@@ -100,7 +124,11 @@ CREATE TABLE provenance (
     sources                    TEXT[]  NOT NULL,
     caveats                    TEXT[]  NOT NULL,
     last_updated               DATE    NOT NULL,
-    sensitivity_policy_summary TEXT    NOT NULL
+    sensitivity_policy_summary TEXT    NOT NULL,
+
+    -- FOR ETL LOAD TRACKING --
+    "Load"          TEXT        NOT NULL,          -- "initial" or "incremental"
+    "Load_date"     TIMESTAMPTZ NOT NULL
 );
 
 
