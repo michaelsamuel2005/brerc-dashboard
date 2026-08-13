@@ -82,12 +82,21 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Load the sample databases (B0 + B6)
+        # -v ON_ERROR_STOP=1 matters more than it looks. Without it, psql prints
+        # a SQL error and carries on with exit code 0 — so this step goes GREEN
+        # even when nothing loaded, and you find out three steps later as a pile
+        # of confusing test failures instead of the actual error.
+        #
+        # This has bitten us three times: a NOT NULL column was added to the
+        # schema (content_hash, then "Load"/"Load_date", then date_mdb_modified)
+        # without db/b6_sample_data.sql being updated to match. With this flag,
+        # the run fails HERE, quoting the exact column.
         run: |
-          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "$DATABASE_URL" -f ../db/b0_staging_setup.sql
-          psql "$DATABASE_URL" -f ../db/b6_schema.sql
-          psql "$DATABASE_URL" -f ../db/b6_sample_data.sql
-          psql "$DATABASE_URL" -f ../db/b7_tiles.sql
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b0_staging_setup.sql
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_schema.sql
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_sample_data.sql
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b7_tiles.sql
 
       - name: Run the tests
         # Scoped to the API test suite (this backend workstream, B0/B6-B9).
