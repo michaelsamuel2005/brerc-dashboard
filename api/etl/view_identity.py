@@ -413,12 +413,25 @@ class ViewCaptureEvidence:
         expected_major = postgres_major_version(server_version_num)
         if postgres["server_major"] != expected_major:
             raise ViewIdentityError("server_major disagrees with server_version_num")
-        if (
-            source_object["schema"] != "dashboard"
-            or source_object["name"] != "main_data_dash"
-            or source_object["qualified_name"] != "dashboard.main_data_dash"
-        ):
-            raise ViewIdentityError("capture is not for dashboard.main_data_dash")
+        # Reported field-by-field on purpose. "capture is not for
+        # dashboard.main_data_dash" names the expectation but not the mismatch,
+        # which leaves an operator holding a rejected capture with no way to tell
+        # whether the schema, the relation or the qualified name is wrong. These
+        # three values are catalogue identifiers, never record content, so naming
+        # them cannot disclose client data.
+        identity_mismatches = [
+            f"{field}={source_object[field]!r} (expected {expected!r})"
+            for field, expected in (
+                ("schema", "dashboard"),
+                ("name", "main_data_dash"),
+                ("qualified_name", "dashboard.main_data_dash"),
+            )
+            if source_object[field] != expected
+        ]
+        if identity_mismatches:
+            raise ViewIdentityError(
+                "capture is not for dashboard.main_data_dash: " + "; ".join(identity_mismatches)
+            )
         if source_object["relpersistence"] != "p":
             raise ViewIdentityError("source view must be a permanent PostgreSQL relation")
         relation_oid = source_object["relation_oid"]
