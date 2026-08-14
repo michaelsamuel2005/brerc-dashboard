@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api", tags=["records"])
 def list_records(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=config.MAX_PAGE_SIZE),
-    speciesId: int | None = Query(None),
+    speciesId: str | None = Query(None),   # TEXT ids — see app/models.py
 ) -> RecordList:
     # Belt-and-braces: Query(le=...) already refuses a bigger page, but this
     # guarantees the cap even if that validation is ever loosened by mistake.

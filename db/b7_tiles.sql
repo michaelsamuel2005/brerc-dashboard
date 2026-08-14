@@ -29,7 +29,10 @@ AS $$
 DECLARE
     mvt bytea;
     -- Optional ?speciesId= filter pulled from the tile request.
-    species_filter bigint := NULLIF(query_params->>'speciesId', '')::bigint;
+    -- TEXT, not bigint: species_id is TEXT because real BRERC SPECIES_NO values
+    -- are not always numeric. Casting to bigint here would both reject valid
+    -- non-numeric ids and fail with "operator does not exist: text = bigint".
+    species_filter text := NULLIF(query_params->>'speciesId', '');
 BEGIN
     SELECT ST_AsMVT(tile, 'cells', 4096, 'geom')
     INTO mvt
