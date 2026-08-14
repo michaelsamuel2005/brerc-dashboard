@@ -85,6 +85,17 @@ def build_species_index(
     if species_index["species_id"].duplicated().any():
         raise ValueError("Species index contains duplicate species IDs")
 
+    # A record whose species_no is well formed but is not in the dictionary comes
+    # out of the merge with no taxanb, so species_group ends up null — and
+    # species.species_group is NOT NULL, so the whole nightly run would fail on a
+    # single such record. With 4.5M records against a 96,824-species dictionary
+    # that is a matter of when, not if.
+    #
+    # "unknown" matches what rebuild_species.py already uses for the same case.
+    # Note these records are not silently normal: they are still counted in the
+    # unresolved-species figure the pipeline logs.
+    species_index["species_group"] = species_index["species_group"].fillna("unknown")
+
     # Default image flag to False since image metadata isn't loaded yet.
     species_index["has_image"] = False
 

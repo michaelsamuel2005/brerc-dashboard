@@ -52,11 +52,22 @@ SOURCE_DATABASE_URL = _build_source_database_url()
 
 
 def get_source_connection() -> psycopg.Connection:
-    """Opens and returns a dictionary-yielding connection to BRERC's private source database."""
-    return psycopg.connect(
-        SOURCE_DATABASE_URL,
-        row_factory=dict_row,
-    )
+    """
+    Opens a connection to BRERC's private source database.
+
+    NOTE: deliberately NO row_factory here, unlike the destination connection.
+    This connection is only ever handed to pandas.read_sql (see etl/job.py), and
+    pandas cannot read psycopg's dict_row rows — instead of failing, it silently
+    returns a DataFrame in which every value is the COLUMN NAME:
+
+        species_no  scientific  nbn_number
+        species_no  scientific  nbn_number     <- not the data
+
+    which then shows up as "Species resolution coverage: 0.00%" and every record
+    being blurred fail-closed. If you add a row_factory back, database mode stops
+    working without raising anything.
+    """
+    return psycopg.connect(SOURCE_DATABASE_URL)
 
 
 # ============================================================

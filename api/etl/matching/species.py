@@ -56,7 +56,14 @@ def resolve_species_numbers(
         )
         print(ambiguous_rows.sort_values("scientific_key"))
 
-    # Create smaller lookup table
+    # Create smaller lookup table.
+    #
+    # BRERC's dictionary calls the common-name column COMMON_NAM — truncated to
+    # ten characters, the signature of a DBF/shapefile export. Everything
+    # downstream (aggregation/species_index.py, the species table, the API) uses
+    # the full name, so rename it here, at the one point where the dictionary is
+    # read. Without this the run dies later with:
+    #     KeyError: "Missing columns required for species index: ['common_name']"
     species_lookup = dictionary_df[
         [
             "scientific",
@@ -66,7 +73,9 @@ def resolve_species_numbers(
             "common_nam",
             "taxanb",
         ]
-    ].drop_duplicates(subset="scientific_key")
+    ].drop_duplicates(subset="scientific_key").rename(
+        columns={"common_nam": "common_name"}
+    )
 
     # Match record species against dictionary
     records_df = records_df.merge(
