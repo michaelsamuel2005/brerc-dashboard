@@ -30,6 +30,22 @@ def resolve_species_numbers(
     records_df = records_df.copy()
     dictionary_df = dictionary_df.copy()
 
+    # This function is called twice in a full run — once in pipeline.py and again
+    # inside reconcile.py's make_safe_for_publishing — so it has to tolerate being
+    # handed data it has already resolved. The first pass leaves the merge's
+    # dictionary-side columns behind, and without clearing them the second pass
+    # dies with:
+    #     MergeError: Passing 'suffixes' which cause duplicate columns
+    #     {'species_no_dict', 'nbn_number_dict'} is not allowed
+    #
+    # Dropping them makes the second pass recompute the same answer rather than
+    # fail, so behaviour is unchanged. The second call is arguably redundant and
+    # could be removed instead — that is a change to reconciliation's assumptions
+    # about its input, so it is left alone here.
+    leftovers = [c for c in records_df.columns if c.endswith("_dict")]
+    if leftovers:
+        records_df = records_df.drop(columns=leftovers)
+
     # Create normalised matching key for records
     records_df["scientific_name_key"] = normalise_species_name(
         records_df["scientific_name"]

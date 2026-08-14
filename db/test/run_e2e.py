@@ -175,9 +175,12 @@ if records:
             f"place = {row['place']!r}",
         )
 
+    # R006/A is marked 'Unverified' in the source. filter_accepted_records drops
+    # anything not in verified_values.accepted, so it should NOT be published —
+    # only accepted records go to the public tier (D5).
     check(
-        "non-numeric record id survived (R006/A)",
-        any(str(r["record_id"]) == "R006/A" for r in records),
+        "unverified record R006/A is correctly NOT published",
+        not any(str(r["record_id"]) == "R006/A" for r in records),
     )
 
 species = query(url_for(UI_DB), "SELECT * FROM public_species ORDER BY species_id;")
