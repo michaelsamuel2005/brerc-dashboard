@@ -265,14 +265,16 @@ def reconcile(
                     connection,
                 )
 
-    # Purge deleted records from the UI database (deletions require ID checks only)
+    # Purge deleted records from the UI database (deletions require ID checks only).
+    # The call sits INSIDE the guard: with nothing to delete there is no reason to
+    # make the round trip, and on an incremental run delete_ids is always empty
+    # (see the note above) so this would otherwise fire pointlessly every night.
     if delete_ids:
         logger.warning(
             "Executing database purge for %d deleted records.",
             len(delete_ids),
         )
-
-    delete_records(delete_ids, connection)
+        delete_records(delete_ids, connection)
     logger.info("Reconciliation pass completed successfully.")
 
     return changes
