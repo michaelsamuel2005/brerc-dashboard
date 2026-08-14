@@ -35,6 +35,8 @@ def test_start_run_creates_a_running_row():
     assert row["status"] == "running"
     assert row["load_no"] is None
     assert row["date"]  # populated with today's date
+    assert row["started_at"]  # populated so duration can be computed later
+    assert row["duration_seconds"] is None  # not known until the run finishes
 
 
 def test_mark_run_successful_updates_the_same_row_in_place():
@@ -49,6 +51,8 @@ def test_mark_run_successful_updates_the_same_row_in_place():
     assert row["run_number"] == run_number
     assert row["status"] == "successful"
     assert row["load_no"] == "2026-08-14T12:00:00"
+    assert row["duration_seconds"] is not None
+    assert row["duration_seconds"] >= 0
 
 
 def test_mark_run_failed_updates_the_same_row_in_place():
@@ -63,6 +67,8 @@ def test_mark_run_failed_updates_the_same_row_in_place():
     assert row["run_number"] == run_number
     assert row["status"] == "failed"
     assert row["load_no"] is None
+    assert row["duration_seconds"] is not None
+    assert row["duration_seconds"] >= 0
 
 
 def test_successive_runs_get_increasing_run_numbers():
@@ -71,3 +77,38 @@ def test_successive_runs_get_increasing_run_numbers():
 
     assert second_run > first_run
     assert len(_fetch_all_rows()) == 2
+
+
+def test_connect_migrates_a_pre_existing_table_missing_new_columns():
+    # Simulates a database file written before started_at/duration_seconds
+    # existed, to confirm old run history rows survive the upgrade rather
+    # than breaking on the next start_run()/mark_run_*() call.
+    connection = sqlite3.connect(run_history.DB_PATH)
+    connection.execute(
+        """
+        CREATE TABLE runs (
+            run_number INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_name   TEXT NOT NULL,
+            job_type   TEXT NOT NULL,
+            date       TEXT NOT NULL,
+            load_no    TEXT,
+            status     TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO runs (job_name, job_type, date, load_no, status) VALUES (?, ?, ?, ?, ?)",
+        (run_history.JOB_NAME, "incremental", "2026-01-01", None, "successful"),
+    )
+    connection.commit()
+    connection.close()
+
+    new_run_number = run_history.start_run(job_type="initial")
+    run_history.mark_run_successful(new_run_number, load_no="2026-08-14T00:00:00")
+
+    rows = _fetch_all_rows()
+    assert len(rows) == 2  # pre-existing row preserved, new row added
+
+    pre_existing_row = next(row for row in rows if row["run_number"] != new_run_number)
+    assert pre_existing_row["status"] == "successful"
+    assert pre_existing_row["duration_seconds"] is None  # never recorded for this old row

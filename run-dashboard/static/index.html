@@ -106,12 +106,30 @@
     color: var(--muted);
     font-size: 0.75rem;
   }
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .logout {
+    color: var(--muted);
+    font-size: 0.8125rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .logout:hover { color: var(--text); }
 </style>
 </head>
 <body>
 <main>
-  <h1>BRERC ETL Run History</h1>
-  <p class="subtitle">Live status of every "UI etl run" pipeline run. Refreshes automatically.</p>
+  <header>
+    <div>
+      <h1>BRERC ETL Run History</h1>
+      <p class="subtitle">Live status of every "UI etl run" pipeline run. Refreshes automatically.</p>
+    </div>
+    <a class="logout" href="/logout">Log out</a>
+  </header>
   <div class="panel">
     <table>
       <thead>
@@ -121,6 +139,7 @@
           <th>Job type</th>
           <th>Date</th>
           <th>Load no</th>
+          <th>Duration</th>
           <th>Status</th>
         </tr>
       </thead>
@@ -137,6 +156,14 @@
   const emptyState = document.getElementById("empty-state");
   const lastUpdated = document.getElementById("last-updated");
 
+  function formatDuration(seconds) {
+    if (seconds === null || seconds === undefined) return "—";
+    if (seconds < 60) return `${seconds.toFixed(2)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.round(seconds % 60).toString().padStart(2, "0");
+    return `${minutes}m ${remainder}s`;
+  }
+
   function renderRow(run) {
     const tr = document.createElement("tr");
     const status = (run.status || "").toLowerCase();
@@ -146,6 +173,7 @@
       <td>${run.job_type ?? ""}</td>
       <td>${run.date ?? ""}</td>
       <td>${run.load_no ?? "—"}</td>
+      <td>${formatDuration(run.duration_seconds)}</td>
       <td><span class="badge ${status}">${run.status ?? ""}</span></td>
     `;
     return tr;
@@ -154,6 +182,12 @@
   async function loadRuns() {
     try {
       const response = await fetch("/api/runs");
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
       const runs = await response.json();
 
       tbody.innerHTML = "";
