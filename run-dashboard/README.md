@@ -2,7 +2,7 @@
 
 A small, standalone read-only viewer for the ETL run-history log written by
 `api/etl/run_history.py` (`logs/etl_run_history.db`, gitignored local runtime
-state). Shows every "UI etl run" pipeline run — run number, job type
+state). Shows every "UI ETL RUN" pipeline run — run number, job type
 (initial/incremental), date, load no, and status — and auto-refreshes so a
 run visibly flips from `running` to `successful`/`failed`.
 

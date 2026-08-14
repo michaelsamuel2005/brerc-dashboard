@@ -12,7 +12,7 @@ from pathlib import Path
 # Path to the persistent run history database, in the project's root 'logs' folder
 DB_PATH = Path(__file__).resolve().parents[2] / "logs" / "etl_run_history.db"
 
-JOB_NAME = "UI etl run"
+JOB_NAME = "UI ETL RUN"
 
 # Columns added after the table's initial release. Added via ALTER TABLE for
 # any pre-existing database file, so older run history rows aren't lost.
