@@ -115,7 +115,7 @@ SELECT jsonb_build_object(
     'object', jsonb_build_object(
         'schema', d.nspname,
         'name', d.relname,
-        'qualified_name', format('%I.%I', d.nspname, d.relname),
+        'qualified_name', quote_ident(d.nspname) || '.' || quote_ident(d.relname),
         'relation_oid', d.oid,
         'relkind', d.relkind,
         'relpersistence', d.relpersistence,

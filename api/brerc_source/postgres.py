@@ -163,7 +163,7 @@ SELECT
     current_user AS extraction_role,
     t.nspname AS schema_name,
     t.relname AS object_name,
-    format('%I.%I', t.nspname, t.relname) AS qualified_name,
+    quote_ident(t.nspname) || '.' || quote_ident(t.relname) AS qualified_name,
     t.oid AS relation_oid,
     t.relkind,
     t.relpersistence,
