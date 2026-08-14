@@ -109,9 +109,17 @@ def test_build_species_index_sets_has_image_false():
     assert result.loc[0, "has_image"] == False
 
 
-def test_build_species_index_preserves_missing_species_group():
-    # Confirms missing species_group values are retained rather than dropped.
-    # Expects one output row with a missing species_group, else fails.
+def test_build_species_index_defaults_missing_species_group():
+    # Confirms a species with no group is RETAINED rather than dropped — that is
+    # still the point of this test — but now carries "unknown" instead of null.
+    #
+    # species.species_group is NOT NULL, so writing a null aborted the entire
+    # nightly run on a single unmatched record. With 4.5M records against a
+    # 96,824-species dictionary, at least one unmatched species is a matter of
+    # when, not if. "unknown" matches what rebuild_species.py already does.
+    #
+    # The row surviving is what matters; the record is still counted in the
+    # unresolved-species figure the pipeline logs, so it is not silently normal.
     df = pd.DataFrame(
         {
             "unique_no": [1],
@@ -126,7 +134,7 @@ def test_build_species_index_preserves_missing_species_group():
     result = build_species_index(df)
 
     assert len(result) == 1
-    assert pd.isna(result.loc[0, "species_group"])
+    assert result.loc[0, "species_group"] == "unknown"
 
 
 def test_build_species_index_returns_expected_columns():

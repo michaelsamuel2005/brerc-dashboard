@@ -136,6 +136,7 @@ def test_make_safe_for_publishing_drops_unresolved_species(
 # --- reconcile tests ---
 
 
+@patch("etl.reconciliation.reconcile.build_source_hash_map")
 @patch("etl.reconciliation.reconcile.build_source_modified_map")
 @patch("etl.reconciliation.reconcile.diff_id_modified_maps")
 @patch("etl.reconciliation.reconcile.iter_source_chunks")
@@ -144,7 +145,7 @@ def test_make_safe_for_publishing_drops_unresolved_species(
 @patch("etl.reconciliation.reconcile.insert_records")
 @patch("etl.reconciliation.reconcile.update_records")
 @patch("etl.reconciliation.reconcile.delete_records")
-def test_reconcile_processes_inserts_updates_deletes(
+def test_reconcile_processes_inserts_updates_deletes_on_initial_load(
     mock_delete,
     mock_update,
     mock_insert,
@@ -153,10 +154,15 @@ def test_reconcile_processes_inserts_updates_deletes(
     mock_iter_chunks,
     mock_diff,
     mock_build_modified,
+    mock_build_hash,
     caplog,
 ):
     # Confirms the reconciliation engine correctly delegates chunked records based on their diff status.
     # Expects inserts, updates, and deletes to be correctly routed to their respective load functions, else fails.
+    #
+    # NOTE: load_mode is "initial" here, and that matters. Deletions are only
+    # inferred from a COMPLETE source snapshot — see the companion test below for
+    # the incremental case, where absence means "unchanged" rather than "deleted".
     with caplog.at_level(logging.INFO):
         # 1 Insert (ID 1), 1 Update (ID 2), 1 Delete (ID 3)
         mock_build_modified.return_value = {
@@ -187,7 +193,7 @@ def test_reconcile_processes_inserts_updates_deletes(
             dictionary_df=pd.DataFrame(),
             ui_map={"old": "map"},
             connection=connection,
-            load_mode="incremental",
+            load_mode="initial",
             load_timestamp="2026-08-09",
         )
 
@@ -206,13 +212,83 @@ def test_reconcile_processes_inserts_updates_deletes(
     assert result == mock_diff.return_value
 
 
+@patch("etl.reconciliation.reconcile.build_source_hash_map")
+@patch("etl.reconciliation.reconcile.build_source_modified_map")
+@patch("etl.reconciliation.reconcile.diff_id_modified_maps")
+@patch("etl.reconciliation.reconcile.iter_source_chunks")
+@patch("etl.reconciliation.reconcile.make_safe_for_publishing")
+@patch("etl.reconciliation.reconcile.add_load_metadata")
+@patch("etl.reconciliation.reconcile.insert_records")
+@patch("etl.reconciliation.reconcile.update_records")
+@patch("etl.reconciliation.reconcile.delete_records")
+def test_reconcile_does_not_delete_on_incremental_load(
+    mock_delete,
+    mock_update,
+    mock_insert,
+    mock_add_metadata,
+    mock_make_safe,
+    mock_iter_chunks,
+    mock_diff,
+    mock_build_modified,
+    mock_build_hash,
+    caplog,
+):
+    # On an INCREMENTAL load, records_df holds only the window of records modified
+    # since the watermark — so a record that simply did not change is absent from
+    # the source and looks "deleted" to the diff. Acting on that would delete
+    # nearly the whole table every night (4.5M records, a few hundred daily
+    # changes). The end-to-end test caught the extreme case: an empty window
+    # deleted all six records that were present.
+    #
+    # Expects inserts and updates to be applied as normal, deletions to be SKIPPED,
+    # and the skipped count to be logged as a warning, else fails.
+    with caplog.at_level(logging.INFO):
+        mock_build_modified.return_value = {"1": "2026-08-09 10:00:00"}
+        mock_diff.return_value = {
+            "inserts": {"1"},
+            "updates": {"2"},
+            "deletes": {"3"},
+            "unchanged": set(),
+        }
+
+        mock_iter_chunks.return_value = [pd.DataFrame({"unique_no": [1, 2]})]
+        mock_make_safe.return_value = pd.DataFrame({"safe_data": [True]})
+        mock_add_metadata.return_value = pd.DataFrame(
+            {"safe_data": [True], "Load": ["test"]}
+        )
+
+        connection = MagicMock()
+
+        reconcile(
+            records_df=None,
+            dictionary_df=pd.DataFrame(),
+            ui_map={"old": "map"},
+            connection=connection,
+            load_mode="incremental",
+            load_timestamp="2026-08-09",
+        )
+
+    # Inserts and updates still happen — only deletion is held back.
+    assert mock_insert.call_count == 1
+    assert mock_update.call_count == 1
+
+    # THE POINT OF THIS TEST: nothing is deleted on an incremental run.
+    mock_delete.assert_not_called()
+
+    # And the skipped deletions are surfaced rather than silently swallowed, so a
+    # genuine withdrawal is still visible in the logs.
+    assert "NOT deleting" in caplog.text
+
+
+@patch("etl.reconciliation.reconcile.build_source_hash_map")
 @patch("etl.reconciliation.reconcile.build_source_modified_map")
 @patch("etl.reconciliation.reconcile.diff_id_modified_maps")
 @patch("etl.reconciliation.reconcile.iter_source_chunks")
 @patch("etl.reconciliation.reconcile.make_safe_for_publishing")
 @patch("etl.reconciliation.reconcile.insert_records")
 def test_reconcile_skips_writes_for_empty_safe_chunks(
-    mock_insert, mock_make_safe, mock_iter_chunks, mock_diff, mock_build_modified
+    mock_insert, mock_make_safe, mock_iter_chunks, mock_diff, mock_build_modified,
+    mock_build_hash,
 ):
     # Confirms the engine skips writing if the safety gate filters out all records in an insert chunk.
     # Expects insert_records to NOT be called if make_safe_for_publishing returns an empty dataframe, else fails.

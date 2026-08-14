@@ -105,6 +105,25 @@ def resolve_species_numbers(
     # Initial fail-closed flag: mark records with missing species numbers as unresolved
     records_df["species_unresolved"] = records_df["species_no"].isna()
 
+    # ...and mark records whose species is not in the dictionary AT ALL.
+    #
+    # A left join leaves scientific_key null where nothing matched. Without this
+    # check, a record carrying a well-formed but unknown species number (say
+    # "404404") counted as resolved: it is not missing, and it passes the format
+    # test below, so nothing flagged it. It then kept full 100 m precision.
+    #
+    # That is the fail-OPEN direction, and it is the case that matters most: if
+    # we cannot identify the species, we cannot know whether it is protected, so
+    # the only safe assumption is that it might be. Being wrong here means
+    # publishing a precise location for a sensitive species.
+    #
+    # BRERC's dictionary is the master list (96,824 species), so an unmatched
+    # species number means a typo, a retired code, or a species newer than our
+    # copy of the dictionary — all of which warrant caution rather than trust.
+    records_df["species_unresolved"] = (
+        records_df["species_unresolved"] | records_df["scientific_key"].isna()
+    )
+
     # Clean up trailing decimals from species numbers if they were read as floats
     species_no_string = (
         records_df["species_no"]
