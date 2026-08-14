@@ -22,6 +22,7 @@ from etl.load.mode import should_run_initial_load
 from etl.load.reload import force_full_reload
 from etl.pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
+from etl.run_history import mark_run_failed, mark_run_successful, start_run
 
 import pandas as pd
 
@@ -129,6 +130,8 @@ def nightly_job():
     """Orchestrates the nightly ETL pipeline run."""
     logger.info("Starting nightly ETL job pipeline.")
 
+    run_number = None
+
     try:
         config = get_config()
         mode = config["source"].get("mode", "csv")
@@ -160,6 +163,8 @@ def nightly_job():
             elif load_mode == "incremental" and mode == "database":
                 load_mode = "initial"
 
+            run_number = start_run(job_type=load_mode)
+
             if load_mode == "initial":
                 connection.commit()
                 logger.warning("Forcing full reload of table: %s", table_name)
@@ -190,6 +195,14 @@ def nightly_job():
                 load_mode,
             )
 
+            # Read back the Load_date that upsert_provenance() just committed,
+            # so the run history reflects what's actually in the database
+            # rather than a separately-timed value from this process's clock.
+            with connection.cursor() as cur:
+                cur.execute('SELECT "Load_date" FROM provenance WHERE id = 1')
+                provenance_row = cur.fetchone()
+                db_load_date = provenance_row["Load_date"] if provenance_row else None
+
         reconciliation_summary = result.get("reconciliation", {})
 
         logger.info(
@@ -201,8 +214,17 @@ def nightly_job():
             len(reconciliation_summary.get("unchanged", [])),
         )
 
+        mark_run_successful(
+            run_number,
+            load_no=db_load_date.isoformat() if db_load_date else None,
+        )
+
         return result
 
     except Exception as error:
         logger.exception("Nightly ETL failed: %s", error)
+
+        if run_number is not None:
+            mark_run_failed(run_number)
+
         raise

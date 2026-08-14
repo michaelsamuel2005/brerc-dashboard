@@ -31,6 +31,9 @@ coverage/
 # on demand — never commit it.
 .cache/
 
+# ETL run-history log (local runtime state) — never commit it.
+logs/
+
 # Data — never commit real/sensitive data (species locations, personal data).
 # The folder and its README are tracked; everything else inside is ignored.
 data/*
