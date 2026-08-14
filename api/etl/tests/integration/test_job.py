@@ -175,6 +175,8 @@ def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
 
 # --- nightly_job tests ---
 
+@patch("etl.job.mark_run_successful")
+@patch("etl.job.start_run", return_value=1)
 @patch("etl.job.check_table_exists", return_value=True)
 @patch("etl.job.check_table_has_rows", return_value=True)
 @patch("etl.job.should_run_initial_load", return_value=False)
@@ -194,6 +196,8 @@ def test_nightly_job_incremental_flow(
     mock_initial_check,
     mock_has_rows,
     mock_exists,
+    mock_start_run,
+    mock_mark_successful,
 ):
     # Confirms nightly_job orchestrates an incremental run when the
     # destination table exists and already contains rows.
@@ -221,3 +225,60 @@ def test_nightly_job_incremental_flow(
     args = mock_run_pipeline.call_args[0]
 
     assert args[4] == "incremental"
+
+    # Confirms the run history row is opened as "running" (job_type =
+    # the resolved load_mode) before the pipeline runs, and updated in
+    # place to "successful" once it completes.
+    mock_start_run.assert_called_once_with(job_type="incremental")
+    mock_mark_successful.assert_called_once()
+    assert mock_mark_successful.call_args[0][0] == 1
+
+
+@patch("etl.job.mark_run_failed")
+@patch("etl.job.start_run", return_value=7)
+@patch("etl.job.check_table_exists", return_value=True)
+@patch("etl.job.check_table_has_rows", return_value=True)
+@patch("etl.job.should_run_initial_load", return_value=False)
+@patch("etl.job.get_last_load_date", return_value="2026-01-01")
+@patch("etl.job.load_source_data", return_value=pd.DataFrame())
+@patch("etl.job.load_species_dictionary", return_value=pd.DataFrame())
+@patch("etl.job.get_current_ui_map", return_value={})
+@patch("etl.job.run_pipeline", side_effect=RuntimeError("boom"))
+@patch("etl.job.get_destination_connection")
+def test_nightly_job_marks_run_failed_on_exception(
+    mock_get_conn,
+    mock_run_pipeline,
+    mock_ui_map,
+    mock_dict,
+    mock_source,
+    mock_last_date,
+    mock_initial_check,
+    mock_has_rows,
+    mock_exists,
+    mock_start_run,
+    mock_mark_failed,
+):
+    # Confirms that when the pipeline raises, the run history row started
+    # for this run is updated in place to "failed" and the exception still
+    # propagates to the caller.
+    mock_conn_ctx = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn_ctx
+
+    with patch(
+        "etl.job.get_config",
+        return_value={
+            "source": {
+                "mode": "csv",
+            },
+            "destination": {
+                "table": "occurrence_public",
+            },
+            "load": {
+                "incremental_check": True,
+            },
+        },
+    ):
+        with pytest.raises(RuntimeError):
+            nightly_job()
+
+    mock_mark_failed.assert_called_once_with(7)

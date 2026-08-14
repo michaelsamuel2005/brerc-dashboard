@@ -1,0 +1,73 @@
+"""Unit tests for the SQLite-backed ETL run-history log."""
+
+import sqlite3
+
+import pytest
+
+from etl import run_history
+
+
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path, monkeypatch):
+    """Points run_history at a throwaway database so tests never touch the real log."""
+    monkeypatch.setattr(run_history, "DB_PATH", tmp_path / "test_run_history.db")
+
+
+def _fetch_all_rows():
+    connection = sqlite3.connect(run_history.DB_PATH)
+    try:
+        connection.row_factory = sqlite3.Row
+        return connection.execute("SELECT * FROM runs").fetchall()
+    finally:
+        connection.close()
+
+
+def test_start_run_creates_a_running_row():
+    run_number = run_history.start_run(job_type="incremental")
+
+    rows = _fetch_all_rows()
+    assert len(rows) == 1
+
+    row = rows[0]
+    assert row["run_number"] == run_number
+    assert row["job_name"] == run_history.JOB_NAME
+    assert row["job_type"] == "incremental"
+    assert row["status"] == "running"
+    assert row["load_no"] is None
+    assert row["date"]  # populated with today's date
+
+
+def test_mark_run_successful_updates_the_same_row_in_place():
+    run_number = run_history.start_run(job_type="initial")
+
+    run_history.mark_run_successful(run_number, load_no="2026-08-14T12:00:00")
+
+    rows = _fetch_all_rows()
+    assert len(rows) == 1  # updated in place, not appended
+
+    row = rows[0]
+    assert row["run_number"] == run_number
+    assert row["status"] == "successful"
+    assert row["load_no"] == "2026-08-14T12:00:00"
+
+
+def test_mark_run_failed_updates_the_same_row_in_place():
+    run_number = run_history.start_run(job_type="incremental")
+
+    run_history.mark_run_failed(run_number)
+
+    rows = _fetch_all_rows()
+    assert len(rows) == 1
+
+    row = rows[0]
+    assert row["run_number"] == run_number
+    assert row["status"] == "failed"
+    assert row["load_no"] is None
+
+
+def test_successive_runs_get_increasing_run_numbers():
+    first_run = run_history.start_run(job_type="initial")
+    second_run = run_history.start_run(job_type="incremental")
+
+    assert second_run > first_run
+    assert len(_fetch_all_rows()) == 2
