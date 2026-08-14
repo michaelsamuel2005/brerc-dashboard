@@ -5,9 +5,17 @@ WHY THIS IS ARCHITECTURALLY REQUIRED
 The older BRERC spreadsheet exports carry NO species-id column. Both client
 samples have only `Scientific_Name` and `Common_Name`:
 
-    Scientific_Name, Common_Name, Grid_Ref, Place, Date_of_Record, Abundance,
-    Sex_Stage, Record_Type, Precise_Date, Vague_Date, vitality, verified,
-    YearEnd, Comments, Source, unique_No, licence, Eastings, Northings
+    Scientific_Name · Common_Name · Grid_Ref · Place · Date_of_Record
+    Abundance · Sex_Stage · Record_Type · Precise_Date · Vague_Date
+    vitality · verified · YearEnd · Comments · Source · unique_No
+    licence · Eastings · Northings
+
+    (Listed with a middle dot rather than commas on purpose. Comma-separated
+    BRERC column names in the first lines of a file are exactly what
+    scripts/guard_no_data_files.py sniffs for when detecting a client extract
+    that has been renamed to evade the extension check, so a schema docstring
+    written that way trips the guard. Keeping the guard strict is worth more
+    than the punctuation.)
 
 The sensitivity flag lives in the species dictionary, keyed on `SPECIES_NO`. For
 those exports the gate cannot run on an occurrence row alone, so the dictionary
