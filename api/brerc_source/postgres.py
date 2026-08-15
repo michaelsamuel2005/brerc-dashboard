@@ -66,10 +66,23 @@ BEGIN_SQL = "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
 # These are the exact settings in the approved view-definition digest profile.
 # They remain literals rather than deployment configuration: a caller may not
 # change how PostgreSQL renders the definition being compared with approval.
+#
+# quote_all_identifiers is pinned OFF, and the value is load-bearing rather than
+# arbitrary.  information_schema.columns.data_type is not stored text: PostgreSQL
+# renders it with format_type(), which honours this GUC.  With the setting ON,
+# format_type() quotes every type name that is not one of its built-in SQL
+# standard spellings, so a `date` column is reported as `"date"` and a `text`
+# column as `"text"`, while `character varying` and `numeric` are unaffected.
+# The reviewed contract records the SQL standard names, so leaving this ON makes
+# SourceContract.validate_initial reject BRERC's real view for eleven of its
+# thirty-nine columns.  Pinning the setting (rather than the specific value) is
+# what protects the capture from server-, database- or role-level configuration;
+# OFF is the value that also keeps the captured text identical to what a BRERC
+# DBA sees from psql, which matters for non-developer review at handover.
 FIXED_SESSION_SQL: tuple[str, ...] = (
     "SET LOCAL search_path = pg_catalog",
     "SET LOCAL client_encoding = 'UTF8'",
-    "SET LOCAL quote_all_identifiers = on",
+    "SET LOCAL quote_all_identifiers = off",
     "SET LOCAL standard_conforming_strings = on",
     "SET LOCAL DateStyle = 'ISO, YMD'",
     "SET LOCAL IntervalStyle = 'postgres'",

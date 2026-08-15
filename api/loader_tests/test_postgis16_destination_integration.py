@@ -77,6 +77,18 @@ from etl.view_identity import ViewCaptureEvidence, ViewDefinitionApproval
 ENABLED = os.environ.get("BRERC_LOADER_PG_INTEGRATION") == "1"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# One statement used twice: once without candidate-write authority (the durable
+# BEFORE INSERT guard refuses it) and once with authority (the taxon_group CHECK
+# refuses it).  Keeping a single literal proves both refusals concern the very
+# same row rather than two rows that merely look alike.
+_UNAPPROVED_TAXON_GROUP_INSERT = """
+INSERT INTO publication.public_species (
+    release_id, species_id, scientific_name, common_name,
+    taxon_group, total_records, first_year, last_year
+) VALUES (%s, 'SYNTH-GROUP', 'Synthetic grouped species', NULL,
+          'unapproved-group', 1, 2024, 2024)
+"""
+
 ROLE_LOGINS = {
     "loader": "brerc_release_loader_test",
     "api": "brerc_api_test",
@@ -193,7 +205,7 @@ def _disposition(
         grid_ref = "ST587721"
         bounds = (358_000, 172_000, 359_000, 173_000)
     elif cell_id == "ST5972":
-        grid_ref = "ST597221"
+        grid_ref = "ST592721"
         bounds = (359_000, 172_000, 360_000, 173_000)
     else:
         raise AssertionError("synthetic fixture supports exactly two reviewed cells")
@@ -573,11 +585,18 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 """,
                 (candidate.job_id,),
             )
+            # status is deliberately omitted rather than passed as 'candidate'.
+            # The reviewed grant set gives brerc_loader INSERT on only
+            # (release_id, source_id, job_id, base_release_id, load_mode), so a
+            # loader that names the status column is refused outright; the
+            # column's own DEFAULT 'candidate' is the sanctioned way to open a
+            # release.  Naming it here would test a privilege the real loader
+            # does not have.
             admin.execute(
                 """
                 INSERT INTO loader_control.release (
-                    release_id, source_id, job_id, base_release_id, load_mode, status
-                ) VALUES (%s, %s, %s, %s, 'incremental', 'candidate')
+                    release_id, source_id, job_id, base_release_id, load_mode
+                ) VALUES (%s, %s, %s, %s, 'incremental')
                 """,
                 (candidate.release_id, SOURCE_ID, candidate.job_id, base_release),
             )
@@ -1179,7 +1198,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "disposition": "eligible",
                     "withheld_reason": None,
                     "species_id": "SYNTH-E2E-2",
-                    "record_grid_ref": "ST597221",
+                    "record_grid_ref": "ST592721",
                     "record_precision_metres": 100,
                     "cell_id": "ST5972",
                     "place": None,
@@ -2490,7 +2509,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             (
                 "cell_id_and_bounds",
                 "UPDATE loader_stage.disposition_delta "
-                "SET record_grid_ref = 'ST597221', cell_id = 'ST5972', "
+                "SET record_grid_ref = 'ST592721', cell_id = 'ST5972', "
                 "min_easting = 359000, max_easting = 360000 "
                 "WHERE job_id = %s AND action = 'upsert'",
             ),
@@ -2577,6 +2596,49 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
     ) -> None:
         policy = _policy()
         rows = (_disposition(1),)
+
+        # Part one: the taxon_group CHECK.  Candidate-write authority is only
+        # granted while a release is still being finalised, so this uses a
+        # loader whose candidate is open and never staged or finalised.  The
+        # transaction is rolled back, and the loader is closed so that part two
+        # can take the source activation lock on its own connection.
+        candidate_store = self._store(policy)
+        candidate_store.acquire(SOURCE_ID)
+        candidate_handle = candidate_store.begin_initial(
+            SOURCE_ID,
+            _CandidateHandle(job_id=uuid4(), release_id=uuid4(), base_release_id=None),
+        )
+        candidate_cursor = candidate_store._cursor
+        # The authoriser only grants candidate-write authority once the job has
+        # reached 'reconciling', which is the state finalisation puts it in.
+        # brerc_loader holds UPDATE (status) on etl_job, so this is the same
+        # transition the real loader performs, not a privileged shortcut.
+        candidate_cursor.execute(
+            "UPDATE loader_control.etl_job SET status = 'reconciling' "
+            "WHERE job_id = %s AND status = 'extracting'",
+            (candidate_handle.job_id,),
+        )
+        self.assertEqual(candidate_cursor.rowcount, 1)
+        candidate_cursor.execute("BEGIN")
+        try:
+            authorised = candidate_cursor.execute(
+                "SELECT loader_control.authorize_candidate_writes(%s) AS release_id",
+                (candidate_handle.release_id,),
+            ).fetchone()
+            self.assertEqual(authorised, {"release_id": candidate_handle.release_id})
+            with self.assertRaises(self.psycopg.errors.CheckViolation):
+                candidate_cursor.execute(
+                    _UNAPPROVED_TAXON_GROUP_INSERT,
+                    (candidate_handle.release_id,),
+                )
+        finally:
+            candidate_cursor.execute("ROLLBACK")
+        candidate_store.fail(candidate_handle, "LOADER_CANDIDATE_INVALID")
+        candidate_store.close()
+        with self._admin_connection() as admin:
+            admin.execute("TRUNCATE TABLE loader_control.source_state CASCADE")
+
+        # Part two: the lifecycle functions themselves.
         store, handle, _summary = self._finalized(rows, policy=policy)
 
         with self._connection("loader") as unlocked:
@@ -2600,15 +2662,15 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 ):
                     unlocked.execute(query, parameters)
 
-            with self.assertRaises(self.psycopg.errors.CheckViolation):
+            # The durable-write guard is a BEFORE INSERT trigger, so it fires
+            # ahead of any CHECK constraint on the same row.  A loader session
+            # without transaction-local candidate-write authority is therefore
+            # stopped by the guard and never reaches the taxon_group check:
+            # the guard is the outer gate, and this asserts that ordering
+            # rather than assuming the check is what refused the row.
+            with self.assertRaises(self.psycopg.errors.ObjectNotInPrerequisiteState):
                 unlocked.execute(
-                    """
-                    INSERT INTO publication.public_species (
-                        release_id, species_id, scientific_name, common_name,
-                        taxon_group, total_records, first_year, last_year
-                    ) VALUES (%s, 'SYNTH-GROUP', 'Synthetic grouped species', NULL,
-                              'unapproved-group', 1, 2024, 2024)
-                    """,
+                    _UNAPPROVED_TAXON_GROUP_INSERT,
                     (handle.release_id,),
                 )
 
@@ -2638,6 +2700,13 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         with self.assertRaises(LoaderError):
             store.activate(handle, summary)
         store.fail(handle, "LOADER_CANDIDATE_INVALID")
+        # The source activation lock is a SESSION-level advisory lock
+        # (pg_try_advisory_lock), so it is held until this loader's connection
+        # is closed, not until its job reaches a terminal state.  The second
+        # half of this test opens a second loader on a second connection, which
+        # would be refused with LOADER_ALREADY_RUNNING while the first one is
+        # still open.  Closing here is the behaviour a real operator has too.
+        store.close()
 
         with self._admin_connection() as admin:
             admin.execute("TRUNCATE TABLE loader_control.source_state CASCADE")

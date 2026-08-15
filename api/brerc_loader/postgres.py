@@ -858,10 +858,24 @@ class _PostgreSQLTargetStore:
                 "ON CONFLICT (source_id) DO NOTHING",
                 (source_id,),
             )
+            # Deliberately an unlocked read.  Two loaders cannot reach this
+            # point concurrently: begin_initial refuses unless acquire() already
+            # took the session-level advisory lock for this source
+            # (TARGET_LOCK_SQL / pg_try_advisory_lock), which is held across
+            # commits for the whole run, and active_release_id is only ever
+            # written by loader_control.activate_validated_release, a SECURITY
+            # DEFINER function whose EXECUTE right is granted to this same role.
+            #
+            # A FOR UPDATE row lock here would additionally require the UPDATE
+            # privilege on loader_control.source_state (PostgreSQL requires it
+            # for every locking clause, including FOR KEY SHARE).  The reviewed
+            # grant set gives brerc_loader only SELECT and INSERT (source_id) on
+            # that table precisely so the loader login cannot repoint the live
+            # public release outside the audited lifecycle function, so taking
+            # the row lock is not an option we may buy back with a grant.
             self._tx_execute(
                 cursor,
-                "SELECT active_release_id FROM loader_control.source_state "
-                "WHERE source_id = %s FOR UPDATE",
+                "SELECT active_release_id FROM loader_control.source_state WHERE source_id = %s",
                 (source_id,),
             )
             state = _one(cursor, ("active_release_id",))

@@ -249,7 +249,17 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
                 """
             ).fetchone()
             self.assertEqual(role, (False, False, False, False, False, False))
-            with self.assertRaises(self.psycopg.errors.ReadOnlySqlTransaction):
+            # Either exception proves the role cannot write. On an autocommit
+            # connection with no explicit read-only transaction, PostgreSQL
+            # rejects on PRIVILEGE first because brerc_extract holds SELECT only
+            # - a role-level guarantee that is strictly stronger than the
+            # transaction-level one, so both are accepted here.
+            with self.assertRaises(
+                (
+                    self.psycopg.errors.InsufficientPrivilege,
+                    self.psycopg.errors.ReadOnlySqlTransaction,
+                )
+            ):
                 connection.execute("UPDATE dashboard.main_data_dash SET common_name = 'must fail'")
 
     def test_column_only_role_cannot_satisfy_the_trusted_capture(self):
@@ -267,7 +277,17 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
                 ORDER BY ordinal_position
                 """
             ).fetchall()
-            self.assertEqual(tuple(row[0] for row in visible), self.service_config.projection)
+            # Compared as SORTED MEMBERSHIP, not as a sequence. This asserts that
+            # the column-limited role can see exactly the projection's columns -
+            # no more, no fewer. It must not assert an ORDER: information_schema
+            # returns catalogue order (the view's ordinal_position) while the
+            # projection is built from the pipeline mapping (required columns
+            # first, then optional), so the two orders legitimately differ while
+            # describing the same ten columns.
+            self.assertEqual(
+                sorted(row[0] for row in visible),
+                sorted(self.service_config.projection),
+            )
 
             connection.execute(BEGIN_SQL)
             with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):

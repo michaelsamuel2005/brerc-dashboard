@@ -23,7 +23,14 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
-VIEW_DEFINITION_DIGEST_PROFILE = "postgres-pg-get-viewdef-oid-false-exact-utf8-fixed-gucs-sha256-v1"
+#: Bumped to v2 on 15 August 2026 when quote_all_identifiers moved from ON to
+#: OFF in the fixed session (see brerc_source.postgres.FIXED_SESSION_SQL).  That
+#: GUC changes how PostgreSQL renders both pg_get_viewdef() and
+#: information_schema.columns.data_type, so a definition digest taken under the
+#: old profile is not comparable with one taken under the new profile.  The
+#: version suffix makes any earlier approval fail closed and be re-captured
+#: rather than silently compared across two different rendering rules.
+VIEW_DEFINITION_DIGEST_PROFILE = "postgres-pg-get-viewdef-oid-false-exact-utf8-fixed-gucs-sha256-v2"
 VIEW_IDENTITY_PROFILE = "brerc-postgres-view-identity-sha256-v1"
 VIEW_CAPTURE_EVIDENCE_PROFILE = "brerc-view-capture-canonical-json-sha256-v1"
 VIEW_CAPTURE_ARTIFACT_FORMAT = "brerc-view-capture/v1"
@@ -32,7 +39,10 @@ VIEW_APPROVAL_ARTIFACT_FORMAT = "brerc-view-approval/v1"
 EXPECTED_CAPTURE_SESSION = {
     "search_path": "pg_catalog",
     "client_encoding": "UTF8",
-    "quote_all_identifiers": "on",
+    # Must stay OFF.  format_type() honours this GUC, and
+    # information_schema.columns.data_type is produced by format_type(), so ON
+    # reports `date` as `"date"` and `text` as `"text"`.
+    "quote_all_identifiers": "off",
     "standard_conforming_strings": "on",
     "DateStyle": "ISO, YMD",
     "IntervalStyle": "postgres",

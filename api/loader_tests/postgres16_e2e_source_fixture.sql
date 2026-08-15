@@ -97,7 +97,12 @@ INSERT INTO dashboard.synthetic_records (
     (
         'Synthetic species ordinary',
         'Synthetic ordinary species',
-        'ST597221',
+        -- ST592721 = 359200..359300 E, 172100..172200 N, which is the 100 m
+        -- square containing the easting/northing below and therefore the 1 km
+        -- cell ST5972 this record is expected to publish into.  (The previous
+        -- value, ST597221, transposed two digits and described a square 50 km
+        -- further south, contradicting its own easting/northing.)
+        'ST592721',
         'PRIVATE-E2E-PLACE-ORDINARY-MUST-NOT-CROSS',
         '2',
         'field record',

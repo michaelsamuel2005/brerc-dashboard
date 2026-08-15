@@ -20,7 +20,7 @@
     "reason": "Internal SQL and infrastructure names require explicit BRERC permission before repository publication."
   },
   "liveCapture": {
-    "definitionDigestProfile": "postgres-pg-get-viewdef-oid-false-exact-utf8-fixed-gucs-sha256-v1",
+    "definitionDigestProfile": "postgres-pg-get-viewdef-oid-false-exact-utf8-fixed-gucs-sha256-v2",
     "identityProfile": "brerc-postgres-view-identity-sha256-v1",
     "captureEvidenceProfile": "brerc-view-capture-canonical-json-sha256-v1",
     "status": "pending-brerc-live-capture"

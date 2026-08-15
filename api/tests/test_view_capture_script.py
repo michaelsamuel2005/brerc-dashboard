@@ -211,7 +211,10 @@ class TestCaptureSql(unittest.TestCase):
         sql = path.read_text(encoding="utf-8")
         self.assertIn("REPEATABLE READ READ ONLY", sql)
         self.assertIn("SET LOCAL search_path = pg_catalog", sql)
-        self.assertIn("SET LOCAL quote_all_identifiers = on", sql)
+        # OFF, not ON: information_schema.columns.data_type is rendered by
+        # format_type(), which quotes non-standard-spelled type names when this
+        # GUC is on ("date", "text") and so breaks the reviewed source contract.
+        self.assertIn("SET LOCAL quote_all_identifiers = off", sql)
         self.assertIn("SET LOCAL standard_conforming_strings = on", sql)
         self.assertIn("SET LOCAL DateStyle = 'ISO, YMD'", sql)
         self.assertIn("SET LOCAL TimeZone = 'UTC'", sql)

@@ -9,9 +9,15 @@ BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 -- The runtime connector must use them before calling pg_get_viewdef(oid,
 -- false).  The following timeouts and lock are acquisition safeguards; they
 -- are not fields in the captured identity document.
+--
+-- quote_all_identifiers must be OFF and must match
+-- brerc_source.postgres.FIXED_SESSION_SQL exactly.  format_type() honours this
+-- GUC, and information_schema.columns.data_type is rendered by format_type(),
+-- so ON reports a `date` column as `"date"` and a `text` column as `"text"`
+-- and the captured columns no longer match the reviewed contract.
 SET LOCAL search_path = pg_catalog;
 SET LOCAL client_encoding = 'UTF8';
-SET LOCAL quote_all_identifiers = on;
+SET LOCAL quote_all_identifiers = off;
 SET LOCAL standard_conforming_strings = on;
 SET LOCAL DateStyle = 'ISO, YMD';
 SET LOCAL IntervalStyle = 'postgres';
