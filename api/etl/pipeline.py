@@ -5,7 +5,7 @@ provenance tracking, and reconciliation into a single unified transactional run.
 """
 
 # python -c "from etl.job import nightly_job; nightly_job()"
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import time
 
@@ -103,7 +103,21 @@ def run_pipeline(
             ui_map,
             connection,
             load_mode=load_mode,
-            load_timestamp=datetime.now(),
+            # UTC, and timezone-AWARE. datetime.now() returns a naive local time,
+            # and Postgres then has to guess what it means when writing it into
+            # Load_date (a TIMESTAMPTZ) — it assumes the server's own timezone.
+            #
+            # That guess is wrong whenever the machine running the ETL is not in
+            # the same timezone as the database. Running from Hong Kong against a
+            # Europe/London database, the stored Load_date lands 7 hours in the
+            # FUTURE. get_last_load_date() then uses it as the incremental
+            # watermark, nothing in the source can be newer than it, the load
+            # returns zero rows, and reconciliation reads "source is empty" as
+            # "everything was deleted" — emptying the public dashboard.
+            #
+            # It would also drift by an hour at each daylight-saving change even
+            # on a single machine.
+            load_timestamp=datetime.now(timezone.utc),
         )
 
         duration = time.time() - start_time

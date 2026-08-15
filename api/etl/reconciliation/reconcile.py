@@ -164,7 +164,43 @@ def reconcile(
 
     insert_ids = changes["inserts"]
     update_ids = changes["updates"]
-    delete_ids = changes["deletes"]
+
+    # Deletions are only safe to infer from a COMPLETE source snapshot.
+    #
+    # diff_id_modified_maps computes deletes as (ui_ids - source_ids). That is
+    # correct on an initial load, where records_df is the whole dataset: anything
+    # in the UI database but not in the source really has gone.
+    #
+    # On an incremental load it is badly wrong. records_df is only the window of
+    # records modified since the watermark, so every record that simply did not
+    # change looks "missing" and would be deleted. In practice that means each
+    # nightly run would delete almost the entire table — with 4.5M records and a
+    # few hundred daily changes, roughly 4.5M deletions a night.
+    #
+    # The end-to-end test caught the extreme version: an empty window deleted all
+    # 6 records that were there (6 before, 0 after).
+    #
+    # So: do not infer deletions on an incremental run. Absence means "unchanged",
+    # not "withdrawn".
+    #
+    # This leaves a known gap — genuine deletions are not picked up incrementally.
+    # Closing it needs a separate, cheap comparison of the FULL set of source ids
+    # (just unique_no, no other columns) against the UI's ids, run after the
+    # incremental load. That is what Shankara suggested in the review thread, and
+    # it is the right shape; it is not implemented here because it is a change to
+    # how reconciliation is driven rather than a bug fix.
+    if load_mode == "initial":
+        delete_ids = changes["deletes"]
+    else:
+        delete_ids = set()
+        if changes["deletes"]:
+            logger.warning(
+                "Incremental run: %d records are absent from the source window. "
+                "NOT deleting them — on an incremental load absence means "
+                "unchanged, not withdrawn. Genuine deletions need a full id "
+                "comparison (see the note in reconcile.py).",
+                len(changes["deletes"]),
+            )
 
     # Content hash map — built separately, used only to populate the stored
     # content_hash column on written rows (audit/debug), NOT for change detection.
@@ -229,14 +265,16 @@ def reconcile(
                     connection,
                 )
 
-    # Purge deleted records from the UI database (deletions require ID checks only)
+    # Purge deleted records from the UI database (deletions require ID checks only).
+    # The call sits INSIDE the guard: with nothing to delete there is no reason to
+    # make the round trip, and on an incremental run delete_ids is always empty
+    # (see the note above) so this would otherwise fire pointlessly every night.
     if delete_ids:
         logger.warning(
             "Executing database purge for %d deleted records.",
             len(delete_ids),
         )
-
-    delete_records(delete_ids, connection)
+        delete_records(delete_ids, connection)
     logger.info("Reconciliation pass completed successfully.")
 
     return changes
