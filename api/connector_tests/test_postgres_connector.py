@@ -516,6 +516,116 @@ class TestConnectorSuccess(unittest.TestCase):
         self.assertNotIn("brerc_extract", rendered)
 
 
+class TestPrivateSafeSnapshot(unittest.TestCase):
+    def test_only_safe_bounded_batches_and_structural_evidence_escape(self):
+        contract = approved_contract()
+        config = connector_config(contract)
+        connection = FakeConnection(
+            row_batches=[
+                [source_row("1.00"), source_row("2.00")],
+                [source_row("3.00") | {"sensitive": "Yes"}],
+                [],
+            ]
+        )
+        connector = TrustedPostgreSQLSourceConnector.from_config(config)
+        with patch(
+            "brerc_source.postgres._default_connection_factory",
+            return_value=connection,
+        ):
+            stream = connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+            )
+            with stream as snapshot:
+                batches = list(snapshot)
+                evidence = snapshot.evidence
+
+        self.assertEqual([len(batch) for batch in batches], [2, 1])
+        self.assertEqual(evidence.rows_seen, 3)
+        self.assertEqual(evidence.records_eligible_before_suppression, 3)
+        self.assertEqual(evidence.sensitivity_buckets, (("no", 2), ("yes", 1)))
+        self.assertEqual(connection.row_cursor.fetchmany_calls, [100, 100, 100])
+        self.assertEqual(connection.rollback_calls, 1)
+        self.assertEqual(connection.close_calls, 1)
+        rendered = repr((batches, evidence))
+        for private in ("1.00", "2.00", "3.00", "Yes"):
+            self.assertNotIn(private, rendered)
+        self.assertNotIn("ST587721", repr(batches[1]))
+        self.assertEqual(batches[1][0].record.grid_ref, "ST5872")
+
+    def test_short_reconciliation_secret_fails_before_a_socket(self):
+        contract = approved_contract()
+        calls = 0
+
+        def factory(_: object) -> FakeConnection:
+            nonlocal calls
+            calls += 1
+            return FakeConnection(row_batches=[])
+
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        with (
+            patch(
+                "brerc_source.postgres._default_connection_factory",
+                side_effect=factory,
+            ),
+            self.assertRaises(SourceConfigurationError),
+        ):
+            connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"short",
+            )
+        self.assertEqual(calls, 0)
+
+    def test_early_consumer_failure_still_rolls_back_and_closes_source(self):
+        contract = approved_contract()
+        connection = FakeConnection(row_batches=[[source_row()], []])
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        with patch(
+            "brerc_source.postgres._default_connection_factory",
+            return_value=connection,
+        ):
+            stream = connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+            )
+            with self.assertRaisesRegex(RuntimeError, "target failed"), stream as snapshot:
+                next(snapshot)
+                raise RuntimeError("target failed")
+        self.assertEqual(connection.rollback_calls, 1)
+        self.assertEqual(connection.close_calls, 1)
+
+    def test_source_value_failure_is_sanitised_and_context_free(self):
+        contract = approved_contract()
+        private_identifier = "PRIVATE-INVALID-IDENTIFIER"
+        connection = FakeConnection(row_batches=[[source_row(private_identifier)]])
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        with (
+            patch(
+                "brerc_source.postgres._default_connection_factory",
+                return_value=connection,
+            ),
+            self.assertRaises(SourceDatabaseFailed) as raised,
+            connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+            ) as snapshot,
+        ):
+            next(snapshot)
+        self.assertNotIn(private_identifier, str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertEqual(connection.rollback_calls, 1)
+        self.assertEqual(connection.close_calls, 1)
+
+
 class TestFailClosedOrdering(unittest.TestCase):
     def test_unapproved_source_fails_before_connection(self):
         calls = 0

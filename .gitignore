@@ -14,6 +14,9 @@ Thumbs.db
 # The credential-free configuration.example.yaml and public root CA certificate
 # may be reviewed and versioned separately; these exact deployment names may not.
 /api/configuration.yaml
+/api/loader.configuration.yaml
+publication-policy*.json
+publication_policy*.json
 .pgpass
 pgpass.conf
 .pg_service.conf
@@ -53,10 +56,10 @@ data/*
 # formats anywhere in the tree — a workbook saved next to a notebook, an extract
 # dropped into api/, an archive copied in from Downloads.
 #
-# .github/workflows/data-guard.yml fails CI if one of these is TRACKED, on every
-# push, with no path filter. These rules are what stop it being staged in the
-# first place; the guard is what catches a `git add -f` or a rename that dodges
-# a pattern. Both, because either alone has a hole.
+# The unconditional CI data-guard jobs fail if one of these is TRACKED. These
+# rules stop it being staged in the first place; the guard catches a
+# `git add -f` or a rename that dodges a pattern. Both, because either alone has
+# a hole.
 #
 # If you genuinely need to commit one (a synthetic fixture), force-add it AND add
 # its path to ALLOWED in scripts/guard_no_data_files.py with the reason.

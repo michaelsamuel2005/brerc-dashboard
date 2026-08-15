@@ -613,15 +613,17 @@ BRERC_MAIN_DATA_DASH = SourceContract(
         "date-only watermarks require an inclusive overlap and idempotent upserts",
         "deletions, withdrawals and source-key changes have no confirmed signal",
         "lookup-table changes may alter the joined view without changing date_mdb_modified",
-        "affected-aggregate recomputation and reconciliation are not implemented",
-        "atomic candidate-release activation and watermark commit are not implemented",
+        "the incremental coordinator does not yet build a complete replacement candidate from "
+        "an approved change window and deletion signal",
+        "the inclusive watermark and affected-aggregate protocol has not been approved or "
+        "validated against a revised live BRERC view",
     ),
     release_blockers=(
         "BRERC-approved live view version and identity envelope have not been received",
         "BRERC-approved source database/service identity and extraction role have not been "
         "independently pinned; connector configuration labels are deployment assertions only",
-        "catastrophic empty-result and large-count-drop activation gates are not implemented",
-        "public database writer and activation path are not implemented to accept only "
-        "ValidatedSourceRun and build_payloads output; candidate previews must never be persisted",
+        "BRERC-approved automatic initial source-count and large-drop bounds have not been received",
+        "the destination loader has not been accepted at BRERC's approximately five-million-row "
+        "scale, including activation duration, disk capacity and failed-candidate retention",
     ),
 )

@@ -125,7 +125,13 @@ FORBIDDEN_EXACT_NAMES: frozenset[str] = frozenset(
 FORBIDDEN_SECRET_SUFFIXES: frozenset[str] = frozenset(
     {".key", ".pgpass", ".pg_service.conf"}
 )
-FORBIDDEN_EXACT_PATHS: frozenset[str] = frozenset({"api/configuration.yaml"})
+FORBIDDEN_EXACT_PATHS: frozenset[str] = frozenset(
+    {"api/configuration.yaml", "api/loader.configuration.yaml"}
+)
+FORBIDDEN_POLICY_NAME_PREFIXES: tuple[str, ...] = (
+    "publication-policy",
+    "publication_policy",
+)
 
 # A renamed binary must not evade the suffix check. Read only a small prefix;
 # the guard reports the path, never file contents.
@@ -244,6 +250,13 @@ def check(repo_root: str) -> list[str]:
             or lower_path in FORBIDDEN_EXACT_PATHS
             or any(lower_path.endswith(ending) for ending in FORBIDDEN_PATH_ENDINGS)
             or exact_name in FORBIDDEN_EXACT_NAMES
+            or (
+                exact_name.endswith(".json")
+                and any(
+                    exact_name.startswith(prefix)
+                    for prefix in FORBIDDEN_POLICY_NAME_PREFIXES
+                )
+            )
             or any(lower_path.endswith(ending) for ending in FORBIDDEN_SECRET_SUFFIXES)
             or dataset_component(path) is not None
             or magic_kind(repo_root, path) is not None

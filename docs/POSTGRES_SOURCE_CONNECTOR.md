@@ -4,8 +4,9 @@
 driver. CI now provisions an entirely synthetic PostgreSQL 16 service with certificate-verified
 TLS and runs a real-driver integration gate; that new workflow must complete on GitHub before its
 result is claimed as executed evidence. The connector has not been run against BRERC's network or
-real records. Incremental loading, the public-database writer and public-release activation remain
-blocked.
+real records. Incremental loading remains blocked. The separate initial destination writer and
+atomic activation mechanisms are implemented, but their PostGIS lifecycle/scale evidence and the
+external BRERC publication approvals are still release gates.
 
 **Source:** `dashboard.main_data_dash`
 
@@ -251,18 +252,21 @@ access to BRERC.
 ## Honest completion boundary
 
 This work completes the trusted **initial-source connector** and its unit-testable trust boundary.
-It does not make the dashboard publicly releasable and it does not complete a five-million-row
-production load. The current ETL ultimately materialises the extracted rows in memory; bounded
-database fetches prevent driver-level `fetchall`, but do not remove that whole-run memory cost.
-Chunked transformation/external staging and a representative performance test remain required
-before operating at BRERC's estimated scale.
+It does not by itself make the dashboard publicly releasable. The separate release-loader path
+uses the connector's private safe-snapshot interface to transform and stage bounded batches rather
+than calling the materialising `extract_initial()` convenience API. A representative end-to-end
+performance, lock-duration and peak-disk test remains required before operating at BRERC's
+estimated scale.
 
 The following also remain separate blockers:
 
 - BRERC's live-view capture, named approval and independently confirmed environment;
-- catastrophic empty-result and count-drop activation thresholds;
-- public PostgreSQL/PostGIS writer, reconciliation and atomic release switching;
+- BRERC-approved initial source-count and future count-drop activation thresholds;
+- accepted destination PostgreSQL/PostGIS lifecycle and approximately five-million-row scale evidence;
 - `date_mdb_modified`, stable-key and deletion guarantees for incremental loading;
 - publication-policy decisions and any other blockers recorded in the source contract.
 
-Until those are complete, the correct status is **connector implemented; public release held**.
+Destination-loader operation and its exact remaining gates are documented in
+[`POSTGRES_RELEASE_LOADER.md`](POSTGRES_RELEASE_LOADER.md). Until the retained external evidence is
+complete, the correct status is **connector and initial-loader mechanisms implemented; public
+release held**.

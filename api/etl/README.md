@@ -7,7 +7,7 @@ Turns raw BRERC records into the aggregated, generalised payloads the public API
 cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 ```
 
-**454 API tests at the latest local verification. The safety boundary is standard-library
+**465 API tests at the latest local verification. The safety boundary is standard-library
 only** — no pandas, no
 third-party runtime dependency. The gate must not depend on a library whose parsing behaviour
 can change underneath it. CI is configured to exercise supported Python versions separately.
@@ -405,23 +405,29 @@ preview is deliberately not JSON-serialisable and cannot be passed to the releas
 Only `build_payloads(..., policy=approved_policy)` can construct a releasable dictionary: it
 rechecks approval dates, review expiry, the policy decision digest and the exact approval
 digest recorded by the transformation. Changing any publication rule after approval or trying
-to release a development candidate fails closed. The future public-database writer must accept
-only a `ValidatedSourceRun` and invoke `build_payloads` itself; it must never accept caller-built
-dictionaries or candidate previews.
+to release a development candidate fails closed. The database loader has a separate trusted
+streaming path: it opens the source connector's private safe snapshot itself and accepts only
+already-generalised, HMAC-keyed dispositions. Its public API does not accept caller-built rows,
+dictionaries, candidate previews, connection factories or clock hooks.
 
 Aggregation, generalisation, packaging, the trusted PostgreSQL initial-source connector and the
 local ETL test/lint gates are done. The connector derives view identity, catalogue metadata,
 the fixed cursor header and rows in one locked, read-only `REPEATABLE READ` transaction; see
 `docs/POSTGRES_SOURCE_CONNECTOR.md`. Its synthetic-driver tests do not replace a BRERC-network
-run, and bounded database batches do not make the downstream pipeline streaming—the pipeline
-still materialises a whole run in memory.
+run. The ordinary complete-run pipeline still materialises its result, but the dedicated release
+loader instead transforms and stages bounded safe batches before whole-candidate database
+suppression and aggregation.
 
 The connector's separate `preflight` path fetches no record rows. It can report live structural
 readiness while approval is pending, but a successful preflight is not a `ValidatedSourceRun` and
 cannot cross the release boundary.
 
-Not yet written: streaming/chunked transformation or external staging for the estimated
-five-million-row load; idempotent upserts and deletion handling; affected-aggregate recomputation;
-atomic public-release switching; persistent job logging and failure email; the frozen OpenAPI
-contract; PostGIS schema and migrations; the read-only FastAPI and Martin services;
-species/summary/provenance payload assembly; and the licensed-image pipeline.
+Implemented but still requiring accepted integration/scale evidence: bounded safe transformation,
+inactive PostgreSQL/PostGIS staging, immutable release ledgers, database reconciliation, job/event
+records and atomic initial-release switching. See `docs/POSTGRES_RELEASE_LOADER.md`.
+
+Not yet written or externally approved: the incremental source window, idempotent update/deletion
+coordinator and lookup invalidation; BRERC-approved count/drop thresholds; the outbox email worker
+and ETL dashboard; the frozen OpenAPI contract; read-only FastAPI and Martin services;
+species/summary/provenance payload assembly; taxon-group projection; and the licensed-image
+pipeline.

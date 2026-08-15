@@ -996,7 +996,7 @@ class TestIncrementalModeRemainsBlocked(unittest.TestCase):
         self.assertIn("date_mdb_modified", str(ctx.exception))
         self.assertIn("deletions", str(ctx.exception))
         self.assertIn("lookup-table", str(ctx.exception))
-        self.assertIn("atomic", str(ctx.exception))
+        self.assertIn("complete replacement candidate", str(ctx.exception))
 
     def test_the_live_wrapper_blocks_incremental_before_reading_a_row(self):
         def must_not_iterate():

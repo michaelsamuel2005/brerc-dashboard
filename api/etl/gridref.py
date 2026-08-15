@@ -96,6 +96,29 @@ def valid_100km_square(letters: str) -> bool:
     return 0 <= e100 <= 6 and 0 <= n100 <= 12
 
 
+def _hundred_km_origin(letters: str) -> tuple[int, int] | None:
+    """Return the south-west BNG origin of a valid letter pair.
+
+    The arithmetic is the same validation profile used by
+    :func:`valid_100km_square`; keeping it here avoids teaching the database
+    writer a second, subtly different OS-grid implementation.
+    """
+    cleaned = normalise(letters)
+    if not _LETTERS_RE.fullmatch(cleaned):
+        return None
+    first = ord(cleaned[0]) - ord("A")
+    second = ord(cleaned[1]) - ord("A")
+    if first > 7:
+        first -= 1
+    if second > 7:
+        second -= 1
+    e100 = _truncating_mod(first - 2, 5) * 5 + _truncating_mod(second, 5)
+    n100 = 19 - (first // 5) * 5 - (second // 5)
+    if not 0 <= e100 <= 6 or not 0 <= n100 <= 12:
+        return None
+    return (e100 * 100000, n100 * 100000)
+
+
 def precision_metres(ref: str) -> int | None:
     """Resolution in metres implied by a reference, or None if unparseable.
 
@@ -142,6 +165,34 @@ def split(ref: str) -> tuple[str, str, str] | None:
         return None
     half = len(digits) // 2
     return (letters, digits[:half], digits[half:])
+
+
+def square_bounds(ref: str) -> tuple[int, int, int, int] | None:
+    """Return ``(min_easting, min_northing, max_easting, max_northing)``.
+
+    Only numeric public grid references are accepted.  Tetrads and
+    letters-only squares are valid source inputs but are never emitted by the
+    current public contract, so accepting them here would let the database
+    layer invent a geometry the browser cannot reproduce.
+    """
+    metres = precision_metres(ref)
+    if metres not in PUBLIC_RESOLUTIONS_METRES:
+        return None
+    parts = split(ref)
+    if parts is None:
+        return None
+    letters, easting_digits, northing_digits = parts
+    origin = _hundred_km_origin(letters)
+    if origin is None or not easting_digits or not northing_digits:
+        return None
+    min_easting = origin[0] + int(easting_digits) * metres
+    min_northing = origin[1] + int(northing_digits) * metres
+    return (
+        min_easting,
+        min_northing,
+        min_easting + metres,
+        min_northing + metres,
+    )
 
 
 def coarsen(ref: str, target_metres: int) -> str | None:

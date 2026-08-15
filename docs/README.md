@@ -12,6 +12,8 @@ the guide that matches what you need.
 | 🔐 [SOURCE_CONTRACT.md](SOURCE_CONTRACT.md) | The exact BRERC source-view schema, safety mapping, and why incremental loading is still blocked. |
 | 🔏 [VIEW_DEFINITION_APPROVAL.md](VIEW_DEFINITION_APPROVAL.md) | How BRERC captures, versions and approves the live source-view identity without exposing its SQL. |
 | 🔌 [POSTGRES_SOURCE_CONNECTOR.md](POSTGRES_SOURCE_CONNECTOR.md) | How the trusted initial connector obtains identity and rows in one locked, read-only PostgreSQL snapshot. |
+| 📦 [POSTGRES_RELEASE_LOADER.md](POSTGRES_RELEASE_LOADER.md) | How safe candidate releases are staged, reconciled and atomically activated, and why incremental loading remains blocked. |
+| 📏 [POSTGRES_LOADER_SCALE_ACCEPTANCE.md](POSTGRES_LOADER_SCALE_ACCEPTANCE.md) | How to run and interpret the manual synthetic five-million-row capacity gate without mistaking an unexecuted harness for evidence. |
 | 🌱 [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md) | A friendly, non‑technical guide for the BRERC staff member who maintains the dashboard after the team leaves. |
 
 ## 🔗 Also useful

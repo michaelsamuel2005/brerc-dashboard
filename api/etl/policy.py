@@ -972,6 +972,31 @@ class PublicationPolicy:
             "coarsenUnpublishableResolutions": self.coarsen_unpublishable_resolutions,
         }
 
+    def approval_artifact(self) -> dict[str, object]:
+        """Return the exact secret-free policy envelope consumed by deployment.
+
+        The public-id key itself is never included—only the SHA-256 fingerprint
+        already bound into the approval digest. The loader resolves the key
+        independently from its secret store and reconstructs this envelope;
+        any altered decision, approval field or key fails ``assert_approved``.
+        """
+        self.validate()
+        self.assert_approved()
+        return {
+            "artifactFormat": "brerc-publication-policy/v1",
+            "status": "approved",
+            "approval": {
+                "approvedBy": self.approved_by,
+                "approverRole": self.approver_role,
+                "approverOrganisation": self.approver_organisation,
+                "evidenceReference": self.evidence_reference,
+                "approvedOn": self.approved_on,
+                "reviewDue": self.review_due,
+                "approvalDigest": self.approval_digest,
+            },
+            "decisions": self._decision_document(),
+        }
+
 
 #: The null policy: no approver, no salt, no agreed resolutions. `validate()`
 #: refuses it, so `run_pipeline` cannot run under it. Exported so that "no policy

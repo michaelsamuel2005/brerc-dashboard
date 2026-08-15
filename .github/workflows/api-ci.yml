@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - name: Test the tracked-file guard
@@ -43,10 +43,10 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Test the import guard
@@ -70,10 +70,10 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install the pinned connector adapter
@@ -83,13 +83,43 @@ jobs:
       - name: Confirm the ETL core stayed standard-library-only
         run: python scripts/guard_stdlib_only.py
 
+  loader-unit:
+    name: Atomic release loader (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the pinned PostgreSQL and YAML adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Run release-loader unit and static migration tests
+        run: >-
+          python -m unittest discover
+          --start-directory loader_tests
+          --top-level-directory .
+          --pattern "test_*.py"
+      - name: Confirm the ETL core stayed standard-library-only
+        run: python scripts/guard_stdlib_only.py
+
   postgres-integration:
     name: PostgreSQL 16 TLS integration
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16.10-bookworm
+        image: >-
+          postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
         env:
           POSTGRES_DB: brerc_connector
           POSTGRES_PASSWORD: synthetic-admin-password
@@ -104,10 +134,10 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - name: Install the pinned connector adapter
@@ -125,6 +155,73 @@ jobs:
           python -m unittest
           connector_tests.test_postgres16_integration
 
+  postgis-loader-integration:
+    name: PostgreSQL 16/PostGIS atomic loader integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      sourcepg:
+        image: >-
+          postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
+        env:
+          POSTGRES_DB: brerc_loader_source_e2e
+          POSTGRES_PASSWORD: synthetic-source-admin-password
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_loader_source_e2e"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      postgis:
+        image: >-
+          postgis/postgis:16-3.5@sha256:cfbd2d2a5ecded5af7afaad719fa2117096f59ac8d0d9430e157eeffcd82da2e
+        env:
+          POSTGRES_DB: brerc_ui_integration
+          POSTGRES_PASSWORD: synthetic-admin-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_ui_integration"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Install the pinned PostgreSQL and YAML adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Provision the separate synthetic TLS source
+        env:
+          SOURCE_CONTAINER: ${{ job.services.sourcepg.id }}
+        run: |
+          bash loader_tests/setup_postgres16_e2e_source.sh \
+            "${SOURCE_CONTAINER}" \
+            loader_tests/postgres16_e2e_source_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgres16-loader-source" \
+            55432
+      - name: Provision TLS, reviewed roles and migration
+        env:
+          POSTGIS_CONTAINER: ${{ job.services.postgis.id }}
+        run: |
+          bash loader_tests/setup_postgis16_destination.sh \
+            "${POSTGIS_CONTAINER}" \
+            ../db/roles.sql \
+            ../db/migrations/0001_publication_store.sql \
+            loader_tests/postgis16_destination_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgis16-destination"
+      - name: Run the real atomic destination lifecycle
+        run: >-
+          python -m unittest
+          loader_tests.test_postgis16_destination_integration
+
   lint:
     name: Ruff lint and format
     runs-on: ubuntu-latest
@@ -133,10 +230,10 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - name: Install pinned development tools from package metadata
@@ -152,10 +249,10 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
       - name: Install pinned build frontend
@@ -174,6 +271,7 @@ jobs:
             "${GITHUB_WORKSPACE}/api/scripts/smoke_installed_package.py" \
             --source-root "${GITHUB_WORKSPACE}/api"
           "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/brerc-source" --help
+          "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/brerc-load" --help
       - name: Install connector dependencies and import the adapter from the wheel
         run: |
           "${RUNNER_TEMP}/brerc-api-wheel-smoke/bin/python" -m pip install \

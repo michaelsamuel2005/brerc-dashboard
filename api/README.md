@@ -20,11 +20,14 @@ non‑sensitive data** to the front‑end over HTTPS.
 The versioned ETL safety boundary is implemented as the installable `etl` Python package in
 `api/etl`. The trusted PostgreSQL initial-load connector obtains live view evidence and rows in
 one locked, read-only snapshot; its deployment procedure is documented in
-`../docs/POSTGRES_SOURCE_CONNECTOR.md`. It is unit-tested without BRERC data but has not yet been
-run inside BRERC's network. The public PostGIS schema, database writer, FastAPI service and Martin
-vector-tile service are still future work, so this directory is not a complete running backend.
-Its `preflight` operation can check the live identity/schema/header without fetching source rows;
-under the current unapproved source contract it must report `release_ready=False`.
+`../docs/POSTGRES_SOURCE_CONNECTOR.md`. The PostgreSQL/PostGIS destination schema and atomic
+initial-release loader are documented in `../docs/POSTGRES_RELEASE_LOADER.md`. They are tested only
+with synthetic data and have not been run inside BRERC's network. Incremental loading remains
+fail-closed until BRERC approves the missing modification, stable-key and deletion contract.
+FastAPI, Martin, the notification worker and the ETL dashboard are still future work, so this
+directory is not a complete running backend. Source `preflight` can check live
+identity/schema/header without fetching rows; under the current unapproved source contract it must
+report `release_ready=False`.
 
 Run the current backend gates from this directory:
 
@@ -33,6 +36,7 @@ python -m unittest discover -s tests -t . -p 'test_*.py'
 python scripts/guard_stdlib_only.py --etl-dir etl
 python -m pip install ".[connector-binary]"
 python -m unittest discover -s connector_tests -t . -p 'test_*.py'
+python -m unittest discover -s loader_tests -t . -p 'test_*.py'
 ```
 
 ## What does **not** go here
@@ -50,4 +54,6 @@ python -m unittest discover -s connector_tests -t . -p 'test_*.py'
   digest and named BRERC approval procedure.
 - 🔌 [Trusted PostgreSQL connector](../docs/POSTGRES_SOURCE_CONNECTOR.md) — transaction,
   least-privilege deployment, safe operation and honest scale limitations.
+- 📦 [PostgreSQL/PostGIS release loader](../docs/POSTGRES_RELEASE_LOADER.md) — inactive
+  candidates, reconciliation, atomic activation and incremental-load prerequisites.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).

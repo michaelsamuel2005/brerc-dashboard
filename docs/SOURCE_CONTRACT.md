@@ -1,7 +1,8 @@
 # BRERC source-view contract
 
-**Status:** Initial-load source contract and trusted connector implemented. Public release and
-incremental loading are both blocked pending source guarantees and downstream release controls.
+**Status:** Initial-load source contract, trusted connector and atomic destination-loader
+mechanisms implemented. Public release and incremental loading remain blocked pending BRERC
+source/decision evidence, accepted PostGIS lifecycle evidence and representative scale testing.
 
 **Contract version:** `brerc-main-data-dash-2026-07-31`
 
@@ -33,10 +34,10 @@ Before a live database path may process a record, it must prove all of the follo
     species-by-year grid cells can still be published without exposing row-level records.
 12. Map suppression is applied at species + year + cell + precision, so unrelated species or
     years can never be combined merely to pass a minimum-count threshold.
-13. Development payloads are wrapped in a non-serialisable `CandidatePreview`. The future
-    public-database writer must accept only the opaque `ValidatedSourceRun` and call the
-    release-gated `build_payloads` itself; accepting arbitrary dictionaries would recreate a
-    confused-deputy path around the release attestation.
+13. Development payloads are wrapped in a non-serialisable `CandidatePreview`. The release loader
+    obtains safe HMAC-keyed dispositions only through the trusted connector's private locked
+    snapshot path; callers cannot provide rows, metadata, headers, connection factories or clock
+    hooks to the public coordinator API.
 
 The public output remains constructed from an allow-list. Raw `easting`, `northing`,
 `comments`, `bliss`, `place`, `precise_date`, `unique_no` and `sensitive` values do not gain
@@ -90,10 +91,11 @@ validates the locked live identity, full schema and fixed cursor header without 
 returns `release_ready=False` for this current contract. That is readiness evidence only—not a
 BRERC approval, an extracted candidate or permission to publish.
 
-Before activation, the loader must also compare safe structural counts with the preceding
-release. An unexpectedly empty extract or a large unexplained count drop must fail the job and
-leave the old public release active. BRERC must approve the alert/block thresholds; they must
-not be guessed from the small development samples.
+Before activation, the loader checks the complete initial source count against configured bounds
+and rejects an empty public candidate. The database then independently reconciles the safe ledger,
+suppression cohorts, aggregates, geometry, optional rows and manifest. BRERC must approve the
+initial and future replacement/drop bounds; they must not be guessed from the small development
+samples. A failure leaves the old public release active.
 
 ## Confirmed schema
 
@@ -157,8 +159,10 @@ The incremental mode currently exits before row extraction with all blockers lis
 - `unique_no` is not yet confirmed non-null, unique, stable and never reused.
 - Deletions, withdrawals and source-key changes have no confirmed signal.
 - Lookup-table changes may bypass the main-data modification marker.
-- Idempotent upserts, affected-aggregate recomputation and full reconciliation are not built.
-- Atomic candidate-release activation and watermark commit are not built.
+- The incremental coordinator does not yet build a complete replacement candidate from an
+  approved change window and deletion signal.
+- Inclusive-watermark, affected-aggregate and deletion semantics have not been approved or
+  validated against a revised live BRERC view.
 
 There is no force flag. `date_entered` is not a substitute.
 
@@ -192,15 +196,16 @@ Those are reviewed safety controls, not deployment switches.
 
 ## Scope limitation
 
-This implementation validates the confirmed BRERC view contract, canonicalises its source
-key, and supplies a trusted PostgreSQL initial-extraction path that derives live evidence and
-rows in one locked snapshot. It continues to block unsupported load modes and release without
-semantic source attestation. Bounded database reads avoid driver-level `fetchall`, but the ETL
-still materialises the complete run; a roughly five-million-row production load therefore still
-requires chunked transformation or external staging and representative performance evidence.
+This implementation validates the confirmed BRERC view contract and canonicalises its source key.
+The dedicated loader path transforms bounded batches inside one locked source snapshot and writes
+only already-safe dispositions to inactive PostgreSQL/PostGIS staging. Whole-candidate suppression,
+aggregation, database reconciliation and one atomic initial-release switch are implemented. The
+ordinary `extract_initial()` convenience API still materialises a complete validated run; the
+loader does not use that API for its large-load path.
 
-It does **not** perform incremental upserts, detect deletions, recompute affected aggregates,
-write the UI database, send failure email, or switch an atomic public release. Those remain
-backend implementation work and cannot be represented as complete until their source contracts
-and client decisions exist. Connector operation and remaining blockers are documented in
-[`POSTGRES_SOURCE_CONNECTOR.md`](POSTGRES_SOURCE_CONNECTOR.md).
+It does **not** yet perform an approved incremental window, deletion reconciliation, failure-email
+delivery, ETL-dashboard monitoring, FastAPI serving or Martin vector tiles. Initial operation at
+BRERC's roughly five-million-row scale still requires accepted runtime, lock-duration, memory and
+peak-disk evidence. Connector operation is documented in
+[`POSTGRES_SOURCE_CONNECTOR.md`](POSTGRES_SOURCE_CONNECTOR.md); destination operation and remaining
+blockers are documented in [`POSTGRES_RELEASE_LOADER.md`](POSTGRES_RELEASE_LOADER.md).
