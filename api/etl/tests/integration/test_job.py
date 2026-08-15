@@ -300,6 +300,16 @@ def test_nightly_job_marks_run_failed_on_exception(
 # shown to BRERC staff on the run-history dashboard, keeping the raw
 # exception (stored separately as error_message) for anyone who needs it.
 
+def test_describe_failure_database_mismatch():
+    from etl.load.reload import DatabaseMismatchError
+
+    assert describe_failure(DatabaseMismatchError("targets differ")) == (
+        "A safety check blocked a full database reset because the settings "
+        "pointed at two different databases. No data was changed — check the "
+        "database configuration."
+    )
+
+
 def test_describe_failure_missing_file():
     assert describe_failure(FileNotFoundError("no such file")) == (
         "A required data file could not be found."

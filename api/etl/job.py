@@ -19,7 +19,7 @@ from etl.db import (
 from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
 from etl.load.mode import should_run_initial_load
-from etl.load.reload import force_full_reload
+from etl.load.reload import DatabaseMismatchError, force_full_reload
 from etl.pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
 from etl.run_history import mark_run_failed, mark_run_successful, start_run
@@ -135,6 +135,12 @@ def describe_failure(error: Exception) -> str:
     full technical error is still logged and stored alongside this summary
     for anyone who needs to dig further.
     """
+    if isinstance(error, DatabaseMismatchError):
+        return (
+            "A safety check blocked a full database reset because the settings "
+            "pointed at two different databases. No data was changed — check the "
+            "database configuration."
+        )
     if isinstance(error, FileNotFoundError):
         return "A required data file could not be found."
     if isinstance(error, OSError):
