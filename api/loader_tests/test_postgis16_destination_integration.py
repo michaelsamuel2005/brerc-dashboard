@@ -274,7 +274,12 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
 
         cls.psycopg = psycopg
         cls.ClientCursor = ClientCursor
-        cls.dict_row = dict_row
+        # staticmethod(): a plain function assigned to a class attribute becomes a
+        # METHOD, so self.dict_row would bind and psycopg's row_factory(cursor)
+        # call would arrive as dict_row(self, cursor) - 'takes 1 positional
+        # argument but 2 were given'. cls.dict_row happened to work; self.dict_row
+        # did not. staticmethod keeps it a plain function through both.
+        cls.dict_row = staticmethod(dict_row)
         cls.e2e_source_contract = cls._capture_e2e_source_contract()
         cls.e2e_source_config = cls._build_e2e_source_config(cls.e2e_source_contract)
 
