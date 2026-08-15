@@ -18,6 +18,7 @@
     --successful-bg: #dcfce7;
     --failed: #b91c1c;
     --failed-bg: #fee2e2;
+    --mono-bg: #f0f1f3;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -29,6 +30,7 @@
       --running-bg: #3a2c0d;
       --successful-bg: #0f2e1c;
       --failed-bg: #3a1414;
+      --mono-bg: #1d222a;
     }
   }
   * { box-sizing: border-box; }
@@ -39,7 +41,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   main {
-    max-width: 960px;
+    max-width: 1320px;
     margin: 0 auto;
     padding: 2rem 1.5rem 4rem;
   }
@@ -65,6 +67,7 @@
   }
   th, td {
     text-align: left;
+    vertical-align: middle;
     padding: 0.65rem 1rem;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
@@ -96,6 +99,58 @@
   .badge.running { color: var(--running); background: var(--running-bg); }
   .badge.successful { color: var(--successful); background: var(--successful-bg); }
   .badge.failed { color: var(--failed); background: var(--failed-bg); }
+  .reason {
+    max-width: 480px;
+    white-space: normal;
+    color: var(--failed);
+  }
+  .reason details {
+    margin-top: 0.35rem;
+  }
+  .reason summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .reason summary:hover { color: var(--text); }
+  .reason code {
+    display: block;
+    margin-top: 0.35rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 6px;
+    background: var(--mono-bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  tr.expandable { cursor: pointer; }
+  tr.expandable:hover td { background: rgba(127, 127, 127, 0.06); }
+  .hover-hint {
+    display: none;
+    color: var(--muted);
+    font-style: italic;
+  }
+  tr.expandable:hover .dash { display: none; }
+  tr.expandable:hover .hover-hint { display: inline; }
+  tr.detail-row td {
+    background: var(--bg);
+    padding: 0.5rem 1rem 0.85rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  tr.detail-row.hidden { display: none; }
+  .counts {
+    display: flex;
+    gap: 1.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .counts strong {
+    color: var(--text);
+    font-weight: 700;
+  }
   .empty {
     padding: 2.5rem 1rem;
     text-align: center;
@@ -141,6 +196,7 @@
           <th>Load no</th>
           <th>Duration</th>
           <th>Status</th>
+          <th>Reason</th>
         </tr>
       </thead>
       <tbody id="runs-body"></tbody>
@@ -164,19 +220,96 @@
     return `${minutes}m ${remainder}s`;
   }
 
+  function escapeHtml(value) {
+    const div = document.createElement("div");
+    div.textContent = value ?? "";
+    return div.innerHTML;
+  }
+
+  function renderReason(run, expandable) {
+    // error_summary is the plain-English version for non-technical staff;
+    // error_message is the raw exception, tucked behind a toggle for anyone
+    // who needs to dig further. Older rows may have only one of the two.
+    const summary = run.error_summary || run.error_message;
+    if (!summary) {
+      // Expandable rows (successful runs) never have a reason, so this
+      // otherwise-empty cell doubles as a hover hint that the row expands.
+      if (expandable) {
+        return '<span class="dash">—</span><span class="hover-hint">Click for details</span>';
+      }
+      return "—";
+    }
+
+    let html = escapeHtml(summary);
+    if (run.error_message && run.error_message !== summary) {
+      html += `<details><summary>Technical details</summary><code>${escapeHtml(run.error_message)}</code></details>`;
+    }
+    return html;
+  }
+
+  // Which runs the user has expanded to see their insert/update/delete
+  // counts, kept across the 5s auto-refresh so the table doesn't collapse
+  // under someone mid-read.
+  const expandedRuns = new Set();
+
+  function hasCounts(run) {
+    return run.inserts !== null || run.updates !== null || run.deletes !== null;
+  }
+
+  function renderCounts(run) {
+    const count = (value) => (value === null || value === undefined ? 0 : value);
+    return `
+      <div class="counts">
+        <span>Inserted <strong>${count(run.inserts)}</strong></span>
+        <span>Updated <strong>${count(run.updates)}</strong></span>
+        <span>Deleted <strong>${count(run.deletes)}</strong></span>
+      </div>
+    `;
+  }
+
   function renderRow(run) {
     const tr = document.createElement("tr");
     const status = (run.status || "").toLowerCase();
+    const expandable = hasCounts(run);
+    const isExpanded = expandable && expandedRuns.has(run.run_number);
+
+    if (expandable) {
+      tr.classList.add("expandable");
+      if (isExpanded) tr.classList.add("expanded");
+    }
+
     tr.innerHTML = `
       <td>${run.run_number}</td>
-      <td>${run.job_name ?? ""}</td>
-      <td>${run.job_type ?? ""}</td>
-      <td>${run.date ?? ""}</td>
-      <td>${run.load_no ?? "—"}</td>
+      <td>${escapeHtml(run.job_name)}</td>
+      <td>${escapeHtml(run.job_type)}</td>
+      <td>${escapeHtml(run.date)}</td>
+      <td>${escapeHtml(run.load_no) || "—"}</td>
       <td>${formatDuration(run.duration_seconds)}</td>
-      <td><span class="badge ${status}">${run.status ?? ""}</span></td>
+      <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
+      <td class="reason">${renderReason(run, expandable)}</td>
     `;
-    return tr;
+
+    if (!expandable) return [tr];
+
+    const detailRow = document.createElement("tr");
+    detailRow.className = `detail-row${isExpanded ? "" : " hidden"}`;
+    detailRow.innerHTML = `<td colspan="8">${renderCounts(run)}</td>`;
+
+    tr.addEventListener("click", (event) => {
+      // Don't hijack clicks on the Reason column's own "Technical details"
+      // toggle — only the rest of the row expands/collapses the counts.
+      if (event.target.closest(".reason")) return;
+
+      const nowExpanded = detailRow.classList.toggle("hidden") === false;
+      tr.classList.toggle("expanded", nowExpanded);
+      if (nowExpanded) {
+        expandedRuns.add(run.run_number);
+      } else {
+        expandedRuns.delete(run.run_number);
+      }
+    });
+
+    return [tr, detailRow];
   }
 
   async function loadRuns() {
@@ -192,7 +325,7 @@
 
       tbody.innerHTML = "";
       emptyState.hidden = runs.length > 0;
-      runs.forEach((run) => tbody.appendChild(renderRow(run)));
+      runs.forEach((run) => renderRow(run).forEach((row) => tbody.appendChild(row)));
 
       lastUpdated.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
     } catch (error) {

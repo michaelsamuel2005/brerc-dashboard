@@ -49,6 +49,19 @@ def _is_authenticated(request: Request) -> bool:
     return bool(request.session.get("authenticated"))
 
 
+# Columns added to the 'runs' table after its initial release. This
+# connection is read-only (can't ALTER TABLE to migrate it), so any column an
+# older database file predates is selected as NULL instead of erroring.
+_OPTIONAL_COLUMNS = (
+    "duration_seconds",
+    "error_message",
+    "error_summary",
+    "inserts",
+    "updates",
+    "deletes",
+)
+
+
 def _fetch_runs() -> list[dict]:
     """Reads all run-history rows, most recent first. Empty if the job has never run."""
     if not DB_PATH.exists():
@@ -58,14 +71,15 @@ def _fetch_runs() -> list[dict]:
     try:
         connection.row_factory = sqlite3.Row
 
-        # duration_seconds was added after this table's initial release. This
-        # connection is read-only (can't ALTER TABLE to migrate it), so fall
-        # back to NULL for any older database file that predates the column.
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
-        duration_column = "duration_seconds" if "duration_seconds" in columns else "NULL AS duration_seconds"
+        existing_columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
+        selected_columns = [
+            column if column in existing_columns else f"NULL AS {column}"
+            for column in _OPTIONAL_COLUMNS
+        ]
 
         rows = connection.execute(
-            f"SELECT run_number, job_name, job_type, date, load_no, status, {duration_column} "
+            "SELECT run_number, job_name, job_type, date, load_no, status, "
+            f"{', '.join(selected_columns)} "
             "FROM runs ORDER BY run_number DESC"
         ).fetchall()
         return [dict(row) for row in rows]

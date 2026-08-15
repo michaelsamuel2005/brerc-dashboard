@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from etl.job import (
+    describe_failure,
     load_source_data,
     load_species_dictionary,
     get_current_ui_map,
@@ -233,6 +234,12 @@ def test_nightly_job_incremental_flow(
     mock_mark_successful.assert_called_once()
     assert mock_mark_successful.call_args[0][0] == 1
 
+    # run_pipeline's mocked "reconciliation" summary has no real inserts/
+    # updates/deletes lists, so the counts recorded alongside the run are 0.
+    assert mock_mark_successful.call_args.kwargs["inserts"] == 0
+    assert mock_mark_successful.call_args.kwargs["updates"] == 0
+    assert mock_mark_successful.call_args.kwargs["deletes"] == 0
+
 
 @patch("etl.job.mark_run_failed")
 @patch("etl.job.start_run", return_value=7)
@@ -281,4 +288,53 @@ def test_nightly_job_marks_run_failed_on_exception(
         with pytest.raises(RuntimeError):
             nightly_job()
 
-    mock_mark_failed.assert_called_once_with(7)
+    mock_mark_failed.assert_called_once_with(
+        7,
+        error_message="boom",
+        error_summary="An unexpected error occurred during the update.",
+    )
+
+
+# --- describe_failure tests ---
+# describe_failure() turns a raised exception into the plain-English summary
+# shown to BRERC staff on the run-history dashboard, keeping the raw
+# exception (stored separately as error_message) for anyone who needs it.
+
+def test_describe_failure_missing_file():
+    assert describe_failure(FileNotFoundError("no such file")) == (
+        "A required data file could not be found."
+    )
+
+
+def test_describe_failure_connection_problem():
+    # FileNotFoundError is itself an OSError, so this also confirms the more
+    # specific case above is checked first.
+    assert describe_failure(ConnectionRefusedError("connection refused")) == (
+        "Couldn't connect to the database — it may be down or unreachable."
+    )
+
+
+def test_describe_failure_bad_source_data():
+    assert describe_failure(ValueError("unknown species code 'XYZ'")) == (
+        "A problem was found in the source data (e.g. an unrecognised species code)."
+    )
+
+
+def test_describe_failure_missing_column():
+    assert describe_failure(KeyError("species_no")) == (
+        "The source data was missing an expected column."
+    )
+
+
+def test_describe_failure_database_error():
+    import psycopg
+
+    assert describe_failure(psycopg.OperationalError("connection lost")) == (
+        "A database error occurred while saving records."
+    )
+
+
+def test_describe_failure_unrecognised_exception_falls_back_to_generic_message():
+    assert describe_failure(RuntimeError("boom")) == (
+        "An unexpected error occurred during the update."
+    )

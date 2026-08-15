@@ -126,6 +126,29 @@ def get_current_ui_map(connection):
     return get_ui_map(connection)
 
 
+# Ordered most-specific-first: FileNotFoundError is itself an OSError, so it
+# must be checked before the general connection-failure case below it.
+def describe_failure(error: Exception) -> str:
+    """
+    Translates a raised exception into a short, plain-English reason for the
+    run-history dashboard, which BRERC staff (not just engineers) read. The
+    full technical error is still logged and stored alongside this summary
+    for anyone who needs to dig further.
+    """
+    if isinstance(error, FileNotFoundError):
+        return "A required data file could not be found."
+    if isinstance(error, OSError):
+        return "Couldn't connect to the database — it may be down or unreachable."
+    if isinstance(error, ValueError):
+        return "A problem was found in the source data (e.g. an unrecognised species code)."
+    if isinstance(error, KeyError):
+        return "The source data was missing an expected column."
+    if type(error).__module__.startswith("psycopg"):
+        return "A database error occurred while saving records."
+
+    return "An unexpected error occurred during the update."
+
+
 def nightly_job():
     """Orchestrates the nightly ETL pipeline run."""
     logger.info("Starting nightly ETL job pipeline.")
@@ -204,19 +227,25 @@ def nightly_job():
                 db_load_date = provenance_row["Load_date"] if provenance_row else None
 
         reconciliation_summary = result.get("reconciliation", {})
+        insert_count = len(reconciliation_summary.get("inserts", []))
+        update_count = len(reconciliation_summary.get("updates", []))
+        delete_count = len(reconciliation_summary.get("deletes", []))
 
         logger.info(
             "Nightly ETL completed successfully. Summary -> "
             "Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
-            len(reconciliation_summary.get("inserts", [])),
-            len(reconciliation_summary.get("updates", [])),
-            len(reconciliation_summary.get("deletes", [])),
+            insert_count,
+            update_count,
+            delete_count,
             len(reconciliation_summary.get("unchanged", [])),
         )
 
         mark_run_successful(
             run_number,
             load_no=db_load_date.isoformat() if db_load_date else None,
+            inserts=insert_count,
+            updates=update_count,
+            deletes=delete_count,
         )
 
         return result
@@ -225,6 +254,10 @@ def nightly_job():
         logger.exception("Nightly ETL failed: %s", error)
 
         if run_number is not None:
-            mark_run_failed(run_number)
+            mark_run_failed(
+                run_number,
+                error_message=str(error),
+                error_summary=describe_failure(error),
+            )
 
         raise

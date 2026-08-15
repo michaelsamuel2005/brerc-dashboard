@@ -42,7 +42,9 @@ def test_start_run_creates_a_running_row():
 def test_mark_run_successful_updates_the_same_row_in_place():
     run_number = run_history.start_run(job_type="initial")
 
-    run_history.mark_run_successful(run_number, load_no="2026-08-14T12:00:00")
+    run_history.mark_run_successful(
+        run_number, load_no="2026-08-14T12:00:00", inserts=12, updates=3, deletes=1
+    )
 
     rows = _fetch_all_rows()
     assert len(rows) == 1  # updated in place, not appended
@@ -53,12 +55,30 @@ def test_mark_run_successful_updates_the_same_row_in_place():
     assert row["load_no"] == "2026-08-14T12:00:00"
     assert row["duration_seconds"] is not None
     assert row["duration_seconds"] >= 0
+    assert row["inserts"] == 12
+    assert row["updates"] == 3
+    assert row["deletes"] == 1
+
+
+def test_mark_run_successful_without_counts_leaves_them_null():
+    run_number = run_history.start_run(job_type="initial")
+
+    run_history.mark_run_successful(run_number, load_no="2026-08-14T12:00:00")
+
+    row = _fetch_all_rows()[0]
+    assert row["inserts"] is None
+    assert row["updates"] is None
+    assert row["deletes"] is None
 
 
 def test_mark_run_failed_updates_the_same_row_in_place():
     run_number = run_history.start_run(job_type="incremental")
 
-    run_history.mark_run_failed(run_number)
+    run_history.mark_run_failed(
+        run_number,
+        error_message="ValueError: unknown species code 'XYZ'",
+        error_summary="A problem was found in the source data (e.g. an unrecognised species code).",
+    )
 
     rows = _fetch_all_rows()
     assert len(rows) == 1
@@ -69,6 +89,34 @@ def test_mark_run_failed_updates_the_same_row_in_place():
     assert row["load_no"] is None
     assert row["duration_seconds"] is not None
     assert row["duration_seconds"] >= 0
+    assert row["error_message"] == "ValueError: unknown species code 'XYZ'"
+    assert row["error_summary"] == (
+        "A problem was found in the source data (e.g. an unrecognised species code)."
+    )
+
+
+def test_mark_run_failed_without_error_details_leaves_them_null():
+    run_number = run_history.start_run(job_type="incremental")
+
+    run_history.mark_run_failed(run_number)
+
+    row = _fetch_all_rows()[0]
+    assert row["status"] == "failed"
+    assert row["error_message"] is None
+    assert row["error_summary"] is None
+    assert row["inserts"] is None
+    assert row["updates"] is None
+    assert row["deletes"] is None
+
+
+def test_mark_run_successful_leaves_error_details_null():
+    run_number = run_history.start_run(job_type="initial")
+
+    run_history.mark_run_successful(run_number, load_no="2026-08-14T12:00:00")
+
+    row = _fetch_all_rows()[0]
+    assert row["error_message"] is None
+    assert row["error_summary"] is None
 
 
 def test_successive_runs_get_increasing_run_numbers():
@@ -80,9 +128,10 @@ def test_successive_runs_get_increasing_run_numbers():
 
 
 def test_connect_migrates_a_pre_existing_table_missing_new_columns():
-    # Simulates a database file written before started_at/duration_seconds
-    # existed, to confirm old run history rows survive the upgrade rather
-    # than breaking on the next start_run()/mark_run_*() call.
+    # Simulates a database file written before started_at/duration_seconds/
+    # error_message/error_summary/inserts/updates/deletes existed, to confirm
+    # old run history rows survive the upgrade rather than breaking on the
+    # next start_run()/mark_run_*() call.
     connection = sqlite3.connect(run_history.DB_PATH)
     connection.execute(
         """
@@ -112,3 +161,6 @@ def test_connect_migrates_a_pre_existing_table_missing_new_columns():
     pre_existing_row = next(row for row in rows if row["run_number"] != new_run_number)
     assert pre_existing_row["status"] == "successful"
     assert pre_existing_row["duration_seconds"] is None  # never recorded for this old row
+    assert pre_existing_row["error_message"] is None  # never recorded for this old row
+    assert pre_existing_row["error_summary"] is None  # never recorded for this old row
+    assert pre_existing_row["inserts"] is None  # never recorded for this old row

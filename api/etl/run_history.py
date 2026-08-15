@@ -19,6 +19,11 @@ JOB_NAME = "UI ETL RUN"
 _ADDED_COLUMNS = (
     ("started_at", "TEXT"),
     ("duration_seconds", "REAL"),
+    ("error_message", "TEXT"),
+    ("error_summary", "TEXT"),
+    ("inserts", "INTEGER"),
+    ("updates", "INTEGER"),
+    ("deletes", "INTEGER"),
 )
 
 
@@ -80,9 +85,20 @@ def start_run(job_type: str, job_name: str = JOB_NAME) -> int:
         connection.close()
 
 
-def _finish_run(run_number: int, status: str, load_no: str | None) -> None:
+def _finish_run(
+    run_number: int,
+    status: str,
+    load_no: str | None,
+    error_message: str | None,
+    error_summary: str | None,
+    inserts: int | None,
+    updates: int | None,
+    deletes: int | None,
+) -> None:
     """Shared by mark_run_successful/mark_run_failed: updates status, load_no,
-    and the elapsed duration since start_run() was called for this row."""
+    the failure reason (technical and plain-English), the record counts from
+    reconciliation, and the elapsed duration since start_run() was called for
+    this row."""
     connection = _connect()
 
     try:
@@ -95,19 +111,65 @@ def _finish_run(run_number: int, status: str, load_no: str | None) -> None:
             duration_seconds = (datetime.now() - datetime.fromisoformat(row[0])).total_seconds()
 
         connection.execute(
-            "UPDATE runs SET status = ?, load_no = ?, duration_seconds = ? WHERE run_number = ?",
-            (status, load_no, duration_seconds, run_number),
+            "UPDATE runs SET status = ?, load_no = ?, duration_seconds = ?, "
+            "error_message = ?, error_summary = ?, inserts = ?, updates = ?, deletes = ? "
+            "WHERE run_number = ?",
+            (
+                status,
+                load_no,
+                duration_seconds,
+                error_message,
+                error_summary,
+                inserts,
+                updates,
+                deletes,
+                run_number,
+            ),
         )
         connection.commit()
     finally:
         connection.close()
 
 
-def mark_run_successful(run_number: int, load_no: str | None) -> None:
-    """Updates a run's row in place to 'successful', stamping its load_no and duration."""
-    _finish_run(run_number, "successful", load_no)
+def mark_run_successful(
+    run_number: int,
+    load_no: str | None,
+    inserts: int | None = None,
+    updates: int | None = None,
+    deletes: int | None = None,
+) -> None:
+    """Updates a run's row in place to 'successful', stamping its load_no,
+    duration, and the counts of records inserted/updated/deleted during
+    reconciliation."""
+    _finish_run(
+        run_number,
+        "successful",
+        load_no,
+        error_message=None,
+        error_summary=None,
+        inserts=inserts,
+        updates=updates,
+        deletes=deletes,
+    )
 
 
-def mark_run_failed(run_number: int, load_no: str | None = None) -> None:
-    """Updates a run's row in place to 'failed', stamping its duration."""
-    _finish_run(run_number, "failed", load_no)
+def mark_run_failed(
+    run_number: int,
+    load_no: str | None = None,
+    error_message: str | None = None,
+    error_summary: str | None = None,
+) -> None:
+    """Updates a run's row in place to 'failed', stamping its duration, the
+    raw technical error, and a plain-English summary of it for non-technical
+    staff viewing the dashboard. A failed run never reaches reconciliation,
+    so record counts are left null."""
+    _finish_run(
+        run_number,
+        "failed",
+        load_no,
+        error_message=error_message,
+        error_summary=error_summary,
+        inserts=None,
+        updates=None,
+        deletes=None,
+    )
