@@ -48,7 +48,11 @@ jobs:
       - run: npm ci
       - run: npm run e2e:install
       - run: npm run e2e:serialization
-      - run: npm run e2e
+      # xvfb-run: the Firefox project runs HEADED on CI (see e2e/playwright.viewports.ts)
+      # because headless Firefox on a GPU-less Linux runner cannot create a WebGL
+      # context, so the map never renders. Xvfb gives it a display; Chromium and WebKit
+      # stay headless inside it and are unaffected.
+      - run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" npm run e2e
       - name: Upload accessibility evidence and Playwright diagnostics
         if: always()
         uses: actions/upload-artifact@v4

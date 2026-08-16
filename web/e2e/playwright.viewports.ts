@@ -40,14 +40,24 @@ export const a11yProjects = [
     use: {
       ...devices['Desktop Firefox'],
       viewport: { width: 320, height: 640 },
+      // HEADED on CI, headless everywhere else — the opposite of the usual rule, for a
+      // reason worth recording. The runner has no GPU and no display, and headless
+      // Firefox on Linux never creates a WebGL context there: MapLibre errors at
+      // construction, the app correctly renders its no-map fallback, and every
+      // map-applicable state fails with the canvas absent from the DOM.
+      // webgl.force-enabled alone was tried (c553de3's run) and changed nothing — the
+      // blocklist override presupposes a GL context to grant, and headless Firefox has
+      // no display to create one against. A HEADED Firefox under Xvfb gets a real X
+      // display and Mesa's software GL — the standard way to give Firefox WebGL on a
+      // GPU-less runner; ci.yml wraps the e2e step in xvfb-run for this. On macOS,
+      // headless Firefox renders the map fine (full local pass), so headed mode is
+      // scoped to CI and local runs are unchanged.
+      headless: process.env['CI'] !== 'true',
       launchOptions: {
         firefoxUserPrefs: {
-          // The CI runner has no GPU. Chromium falls back to software GL by itself;
-          // Firefox instead refuses the WebGL context, the map never renders, and the
-          // six map-applicable states time out — while the same nine tests pass in
-          // Firefox on a machine with a GPU. Forcing WebGL past the blocklist lets
-          // headless Firefox use its software path. Scoped to launch only: it changes
-          // how Firefox starts, never what the tests accept.
+          // Mesa's llvmpipe is software rendering, which Firefox's blocklist refuses
+          // for WebGL by default; force it past the blocklist. Launch-time only: it
+          // changes how Firefox starts, never what the tests accept.
           'webgl.force-enabled': true
         }
       }
