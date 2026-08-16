@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import { SkipLink } from "../components/SkipLink";
 import { LoadingState } from "../components/states/States";
@@ -86,15 +86,42 @@ function NotFound() {
   );
 }
 
-/** Focus the new page heading after client-side navigation, just as a full page load would. */
+/**
+ * Move focus to the new page heading after CLIENT-SIDE navigation, the way a full page
+ * load would — but never on the first render.
+ *
+ * On a cold load the browser already has focus at the top of the document, which is what
+ * makes the skip link reachable with the very first Tab (WCAG 2.4.1 Bypass Blocks).
+ * Stealing focus into the `<h1>` there sends that first Tab *past* the skip link, so the
+ * one control that exists to let a keyboard user skip the navigation becomes the one
+ * control they cannot reach. The title is still set, because that costs nothing.
+ *
+ * This was live and unnoticed: the browser test that guards the skip link passed only
+ * because `/` used to redirect, and the extra render happened to delay this effect past
+ * the test's keypress. Changing the landing route removed the delay and the defect
+ * surfaced. It was always a defect — the redirect was hiding it, not preventing it.
+ */
 function RouteFocus() {
   const [pathname] = useLocation();
+  // The path this component last MOVED FOCUS for, seeded with the one it mounted on.
+  //
+  // Not a boolean "first render" flag: React StrictMode deliberately runs every effect
+  // twice in development, so a flag flipped on the first pass is already false on the
+  // second and the focus move happens anyway. Comparing the path is immune to that —
+  // a re-run with an unchanged path is not a navigation, whatever caused it.
+  const focusedPath = useRef(pathname);
 
   useEffect(() => {
+    const heading = document.querySelector<HTMLElement>("#main h1");
+    document.title = heading ? `${heading.textContent ?? "BRERC"} | BRERC` : "BRERC";
+
+    if (focusedPath.current === pathname) return;
+    focusedPath.current = pathname;
+
     const timer = window.setTimeout(() => {
-      const heading = document.querySelector<HTMLElement>("#main h1");
-      heading?.focus({ preventScroll: true });
-      document.title = heading ? `${heading.textContent ?? "BRERC"} | BRERC` : "BRERC";
+      const target = document.querySelector<HTMLElement>("#main h1");
+      target?.focus({ preventScroll: true });
+      document.title = target ? `${target.textContent ?? "BRERC"} | BRERC` : "BRERC";
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
     }, 0);

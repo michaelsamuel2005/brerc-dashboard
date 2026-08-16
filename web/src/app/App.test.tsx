@@ -118,6 +118,26 @@ describe("App — P3 slice (integration, against MSW mock)", () => {
     expect(await axe(container)).toHaveNoViolations();
   }, 20000);
 
+  it("does not steal focus on a cold load, so the first Tab reaches the skip link", async () => {
+    // WCAG 2.4.1. The browser already has focus at the top of the document on a fresh
+    // load; moving it into the <h1> sends the first Tab PAST the skip link, making the
+    // one control that exists to bypass the navigation the one control a keyboard user
+    // cannot reach. The browser suite guards this too, but it only ever passed there by
+    // accident of timing — this asserts the rule directly.
+    renderApp(<App />, "/about");
+    const heading = await screen.findByRole("heading", { name: /About the data/i, level: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.activeElement).not.toBe(heading);
+    expect(heading).toHaveAttribute("tabindex", "-1"); // still focusable for real navigations
+  });
+
+  it("still sets the document title on a cold load", async () => {
+    renderApp(<App />, "/about");
+    await screen.findByRole("heading", { level: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.title).toMatch(/About the data \| BRERC/);
+  });
+
   it("navigates from a human-readable directory link while fetching detail by opaque species ID", async () => {
     renderApp(<App />, "/species");
     const link = await screen.findByRole("link", { name: /Explore Adder/i });

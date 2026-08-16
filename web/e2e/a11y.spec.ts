@@ -5,7 +5,13 @@ import AxeBuilder from "@axe-core/playwright";
 // bidirectional (map <-> table + card), selecting does not move the user's view, and there
 // are no axe violations at desktop and mobile widths.
 test.describe("BRERC P3 slice", () => {
-  test("species directory deep-link searches and opens a coherent species route", async ({ page }) => {
+  // "/" is the overview page (a landing route, no map). The map, the grid-square table,
+// the selected-cell card and the year chart live on a species page, so these tests name
+// that route explicitly instead of relying on what "/" happens to redirect to. That
+// coupling is what broke them: the redirect changed and nothing here noticed.
+const SPECIES_ROUTE = "/#/species/DEMO-001/anguis-fragilis";
+
+test("species directory deep-link searches and opens a coherent species route", async ({ page }) => {
     await page.goto("/#/species");
     await expect(page.getByRole("heading", { name: "Species directory" })).toBeVisible();
     await page.getByLabel(/Search by common or scientific name/i).fill("Vipera");
@@ -19,7 +25,7 @@ test.describe("BRERC P3 slice", () => {
   });
 
   test("renders map + both tables with no axe violations", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(SPECIES_ROUTE);
     await expect(page.getByRole("heading", { name: /Slow-worm/ })).toBeVisible();
     await expect(page.locator(".maplibregl-canvas").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: /Distribution by grid square/ })).toBeVisible();
@@ -33,14 +39,14 @@ test.describe("BRERC P3 slice", () => {
   });
 
   test("keyboard: the skip link is the first focus stop", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(SPECIES_ROUTE);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: /skip/i })).toBeFocused();
   });
 
   test("table -> map: selecting a square updates the card without moving the button in view", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(SPECIES_ROUTE);
     await page.waitForLoadState("networkidle");
     const button = page.getByRole("button", { name: /ST5872/ });
     await button.scrollIntoViewIfNeeded();
@@ -59,7 +65,7 @@ test.describe("BRERC P3 slice", () => {
     // (a harness limitation, not an app bug); the map->table logic is viewport-independent
     // and is genuinely exercised on desktop.
     test.skip(!!isMobile, "canvas pixel-tap unreliable under mobile touch emulation");
-    await page.goto("/");
+    await page.goto(SPECIES_ROUTE);
     await page.waitForLoadState("networkidle");
     const canvas = page.locator(".maplibregl-canvas").first();
     await expect(canvas).toBeVisible();
@@ -80,7 +86,7 @@ test.describe("BRERC P3 slice", () => {
   });
 
   test("year filter: selecting a year cross-filters the map, tables and card, then resets", async ({ page }) => {
-    await page.goto("/");
+    await page.goto(SPECIES_ROUTE);
     await page.waitForLoadState("networkidle");
     // The chart's accessible equivalent is a disclosure containing a button per year.
     await page.getByRole("group", { name: /Distribution by grid square/ }).waitFor();

@@ -265,7 +265,9 @@ async function applyCamera(page: Page, camera: Camera): Promise<void> {
 
 async function enterState(page: Page, state: A11yState): Promise<void> {
   await prepareScenario(page, state);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  // The mobile suite measures the map, the tables and their touch targets, all of
+  // which live on a species page. "/" is the overview.
+  await page.goto('/#/species/DEMO-001/anguis-fragilis', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /Slow-worm/ })).toBeVisible();
 
   switch (state) {
