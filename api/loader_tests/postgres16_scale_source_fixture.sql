@@ -104,10 +104,14 @@ SELECT
     'SYNTHETIC-PRIVATE-SCALE-PLACE-MUST-NOT-CROSS',
     '1',
     'field record',
+    -- species_no is varchar(20) in the reviewed 39-column contract, so every
+    -- cohort identifier here must be at most twenty characters.  The earlier
+    -- spellings SYNTH-SCALE-UNLICENSED (22) and SYNTH-SCALE-SENSITIVE (21)
+    -- overflowed the column and aborted the whole 5,000,000-row generation.
     CASE
         WHEN sequence_no <= 2 THEN 'SYNTH-SCALE-SPARSE'
-        WHEN sequence_no = 3 THEN 'SYNTH-SCALE-UNLICENSED'
-        WHEN sequence_no <= 6 THEN 'SYNTH-SCALE-SENSITIVE'
+        WHEN sequence_no = 3 THEN 'SYNTH-SCALE-UNLIC'
+        WHEN sequence_no <= 6 THEN 'SYNTH-SCALE-SENS'
         WHEN sequence_no <= 9 THEN 'SYNTH-SCALE-ORDINARY'
         ELSE 'SYNTH-SCALE-' || lpad((sequence_no % 100)::text, 3, '0')
     END,
