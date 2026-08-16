@@ -44,14 +44,14 @@ LIMIT %s
     "/distribution/cells", response_model=CellDistribution, response_model_exclude_unset=True
 )
 def distribution_cells(
-    speciesId: str | None = Query(None),
+    species: str | None = Query(None),
     year: int | None = Query(None, ge=1500, le=2200),
 ) -> CellDistribution:
     clauses: list[str] = []
     params: list[object] = []
-    if speciesId is not None:
+    if species is not None:
         clauses.append("species_id = %s")
-        params.append(speciesId)
+        params.append(species)
     if year is not None:
         clauses.append("record_year = %s")
         params.append(year)

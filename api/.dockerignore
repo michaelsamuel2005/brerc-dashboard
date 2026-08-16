@@ -1,0 +1,13 @@
+# Never ship tests, caches, local environment or client data into the image.
+__pycache__/
+*.pyc
+.env
+.cache/
+build/
+dist/
+*.egg-info/
+tests/
+app_tests/
+connector_tests/
+loader_tests/
+scripts/

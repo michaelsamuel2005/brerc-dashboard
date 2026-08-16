@@ -87,16 +87,25 @@ WHERE species_id = %s
 """  # noqa: S608 - checked constant
 
 
-def _search_clause(search: str | None) -> tuple[str, list[object]]:
-    if not search or not search.strip():
-        return "", []
-    # Matched as a parameter, never interpolated. ILIKE with escaped wildcards so
-    # a caller cannot turn a search box into a full-table scan pattern.
-    term = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return (
-        "WHERE (scientific_name ILIKE %s ESCAPE '\\' OR common_name ILIKE %s ESCAPE '\\')",
-        [f"%{term}%", f"%{term}%"],
-    )
+def _filter_clause(q: str | None, group: str | None) -> tuple[str, list[object]]:
+    """Build the WHERE clause from the client's `q` and `group` parameters.
+
+    Both are bound as parameters. The search term additionally has its LIKE
+    wildcards escaped, so a search box cannot be turned into a pattern that
+    scans the whole table.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if group is not None and group.strip():
+        clauses.append("taxon_group = %s")
+        params.append(group.strip())
+    search = q
+    if search and search.strip():
+        term = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        clauses.append("(scientific_name ILIKE %s ESCAPE '\\' OR common_name ILIKE %s ESCAPE '\\')")
+        params.extend([f"%{term}%", f"%{term}%"])
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
 
 
 def _item(row: dict, ambiguous: set[str]) -> SpeciesListItem:
@@ -128,12 +137,14 @@ def list_species(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=config.MAX_PAGE_SIZE),
     sort: str = Query("name-asc"),
-    search: str | None = Query(None, max_length=120),
+    # Named for what the client sends: `q` is the search box, `group` the facet.
+    q: str | None = Query(None, max_length=120),
+    group: str | None = Query(None, max_length=120),
 ) -> SpeciesListPage:
     if sort not in _SORTS:
         raise HTTPException(status_code=422, detail="Unsupported sort")
     page_size = min(pageSize, config.MAX_PAGE_SIZE)
-    where, params = _search_clause(search)
+    where, params = _filter_clause(q, group)
 
     with serving_connection() as connection:
         load_active_release(connection)

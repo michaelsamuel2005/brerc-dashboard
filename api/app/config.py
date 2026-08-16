@@ -23,7 +23,15 @@ _origins = os.getenv("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS: list[str] = (
     [origin.strip() for origin in _origins.split(",") if origin.strip()]
     if IS_PROD
-    else ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173"]
+    else [
+        # Both hostnames: a browser treats localhost and 127.0.0.1 as distinct
+        # origins, so listing only one silently blocks half the dev setups.
+        # 5173 is `vite dev`, 4173 is `vite preview` (the build with mocks off).
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
 )
 
 #: Caps applied in SQL, on the server.  A caller may ask for less, never more.

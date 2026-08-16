@@ -78,7 +78,9 @@ def _row(record: dict, release: ActiveRelease) -> RecordRow:
 def list_records(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=config.MAX_PAGE_SIZE),
-    speciesId: str | None = Query(None),
+    # Named for what the client sends. The response field is speciesId; the
+    # query parameter is `species`, and the two are deliberately not conflated.
+    species: str | None = Query(None),
 ) -> RecordPage:
     # The query cap is re-applied here so the bound survives any future
     # loosening of the request validation above.
@@ -87,9 +89,9 @@ def list_records(
 
     where = ""
     filter_params: list[object] = []
-    if speciesId is not None:
+    if species is not None:
         where = "WHERE species_id = %s"
-        filter_params.append(speciesId)
+        filter_params.append(species)
 
     with serving_connection() as connection:
         release = load_active_release(connection)

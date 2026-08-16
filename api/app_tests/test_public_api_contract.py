@@ -428,15 +428,36 @@ class TestPublicApiContract(unittest.TestCase):
     def test_a_missing_species_is_404_not_an_empty_body(self) -> None:
         self.assertEqual(self.client.get("/api/species/NO-SUCH-SPECIES").status_code, 404)
 
+    def test_query_parameter_names_match_what_the_client_sends(self) -> None:
+        """The browser sends ?species=, ?q= and ?group=.
+
+        Response shapes are covered elsewhere; only a live request catches a
+        parameter the server silently ignores. An unknown filter would return
+        the unfiltered set, which looks like working software.
+        """
+        species_id = self.client.get("/api/species").json()["items"][0]["speciesId"]
+        for path in ("/api/records", "/api/distribution/cells"):
+            with self.subTest(path=path):
+                matched = self.client.get(path, params={"species": species_id})
+                missing = self.client.get(path, params={"species": "NO-SUCH-SPECIES"})
+                self.assertEqual(matched.status_code, 200)
+                self.assertEqual(missing.status_code, 200)
+                key = "items" if path.endswith("records") else "cells"
+                self.assertGreater(len(matched.json()[key]), 0, "the filter matched nothing")
+                self.assertEqual(len(missing.json()[key]), 0, "the filter was ignored")
+
+        # `group` must be accepted even while no release publishes groups.
+        grouped = self.client.get("/api/species", params={"group": "beetle"})
+        self.assertEqual(grouped.status_code, 200)
+        self.assertEqual(grouped.json()["total"], 0)
+
     def test_search_wildcards_are_escaped_rather_than_executed(self) -> None:
         """A search box must not become a pattern the caller controls."""
         everything = self.client.get("/api/species").json()["total"]
         self.assertGreater(everything, 0)
         for pattern in ("%", "_", "%%", "\\"):
             with self.subTest(pattern=pattern):
-                matched = self.client.get("/api/species", params={"search": pattern}).json()[
-                    "total"
-                ]
+                matched = self.client.get("/api/species", params={"q": pattern}).json()["total"]
                 self.assertEqual(matched, 0, f"{pattern!r} was treated as a wildcard")
 
     def test_only_reviewed_sort_orders_are_accepted(self) -> None:
