@@ -37,7 +37,21 @@ export const a11yProjects = [
   {
     name: 'a11y-firefox-V1-320x640',
     testMatch: /a11y-mobile\.spec\.ts/,
-    use: { ...devices['Desktop Firefox'], viewport: { width: 320, height: 640 } }
+    use: {
+      ...devices['Desktop Firefox'],
+      viewport: { width: 320, height: 640 },
+      launchOptions: {
+        firefoxUserPrefs: {
+          // The CI runner has no GPU. Chromium falls back to software GL by itself;
+          // Firefox instead refuses the WebGL context, the map never renders, and the
+          // six map-applicable states time out — while the same nine tests pass in
+          // Firefox on a machine with a GPU. Forcing WebGL past the blocklist lets
+          // headless Firefox use its software path. Scoped to launch only: it changes
+          // how Firefox starts, never what the tests accept.
+          'webgl.force-enabled': true
+        }
+      }
+    }
   }
 ];
 
