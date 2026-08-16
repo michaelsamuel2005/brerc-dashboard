@@ -13,7 +13,7 @@ export function Legend() {
           {band.label}
         </div>
       ))}
-      <span className="legend-note">Darker green means more records.</span>
+      <span className="legend-note">Darker blue means more records.</span>
     </section>
   );
 }
