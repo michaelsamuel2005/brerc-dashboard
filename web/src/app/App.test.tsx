@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
@@ -49,11 +49,68 @@ describe("App — P3 slice (integration, against MSW mock)", () => {
     20000,
   );
 
-  it("preserves the prototype landing route by redirecting to the default species", async () => {
+  it("lands on the overview, not a hardcoded species", async () => {
+    // "/" once redirected to one named demo species. That passes against the mock,
+    // whose fixture always contains it, and fails against a real publication release,
+    // where the landing page renders "Request failed (404)" for a species the release
+    // does not publish. Nothing on the home page may name a species in advance: the
+    // featured cards come from the API, ordered by record count.
     renderApp(<App />, "/");
-    expect(await screen.findByRole("heading", { name: /Slow-worm/, level: 2 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "← All species" })).toHaveAttribute("href", "/species");
+    expect(
+      await screen.findByRole("heading", { name: /The living record of the West of England/i, level: 1 }),
+    ).toBeInTheDocument();
+    const featured = await screen.findAllByRole("link", { name: /^Explore / });
+    expect(featured.length).toBeGreaterThan(0);
+    for (const link of featured) {
+      // Every destination is a real published species id, not a literal in our source.
+      expect(link).toHaveAttribute("href", expect.stringMatching(/^\/species\/[^/]+\/[a-z0-9-]+$/));
+    }
   });
+
+  it("shows the published totals on the overview, from the API", async () => {
+    renderApp(<App />, "/");
+    // "Species" also names a nav link, so scope the lookup to the figures block rather
+    // than matching text anywhere on the page.
+    const records = await screen.findByText("Records published");
+    const kpis = records.closest(".kpis");
+    expect(kpis).not.toBeNull();
+    for (const label of ["Records published", "Species", "Years covered", "Busiest year"]) {
+      expect(within(kpis as HTMLElement).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("reaches every page in the primary navigation", async () => {
+    renderApp(<App />, "/");
+    for (const name of ["Overview", "Explore", "Species", "Records", "About the data"]) {
+      expect(await screen.findByRole("link", { name })).toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["/about", /About the data/i],
+    ["/records", /Grid-square summary/i],
+    ["/settings", /Settings/i],
+    ["/accessibility", /Accessibility statement/i],
+    ["/privacy", /Privacy/i],
+    ["/nowhere-at-all", /That page does not exist/i],
+  ])("renders %s", async (route, heading) => {
+    renderApp(<App />, route);
+    expect(await screen.findByRole("heading", { name: heading, level: 1 })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["the overview", "/"],
+    ["about the data", "/about"],
+    ["the grid-square summary", "/records"],
+    ["settings", "/settings"],
+    ["the accessibility statement", "/accessibility"],
+    ["the privacy notice", "/privacy"],
+  ])("has no accessibility violations on %s", async (_label, route) => {
+    const { container } = renderApp(<App />, route);
+    // Wait for the page heading so axe runs against loaded content, not a spinner.
+    await screen.findByRole("heading", { level: 1 });
+    expect(await axe(container)).toHaveNoViolations();
+  }, 20000);
 
   it("navigates from a human-readable directory link while fetching detail by opaque species ID", async () => {
     renderApp(<App />, "/species");

@@ -8,7 +8,12 @@ interface Props {
   onSelectYear: (year: number | null) => void;
 }
 
-const BAR = "#3f9e63";
+// Fallback values only. The bars, gridlines and axis labels take their real colours
+// from CSS (`.chart-plot` in views.css), because a hex literal here cannot follow the
+// dark theme: SVG presentation attributes do not resolve var(), but a CSS `fill` rule
+// overrides the attribute, so the class is what actually paints. Both are measured
+// against their background in tokens.contrast.test.ts.
+const BAR = "#2e7d52";
 const BAR_SELECTED = "#c0632b";
 
 // Records submitted by year (R1). The drawn chart is a visual presentation (role="img"
@@ -50,9 +55,9 @@ export default function RecordsByYearChart({ speciesId, selectedYear, onSelectYe
         <div className="chart-plot" role="img" aria-label={summary}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
-              <CartesianGrid stroke="#e4e0d3" vertical={false} />
-              <XAxis dataKey="year" tick={{ fontSize: 11, fill: "#5f6d64" }} tickMargin={6} minTickGap={12} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#5f6d64" }} width={32} />
+              <CartesianGrid className="chart-grid" vertical={false} />
+              <XAxis dataKey="year" tick={{ fontSize: 11 }} className="chart-axis" tickMargin={6} minTickGap={12} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} className="chart-axis" width={32} />
               <Tooltip
                 cursor={{ fill: "rgba(31,94,60,.08)" }}
                 formatter={(value) => [`${String(value)} records`, "Submitted"]}
@@ -70,6 +75,7 @@ export default function RecordsByYearChart({ speciesId, selectedYear, onSelectYe
                 {data.map((d) => (
                   <Cell
                     key={d.year}
+                    className={d.year === selectedYear ? "bar-selected" : "bar-default"}
                     fill={d.year === selectedYear ? BAR_SELECTED : BAR}
                   />
                 ))}

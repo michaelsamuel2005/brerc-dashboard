@@ -6,13 +6,19 @@ This is the public front-end; the API is team-owned, and the app develops agains
 mock** of the agreed contract, so it runs with **no backend**.
 
 ## Quick start
+
+See **[../docs/RUN_LOCALLY.md](../docs/RUN_LOCALLY.md)** for viewing the app
+against the real API as well as the mock.
+
 ```bash
 cd web
 npm install
 npm run dev          # runs against the MSW mock — no backend needed
+                     # VITE_USE_REAL_API=1 npm run dev  → a local API instead
 npm run typecheck    # strict TS, no `any`
 npm run lint         # ESLint + typescript-eslint + jsx-a11y
 npm run guard        # C2 forbidden-field / secret source guard
+npm run guard:bundle # after build: fails if the MSW mock reached the public bundle
 npm run test:run     # unit + C2 contract + accessibility (jest-axe)
 npm run build        # production build
 npm run e2e:install && npm run e2e   # browser: WebGL, keyboard, bidirectional sync, axe

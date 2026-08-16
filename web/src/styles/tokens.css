@@ -1,17 +1,79 @@
 /* Design tokens — single source for colour / type / spacing (AA-auditable). Editorial
-   light palette validated at the mid-review. Meaning is never carried by colour alone. */
+   palette carried forward from the mid-review prototype. Meaning is never carried by
+   colour alone.
+
+   Every pair below is MEASURED, not assumed: `tokens.contrast.test.ts` parses this
+   file and fails the build if any required combination drops under its threshold, in
+   either theme. Change a value here and the test tells you what it broke.
+
+   Fonts are self-hosted (@fontsource-variable, OFL-1.1, imported in main.tsx). The
+   prototype loaded them from Google, which sends every visitor's IP address to a
+   third party — not acceptable for a public-sector site, and blocked by our own
+   Content-Security-Policy (`font-src 'self' data:`) in any case. */
 :root {
-  --paper:#f6f8f4; --paper-2:#eaf0e8; --panel:#ffffff; --panel-2:#f2f6f1;
-  --ink:#12372b; --body:#30443b; --muted:#5b6b63; --line:#d5dfd7; --control-line:#7f9187;
-  --green:#3b855f; --green-d:#1f6745; --green-dd:#12412d;
-  --accent:#b75e2a; --accent-d:#884219; --accent-bg:#f8ede5; --accent-line:#e8c9b2;
-  --focus:#165d9a;
-  --btn-bg:#1f6745; --btn-fg:#ffffff;
+  color-scheme: light;
+  --paper:#faf8f2; --paper-2:#f2efe5; --panel:#ffffff; --panel-2:#f7f5ef;
+  --ink:#16352a; --body:#31413a; --muted:#5f6d64; --line:#e4e0d3; --control-line:#6f8378;
+  --green:#2e7d52; --green-d:#1c5d3a; --green-dd:#123f28;
+  --accent:#c0632b; --accent-d:#9a4e20; --accent-bg:#fbeee4; --accent-line:#eccbb2;
+  --focus:#185fa5; --danger:#b23b3b;
+  --btn-bg:#1c5d3a; --btn-fg:#ffffff;
+  --chart:#2e7d52; --chart-2:#c0632b;
+  /* The hero is a dark surface in BOTH themes, with its own foreground tokens. It used
+     to paint white text over --green-dd -> --green-d, which is correct in light and
+     unreadable in dark, where those tokens are pale mint. Measured against the LIGHTER
+     end of the gradient, which is the worst case for text sitting on it. */
+  --hero-a:#123f28; --hero-b:#1c5d3a;
+  --hero-fg:#ffffff; --hero-fg-muted:#d7ecdd;
+  --hero-btn-bg:#ffffff; --hero-btn-fg:#123f28;
   --shadow:0 1px 2px rgba(18,40,30,.06),0 8px 24px rgba(18,40,30,.08);
   --shadow-lg:0 2px 6px rgba(18,40,30,.08),0 24px 60px rgba(18,40,30,.14);
-  --display:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif; --sans:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --display:"Fraunces Variable",Georgia,"Times New Roman",serif;
+  --sans:"Inter Variable",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
   --radius:14px; --sp-1:.5rem; --sp-2:1rem; --sp-3:1.5rem;
+  --row-pad:.55rem;
 }
+
+/* Dark theme. Declared twice on purpose: once for visitors whose system asks for it
+   and who have expressed no preference here, once for an explicit choice on /settings.
+   CSS cannot share one declaration block between a media query and an attribute
+   selector, so `tokens.contrast.test.ts` asserts the two blocks are character-identical
+   rather than trusting anyone to keep them in step by hand. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#12171a; --paper-2:#171d21; --panel:#1a2226; --panel-2:#20282d;
+  --ink:#eef3ee; --body:#cbd6cf; --muted:#93a49a; --line:#2b353a; --control-line:#93a49a;
+  --green:#5cc98a; --green-d:#7bd6a0; --green-dd:#a7e6c0;
+  --accent:#e08b57; --accent-d:#eaa47a; --accent-bg:#33251c; --accent-line:#5a4030;
+  --focus:#7ab6f0; --danger:#e08585;
+  --btn-bg:#5cc98a; --btn-fg:#0d1417;
+  --chart:#5cc98a; --chart-2:#e08b57;
+  --hero-a:#0d2419; --hero-b:#173f2a;
+  --hero-fg:#eef3ee; --hero-fg-muted:#b9d9c6;
+  --hero-btn-bg:#d9f0e2; --hero-btn-fg:#173f2a;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.5);
+  --shadow-lg:0 2px 8px rgba(0,0,0,.5),0 30px 70px rgba(0,0,0,.6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper:#12171a; --paper-2:#171d21; --panel:#1a2226; --panel-2:#20282d;
+    --ink:#eef3ee; --body:#cbd6cf; --muted:#93a49a; --line:#2b353a; --control-line:#93a49a;
+    --green:#5cc98a; --green-d:#7bd6a0; --green-dd:#a7e6c0;
+    --accent:#e08b57; --accent-d:#eaa47a; --accent-bg:#33251c; --accent-line:#5a4030;
+    --focus:#7ab6f0; --danger:#e08585;
+    --btn-bg:#5cc98a; --btn-fg:#0d1417;
+    --chart:#5cc98a; --chart-2:#e08b57;
+  --hero-a:#0d2419; --hero-b:#173f2a;
+  --hero-fg:#eef3ee; --hero-fg-muted:#b9d9c6;
+  --hero-btn-bg:#d9f0e2; --hero-btn-fg:#173f2a;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.5);
+    --shadow-lg:0 2px 8px rgba(0,0,0,.5),0 30px 70px rgba(0,0,0,.6);
+  }
+}
+
+/* Compact density shortens rows; it never shrinks a touch target below 44px. */
+:root[data-density="compact"] { --sp-3:1rem; --row-pad:.35rem; }
 * { box-sizing: border-box; }
 body { margin:0; font-family:var(--sans); color:var(--body); background:var(--paper); line-height:1.55; -webkit-font-smoothing:antialiased; }
 h1,h2,h3 { font-family:var(--display); color:var(--ink); line-height:1.14; margin:0; font-weight:700; letter-spacing:-.015em; }
@@ -165,6 +227,16 @@ table.data tr.selected td { background:var(--accent-bg); box-shadow:inset 3px 0 
 /* 44px touch targets — !important to win over MapLibre's later-loaded CSS. */
 .maplibregl-ctrl-group button,
 .maplibregl-ctrl-attrib-button { width: 44px !important; height: 44px !important; min-width: 44px !important; }
+/* MapLibre paints the attribution "i" straight onto the BUTTON (its no-repeat rule
+   targets a child .maplibregl-ctrl-icon that this button does not have). At MapLibre's
+   own ~24px size the glyph fills the button, so the missing background-repeat never
+   showed. Enlarging the button to the 44px touch target above exposed it: the ~22px
+   glyph tiled 2x2 and drew FOUR "i" icons. Centre it once and keep the large target. */
+.maplibregl-ctrl-attrib-button {
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 20px 20px !important;
+}
 .map-pan-controls {
   position:absolute;
   z-index:3;
@@ -234,3 +306,7 @@ table.data tr.selected td { background:var(--accent-bg); box-shadow:inset 3px 0 
 .chart-table > summary { cursor: pointer; padding: .7rem .2rem; font-size: .85rem; font-weight: 600; color: var(--green-d); min-height: 44px; display: flex; align-items: center; }
 .chart-table > summary:hover { text-decoration: underline; }
 .chart-table .tscroll { max-height: 18rem; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-bottom: .8rem; }
+
+/* Keep the enlarged attribution button inside its own control box: at 44px it is taller
+   than MapLibre's container expects, and without this it sits proud of the panel. */
+.maplibregl-ctrl-attrib { display: flex; align-items: center; }

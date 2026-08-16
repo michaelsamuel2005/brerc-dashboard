@@ -1,0 +1,49 @@
+# One origin for the whole dashboard.
+#
+# The browser reaches the app and the API at the same host, so there is no
+# cross-origin request and therefore no CORS configuration to get wrong. This
+# is why ALLOWED_ORIGINS is empty in production: it is not needed, and an empty
+# list is the safe failure if the topology is ever changed by accident.
+#
+# SITE_ADDRESS is the public name, e.g. map.brerc.org.uk. Caddy obtains and
+# renews an HTTPS certificate for it automatically, provided ports 80 and 443
+# reach this container and DNS already points at it. Set it to :80 for a purely
+# local run, where no certificate is issued.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# The read-only API. Everything under /api is the FastAPI service.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# The built single-page app. Unknown paths fall back to index.html so a
+	# deep link into a species page works on a cold load, not only after
+	# client-side navigation.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Strict by default. The ONE exception is the basemap tile CDN: MapLibre loads
+	# those tiles from CARTO, and with a bare `default-src 'self'` the browser blocks
+	# them, so the map renders its grid squares over an empty background. Verified:
+	# the policy below is the minimum that lets the basemap load.
+	#
+	# Everything else really is same-origin — the fonts are self-hosted precisely so
+	# this list does not need a font CDN on it, and there is no analytics or tag
+	# manager to allow. Adding CARTO here is also the point at which the privacy
+	# trade-off is visible: it is the only host that sees a visitor's IP address, and
+	# the privacy notice says so. Self-hosting the tiles would remove this line.
+	#
+	# 'unsafe-inline' for styles is what the current build needs; if the front end
+	# moves to hashed styles this can be tightened further.
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https://basemaps.cartocdn.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://basemaps.cartocdn.com; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+}

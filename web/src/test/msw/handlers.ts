@@ -9,7 +9,7 @@ import {
   speciesSummaryFor,
   summaryFixture,
 } from "../fixtures";
-import { SpeciesSortSchema } from "../../lib/api/schemas";
+import { MAX_PAGE_SIZE, SpeciesSortSchema } from "../../lib/api/schemas";
 
 // MSW handlers implementing the apiContract (A11). Dev + tests only — never shipped.
 // distribution/cells + records honour ?species= (unscoped ⇒ EMPTY, so a missing client
@@ -62,7 +62,7 @@ export const handlers = [
     const pageSize = positiveIntegerParam(searchParams, "pageSize", 20);
     const parsedSort = SpeciesSortSchema.safeParse(searchParams.get("sort") ?? "name-asc");
 
-    if (page === null || pageSize === null || pageSize > 50 || !parsedSort.success) {
+    if (page === null || pageSize === null || pageSize > MAX_PAGE_SIZE || !parsedSort.success) {
       return HttpResponse.json({ error: "Invalid species directory query" }, { status: 400 });
     }
 
@@ -110,7 +110,7 @@ export const handlers = [
     const searchParams = new URL(request.url).searchParams;
     const page = positiveIntegerParam(searchParams, "page", 1);
     const pageSize = positiveIntegerParam(searchParams, "pageSize", 20);
-    if (page === null || pageSize === null || pageSize > 50) {
+    if (page === null || pageSize === null || pageSize > MAX_PAGE_SIZE) {
       return HttpResponse.json({ error: "Invalid records query" }, { status: 400 });
     }
     const speciesId = speciesParam(request);

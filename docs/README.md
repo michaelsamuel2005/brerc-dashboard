@@ -7,6 +7,7 @@ the guide that matches what you need.
 
 | Document | What it's for |
 | --- | --- |
+| ▶️ [RUN_LOCALLY.md](RUN_LOCALLY.md) | How to view the dashboard on your own machine — with mock data (no backend) or against the real API and a publication database. |
 | 🐙 [GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Step‑by‑step guide to Git and GitHub — assumes **zero** prior experience. Start here if you've never branched, pushed, or opened a pull request. |
 | 🗂️ [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | What every folder in the repo is for, and where your work belongs. |
 | 🔐 [SOURCE_CONTRACT.md](SOURCE_CONTRACT.md) | The exact BRERC source-view schema, safety mapping, and why incremental loading is still blocked. |

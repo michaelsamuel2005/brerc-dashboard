@@ -29,6 +29,9 @@ jobs:
       - run: npm run guard
       - run: npm run test:run
       - run: npm run build
+      # Must follow build: reads dist/ and fails if the MSW mock layer was
+      # bundled into the public app. See web/scripts/guard-bundle.mjs.
+      - run: npm run guard:bundle
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60

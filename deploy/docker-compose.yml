@@ -1,0 +1,79 @@
+# BRERC public dashboard — the deployable stack.
+#
+#   cp .env.example .env   # fill it in
+#   docker compose up --build -d
+#
+# Three services on a private network. Only the proxy is published, so the
+# database and the API are unreachable from outside the host.
+#
+#   db     publication database (PostgreSQL 16 + PostGIS 3.5)
+#   api    read-only FastAPI service
+#   proxy  Caddy: serves the built front end AND proxies /api, one origin
+#
+# WHAT THIS STACK IS NOT: it does not contain BRERC's source database, and it
+# does not read it. The loader is a separate, scheduled job that runs where the
+# source is reachable and writes into `db` here. This stack only ever serves a
+# release the loader has already published and activated.
+
+name: brerc-dashboard
+
+services:
+  db:
+    # 3.5 is required, not preferred: the loader verifies the PostGIS version
+    # before it will publish, and refuses anything else.
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: brerc_publication
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set API_DB_PASSWORD in .env}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Run once, in filename order, on an empty data directory: the reviewed
+      # group roles, then the publication schema, then the deployment login.
+      - ../db/roles.sql:/docker-entrypoint-initdb.d/01_roles.sql:ro
+      - ../db/migrations/0001_publication_store.sql:/docker-entrypoint-initdb.d/02_migration.sql:ro
+      - ./init/03_api_login.sh:/docker-entrypoint-initdb.d/03_api_login.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d brerc_publication"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../api
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      # The read-only login. dev -> prod is this string and nothing else (D-005).
+      DATABASE_URL: postgresql://brerc_api_service:${API_DB_PASSWORD:?}@db:5432/brerc_publication
+      # Empty on purpose — see .env.example.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Certificates and Caddy's state survive a restart, so a redeploy does
+      # not request a new certificate and risk hitting a rate limit.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

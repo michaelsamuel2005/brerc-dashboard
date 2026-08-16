@@ -15,6 +15,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "guard": "node scripts/guard-forbidden.mjs",
+    "guard:bundle": "node scripts/guard-bundle.mjs",
     "e2e": "playwright test --config playwright.config.ts",
     "e2e:serialization": "playwright test --config playwright.serialization.config.ts",
     "e2e:all": "npm run e2e:serialization && npm run e2e",
@@ -22,6 +23,8 @@
     "a11y:mutate": "python3 mutation/run_disposable.py --output-dir test-results/a11y-mutation --verify-kills"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@tanstack/react-query": "^5.59.0",
     "maplibre-gl": "^4.7.1",
     "react": "^18.3.1",

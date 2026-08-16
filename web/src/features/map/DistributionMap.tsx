@@ -5,6 +5,7 @@ import type { FilterSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { toAsyncState, useDistributionCells } from "../../lib/api";
 import { gridRefToPolygon } from "../../lib/geo/osgb";
+import { circleRing } from "../../lib/geo/radius";
 import { usePrefersReducedMotion } from "../../lib/hooks/usePrefersReducedMotion";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
 import { Legend } from "./Legend";
@@ -17,6 +18,12 @@ interface Props {
   year?: number | null;
   selectedCellId?: string | null;
   onSelectCell?: (cellId: string | null) => void;
+  /** Draw the "records near here" query area. The circle is the QUESTION the visitor
+   *  asked, never a claim about where a record is — see lib/geo/radius.ts. */
+  radius?: { centre: [number, number]; metres: number } | null;
+  /** When set, a click anywhere on the map moves the query centre instead of only
+   *  selecting a square. */
+  onPickCentre?: (centre: [number, number]) => void;
 }
 
 type PanDirection = "north" | "south" | "east" | "west";
@@ -44,7 +51,7 @@ const A11Y_TEST_MODE =
 // with the cell table + the selected-cell card via one authoritative selectedCellId — the
 // selected square gets a two-layer (light casing + dark line) halo for reliable contrast.
 // No popup and no auto-scroll, so a map click cannot move the page.
-export default function DistributionMap({ speciesId, year = null, selectedCellId = null, onSelectCell }: Props) {
+export default function DistributionMap({ speciesId, year = null, selectedCellId = null, onSelectCell, radius = null, onPickCentre }: Props) {
   const query = useDistributionCells({ species: speciesId, year: year ?? undefined });
   const state = toAsyncState(query, (d) => d.cells.length === 0);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -130,9 +137,26 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
     (e: MapLayerMouseEvent) => {
       const f = e.features?.[0];
       onSelectCell?.(f && f.properties ? String(f.properties.cellId) : null);
+      // Explore mode: the click also places the query centre. Both happen, so clicking a
+      // square both selects it and asks "what else is near here" — one gesture, and the
+      // selected-square readout still explains what was clicked.
+      onPickCentre?.([e.lngLat.lng, e.lngLat.lat]);
     },
-    [onSelectCell],
+    [onSelectCell, onPickCentre],
   );
+
+  // The query area, as GeoJSON. Memoised on the centre and radius so panning the map
+  // does not rebuild it.
+  const radiusFc = useMemo<FeatureCollection>(() => ({
+    type: "FeatureCollection",
+    features: radius
+      ? [{
+          type: "Feature" as const,
+          geometry: { type: "Polygon" as const, coordinates: [circleRing(radius.centre, radius.metres)] },
+          properties: {},
+        }]
+      : [],
+  }), [radius]);
 
   if (state.status === "loading") return <div className="map-card" style={box}><LoadingState label="the map" /></div>;
   if (state.status === "error") return <div className="map-card" style={box}><ErrorState message={state.error.message} onRetry={() => void query.refetch()} /></div>;
@@ -184,6 +208,14 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
         >
           <NavigationControl position="bottom-right" showCompass={false} />
           <AttributionControl compact position="bottom-left" />
+          {radius ? (
+            <Source id="query-radius" type="geojson" data={radiusFc}>
+              {/* Dashed, unfilled at the edge and barely tinted inside: it has to read as
+                  a drawn search area, not as another data square. */}
+              <Layer id="query-radius-fill" type="fill" paint={{ "fill-color": "#185fa5", "fill-opacity": 0.1 }} />
+              <Layer id="query-radius-line" type="line" paint={{ "line-color": "#0d3d6b", "line-width": 2, "line-dasharray": [2, 1.5] }} />
+            </Source>
+          ) : null}
           <Source id="cells" type="geojson" data={fc}>
             <Layer {...cellsFillLayer} />
             <Layer {...cellsLineLayer} />

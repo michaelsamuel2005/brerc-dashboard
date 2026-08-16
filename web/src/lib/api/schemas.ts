@@ -448,6 +448,16 @@ export const CellDistributionSchema = z
     });
   });
 
+/**
+ * The largest pageSize the API will accept (`MAX_PAGE_SIZE` in api/app/config.py).
+ *
+ * Exported so the MSW mock enforces the SAME limit as the service. It did not: the mock
+ * rejected anything over 50 while the API allows 100, so a page asking for 100 worked
+ * against the real backend and returned 400 against the mock. Nothing caught it because
+ * nothing had asked for more than 20. One constant, both sides.
+ */
+export const MAX_PAGE_SIZE = 100;
+
 export const SummarySchema = z
   .object({
     totalRecords: z.number().int().nonnegative(),
