@@ -413,10 +413,10 @@ def _source_oracle(connection: Any) -> dict[str, int]:
         "count(*) FILTER (WHERE species_no = 'SYNTH-SCALE-SPARSE') AS sparse, "
         "count(DISTINCT grid_ref) FILTER "
         "(WHERE species_no = 'SYNTH-SCALE-SPARSE') AS sparse_cells, "
-        "count(*) FILTER (WHERE species_no = 'SYNTH-SCALE-SENSITIVE') "
+        "count(*) FILTER (WHERE species_no = 'SYNTH-SCALE-SENS') "
         "AS sensitive_species_rows, "
         "count(DISTINCT grid_ref) FILTER "
-        "(WHERE species_no = 'SYNTH-SCALE-SENSITIVE') AS sensitive_cells, "
+        "(WHERE species_no = 'SYNTH-SCALE-SENS') AS sensitive_cells, "
         "count(*) FILTER (WHERE species_no = 'SYNTH-SCALE-ORDINARY') "
         "AS ordinary_rows, "
         "count(DISTINCT grid_ref) FILTER "
@@ -649,13 +649,17 @@ def _success_oracle(connection: Any, report: Any) -> dict[str, Any]:
         raise ScaleAcceptanceError
     safety = connection.execute(
         "SELECT "
-        "min(record_precision_metres) FILTER (WHERE species_id = 'SYNTH-SCALE-SENSITIVE') "
+        "min(record_precision_metres) FILTER (WHERE species_id = 'SYNTH-SCALE-SENS') "
         "AS sensitive_min_precision, "
         "max(record_precision_metres) FILTER (WHERE species_id = 'SYNTH-SCALE-ORDINARY') "
         "AS ordinary_max_precision, "
         "count(*) FILTER (WHERE species_id = 'SYNTH-SCALE-SPARSE') AS sparse_ledger, "
-        "count(*) FILTER (WHERE coalesce(place, '') LIKE '%PRIVATE-SCALE%' "
-        "OR coalesce(source_label, '') LIKE '%PRIVATE-SCALE%') AS private_text, "
+        # Literal percent signs must be doubled: this query binds a parameter,
+        # and psycopg treats a single % as a placeholder introducer ('%P' is
+        # rejected outright, which aborted the whole acceptance run after a
+        # successful activation).
+        "count(*) FILTER (WHERE coalesce(place, '') LIKE '%%PRIVATE-SCALE%%' "
+        "OR coalesce(source_label, '') LIKE '%%PRIVATE-SCALE%%') AS private_text, "
         "count(*) FILTER (WHERE place IS NOT NULL) AS published_place_values, "
         "count(*) FILTER (WHERE abundance IS NOT NULL) AS published_abundance_values, "
         "count(*) FILTER (WHERE record_type IS NOT NULL) AS published_record_types, "

@@ -51,8 +51,8 @@ class TestScaleSourceFixture(unittest.TestCase):
         text = SOURCE_FIXTURE.read_text(encoding="utf-8")
         for evidence in (
             "SYNTH-SCALE-SPARSE",
-            "SYNTH-SCALE-UNLICENSED",
-            "SYNTH-SCALE-SENSITIVE",
+            "SYNTH-SCALE-UNLIC",
+            "SYNTH-SCALE-SENS",
             "SYNTH-SCALE-ORDINARY",
             "CASE WHEN sequence_no = 3 THEN 'n' ELSE 'y' END",
             "CASE WHEN sequence_no BETWEEN 4 AND 6 THEN 'Yes' ELSE 'No' END",
