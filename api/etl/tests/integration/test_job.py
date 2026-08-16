@@ -290,15 +290,17 @@ def test_nightly_job_marks_run_failed_on_exception(
 
     mock_mark_failed.assert_called_once_with(
         7,
-        error_message="boom",
+        error_message="RuntimeError",
         error_summary="An unexpected error occurred during the update.",
     )
 
 
 # --- describe_failure tests ---
 # describe_failure() turns a raised exception into the plain-English summary
-# shown to BRERC staff on the run-history dashboard, keeping the raw
-# exception (stored separately as error_message) for anyone who needs it.
+# shown to BRERC staff on the run-history dashboard. Only the exception's
+# type name is stored alongside it (as error_message) — never its message,
+# which can carry fragments of source data. The full error and traceback go
+# to the server logs via logger.exception() instead.
 
 def test_describe_failure_database_mismatch():
     from etl.load.reload import DatabaseMismatchError

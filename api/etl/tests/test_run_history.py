@@ -76,7 +76,10 @@ def test_mark_run_failed_updates_the_same_row_in_place():
 
     run_history.mark_run_failed(
         run_number,
-        error_message="ValueError: unknown species code 'XYZ'",
+        # error_message is just the exception's type name by convention (see
+        # etl/job.py) — never the full message, which can carry fragments of
+        # source data. This storage layer itself stores whatever it's given.
+        error_message="ValueError",
         error_summary="A problem was found in the source data (e.g. an unrecognised species code).",
     )
 
@@ -89,7 +92,7 @@ def test_mark_run_failed_updates_the_same_row_in_place():
     assert row["load_no"] is None
     assert row["duration_seconds"] is not None
     assert row["duration_seconds"] >= 0
-    assert row["error_message"] == "ValueError: unknown species code 'XYZ'"
+    assert row["error_message"] == "ValueError"
     assert row["error_summary"] == (
         "A problem was found in the source data (e.g. an unrecognised species code)."
     )

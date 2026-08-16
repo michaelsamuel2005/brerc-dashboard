@@ -33,16 +33,35 @@ DB_PATH = Path(__file__).resolve().parent.parent / "logs" / "etl_run_history.db"
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "admin")
-DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin")
+DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "").strip()
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+
+# Fail closed: no default credentials. A dashboard that refuses to start is a
+# much better failure than one anyone can log into with admin/admin.
+if not DASHBOARD_USERNAME or not DASHBOARD_PASSWORD:
+    raise RuntimeError(
+        "DASHBOARD_USERNAME and DASHBOARD_PASSWORD must both be set in "
+        "run-dashboard/.env (see .env.example) — there is no default login."
+    )
 
 # Falls back to a fresh random key each process start if not set — sessions
 # just won't survive a restart, which is fine for this tool and avoids a
 # hardcoded fallback secret living in source control.
 SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY") or secrets.token_hex(32)
 
+# Same dev/prod convention as api/app/config.py's APP_ENV/IS_PROD. Controls
+# whether the session cookie is marked https_only — off in dev so login still
+# works over plain http on localhost, on wherever this is actually deployed.
+DASHBOARD_ENV = os.getenv("DASHBOARD_ENV", "dev").lower()
+IS_PROD = DASHBOARD_ENV == "prod"
+
 app = FastAPI(title="BRERC ETL Run History")
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    https_only=IS_PROD,
+    max_age=12 * 60 * 60,  # 12 hours — re-login once a working day, not "forever"
+)
 
 
 def _is_authenticated(request: Request) -> bool:

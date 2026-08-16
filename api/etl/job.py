@@ -132,8 +132,11 @@ def describe_failure(error: Exception) -> str:
     """
     Translates a raised exception into a short, plain-English reason for the
     run-history dashboard, which BRERC staff (not just engineers) read. The
-    full technical error is still logged and stored alongside this summary
-    for anyone who needs to dig further.
+    full technical error (message, traceback) is logged server-side via
+    logger.exception() below — only the exception's type name is stored
+    alongside this summary, since exception messages can otherwise carry
+    fragments of source data (a bad species code, a file path, a DB error
+    detail) onto a browser-accessible page.
     """
     if isinstance(error, DatabaseMismatchError):
         return (
@@ -262,7 +265,7 @@ def nightly_job():
         if run_number is not None:
             mark_run_failed(
                 run_number,
-                error_message=str(error),
+                error_message=type(error).__name__,
                 error_summary=describe_failure(error),
             )
 

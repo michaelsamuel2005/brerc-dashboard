@@ -160,9 +160,12 @@ def mark_run_failed(
     error_summary: str | None = None,
 ) -> None:
     """Updates a run's row in place to 'failed', stamping its duration, the
-    raw technical error, and a plain-English summary of it for non-technical
-    staff viewing the dashboard. A failed run never reaches reconciliation,
-    so record counts are left null."""
+    exception type name, and a plain-English summary of it for non-technical
+    staff viewing the dashboard. Deliberately takes only the exception type
+    (not its message) as error_message — exception messages can carry
+    fragments of source data, and this is rendered on a browser-accessible
+    page. A failed run never reaches reconciliation, so record counts are
+    left null."""
     _finish_run(
         run_number,
         "failed",

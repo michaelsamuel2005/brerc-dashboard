@@ -228,8 +228,10 @@
 
   function renderReason(run, expandable) {
     // error_summary is the plain-English version for non-technical staff;
-    // error_message is the raw exception, tucked behind a toggle for anyone
-    // who needs to dig further. Older rows may have only one of the two.
+    // error_message is just the exception's type name (e.g. "ValueError"),
+    // tucked behind a toggle — deliberately not the full exception message,
+    // since that can carry fragments of source data. The full error and
+    // traceback are in the server logs for anyone who needs to dig further.
     const summary = run.error_summary || run.error_message;
     if (!summary) {
       // Expandable rows (successful runs) never have a reason, so this
@@ -242,7 +244,7 @@
 
     let html = escapeHtml(summary);
     if (run.error_message && run.error_message !== summary) {
-      html += `<details><summary>Technical details</summary><code>${escapeHtml(run.error_message)}</code></details>`;
+      html += `<details><summary>Error type</summary><code>${escapeHtml(run.error_message)}</code></details>`;
     }
     return html;
   }
