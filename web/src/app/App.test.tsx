@@ -36,8 +36,14 @@ describe("App — P3 slice (integration, against MSW mock)", () => {
       const { container } = renderApp(<App />);
       expect(await screen.findByText(/Slow-worm/, undefined, { timeout: 8000 })).toBeInTheDocument();
       const caveat = screen.getByRole("complementary", { name: "How to read this data" });
-      expect(caveat).toHaveTextContent(/public capture resolution/i);
-      expect(caveat).not.toHaveTextContent(/sensitive species|protected taxa|blur(?:red|ring)?|generali[sz]ed/i);
+      expect(caveat).toHaveTextContent(/capture resolution/i);
+      // BRERC asked at client meeting 2 for the explanation of how sensitive locations
+      // are blurred to be removed from the public pages. Naming the method also tells a
+      // reader which squares to be curious about, so this assertion is a safety rule and
+      // not only a wording preference.
+      expect(caveat).not.toHaveTextContent(
+        /sensitive|protected taxa|blur(?:red|ring)?|generali[sz]/i,
+      );
       // the map's accessible equivalent + the published individual records
       expect(await screen.findByText(/Distribution by grid square/)).toBeInTheDocument();
       expect(await screen.findByText(/Published records/)).toBeInTheDocument();

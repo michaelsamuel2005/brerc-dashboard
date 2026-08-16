@@ -2,9 +2,9 @@
 export function Caveat() {
   return (
     <aside className="caveat" aria-label="How to read this data">
-      <strong>How to read this.</strong> Records show <em>where wildlife has been recorded</em> and reflect recording
-      activity, not complete distribution or abundance. Locations are shown at their public capture resolution — a
-      larger square represents a broader capture area, not an exact-location pin.
+      <strong>How to read this.</strong> Records show <em>where wildlife has been recorded</em>, which reflects where
+      people have looked — not how much wildlife is there. Each square states its <strong>capture resolution</strong>:
+      the record is somewhere inside that square, and a larger square means a broader area, never a bigger population.
     </aside>
   );
 }

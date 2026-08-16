@@ -4,7 +4,11 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/states/St
 import { toAsyncState, useSpeciesList } from "../../lib/api";
 import type { SpeciesSort } from "../../lib/api/schemas";
 
-const PAGE_SIZE = 3;
+// BRERC hold roughly 15,000-16,000 species (client meeting 2), and asked for a layout
+// "showing several species at a time" because "scrolling takes time". Three per page is
+// 5,333 pages of that catalogue. 24 fills the card grid evenly at every breakpoint
+// (1, 2 and 3 columns) and stays inside the API's page-size cap.
+const PAGE_SIZE = 24;
 const SORT_OPTIONS: readonly { value: SpeciesSort; label: string }[] = [
   { value: "name-asc", label: "Common name (A–Z)" },
   { value: "scientific-name-asc", label: "Scientific name (A–Z)" },

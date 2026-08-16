@@ -3,10 +3,21 @@ import { Link } from "wouter";
 /**
  * About the data.
  *
- * The three panels carry the copy written for the mid-review prototype, because it is
- * the clearest statement anyone on the project has made of what a biological record
- * does and does not mean. This page is the honest counterweight to a map: a map invites
- * you to read absence as evidence, and this is where we say plainly that it is not.
+ * What changed after client meeting 2, and why:
+ *
+ * BRERC asked for "the explanation of how sensitive species locations are blurred" to be
+ * removed — their reasoning being that there is no need for people to know how it is
+ * done, and the public will use the given resolution anyway. So this page no longer
+ * describes the mechanism: no tiers, no coarse grid, no "before it reaches this site",
+ * and no panel drawing attention to which species get that treatment. Naming the method
+ * also tells a reader which squares to be interested in, which is the opposite of the
+ * point.
+ *
+ * What stays is what a square MEANS — an area, at a stated capture resolution, not a
+ * place. Removing that too would leave the map claiming a precision it does not have,
+ * which is not what BRERC asked for and is the one thing this page exists to prevent.
+ *
+ * "Capture resolution" throughout: BRERC's own term for it.
  */
 export function AboutPage() {
   return (
@@ -14,8 +25,8 @@ export function AboutPage() {
       <span className="eyebrow">How to read it honestly</span>
       <h1 className="page-title" tabIndex={-1}>About the data</h1>
       <p className="page-lead">
-        Biological records are a picture of effort as much as of nature. Here is how this
-        dashboard presents them honestly and safely.
+        Wildlife records show where people have looked as much as where wildlife is. Here
+        is how to read what this map is telling you.
       </p>
 
       <div className="notes">
@@ -23,82 +34,87 @@ export function AboutPage() {
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
             <path d="M3 12h4l3 8 4-16 3 8h4" />
           </svg>
-          <h2 id="about-effort">Effort, not a census</h2>
+          <h2 id="about-effort">Where people looked</h2>
           <p>
-            A filled square means people looked and recorded there — not that a species is
-            absent everywhere else. Records reflect where recorders go, which is shaped by
-            access, habit and the surveys that happened to be funded.
+            A shaded square means somebody went there and recorded what they saw. An empty
+            square usually means nobody has been, not that there is nothing to find.
           </p>
         </section>
 
-        <section className="note" aria-labelledby="about-sensitive">
-          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-            <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" />
-            <path d="M9 12l2 2 4-4" />
-          </svg>
-          <h2 id="about-sensitive">Sensitive places protected</h2>
-          <p>
-            The locations of vulnerable species are generalised to a coarse grid{" "}
-            <em>before</em> they ever reach this site. The public map only ever receives
-            already-safe squares, and carries no marker of which species were treated this
-            way — a marker would itself point at what it is meant to hide.
-          </p>
-        </section>
-
-        <section className="note" aria-labelledby="about-resolution">
+        <section className="note" aria-labelledby="about-square">
           <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
             <rect x="3" y="4" width="18" height="16" rx="2" />
             <path d="M3 9h18M8 4v16" />
           </svg>
-          <h2 id="about-resolution">Honest resolution</h2>
+          <h2 id="about-square">An area, not a spot</h2>
           <p>
-            Squares are drawn at the true precision of the record — a large square where the
-            location is coarse, and never a pin, which would claim a precision the record
-            does not have. Each square states its own capture resolution.
+            Each square covers an area, and every square says how big it is — its{" "}
+            <strong>capture resolution</strong>. A record sits somewhere inside its square.
+            The map never shows a pin, because a pin would say &ldquo;here&rdquo;, and
+            that is more than the record knows.
+          </p>
+        </section>
+
+        <section className="note" aria-labelledby="about-time">
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <h2 id="about-time">A record is one sighting</h2>
+          <p>
+            Somebody saw a species, wrote down where and when, and sent it in. It is
+            evidence that the species was there then. It does not say how many there were,
+            or whether they are still there now.
           </p>
         </section>
       </div>
 
       <div className="prose">
-        <h2>Why squares and not points</h2>
-        <p>
-          A point on a map has a centre, and a centre reads as "the animal was here". Almost
-          no biological record supports that claim: most are captured to a grid square, and
-          records of protected species are deliberately coarsened further. Drawing a square
-          says exactly what is known — <em>somewhere in this area</em> — and nothing more.
-        </p>
-        <p>
-          This is why the map does not offer a "precise location" view at any zoom level.
-          There is no hidden precise layer to reveal; the data reaching this site has already
-          been generalised, in the database, before it was published.
-        </p>
-
-        <h2>What a record is</h2>
-        <p>
-          Someone saw a species, noted where and when, and submitted it. BRERC verifies what
-          it can and holds the result. A record is evidence of a sighting — not of a
-          population, a territory, or continued presence.
-        </p>
+        <h2>Reading the map</h2>
         <ul>
-          <li><strong>An empty square</strong> may mean nobody has surveyed it.</li>
-          <li><strong>A dense square</strong> may mean a well-watched nature reserve, or one very active recorder.</li>
-          <li><strong>An old record</strong> means the species was there then. It does not mean it is there now, or that it has gone.</li>
+          <li>
+            <strong>An empty square</strong> usually means nobody has surveyed it.
+          </li>
+          <li>
+            <strong>A dark square</strong> may be a nature reserve people visit often, or
+            one very busy recorder — not necessarily more wildlife.
+          </li>
+          <li>
+            <strong>An old record</strong> means the species was there then. It has not
+            been checked since.
+          </li>
+          <li>
+            <strong>A bigger square</strong> means the location was noted less precisely.
+            It is not a bigger population.
+          </li>
         </ul>
 
-        <h2>What is not published here</h2>
+        <h2>Counting records</h2>
         <p>
-          Recorder names and any other personal data are removed before publication; they are
-          never sent to your browser. Neither are precise coordinates, grid references finer
-          than the published capture resolution, or the raw source fields.
+          The charts count records by the year they were <em>recorded</em>, not the year
+          BRERC received them. If a batch of older records is added to the database this
+          month, it raises the earlier year it belongs to, not this one.
+        </p>
+        <p>
+          Squares are listed in grid order rather than ranked by how many records they
+          hold. A ranking would be a table of where people record, and it is easily
+          misread as a table of where wildlife is.
+        </p>
+
+        <h2>What is not shown</h2>
+        <p>
+          Recorder names and other personal details are not published and are never sent
+          to your browser. Neither are locations more precise than the capture resolution
+          shown on each square.
         </p>
 
         <h2>Accessibility and privacy</h2>
         <p>
-          Every map on this site has a table beside it carrying the same information, because
-          a map is not usable by everyone. See the{" "}
-          <Link href="/accessibility">accessibility statement</Link> for what we have tested
-          and what is still outstanding, and the <Link href="/privacy">privacy notice</Link>{" "}
-          for what leaves your browser.
+          Every map here has a table beside it with the same information, because a map is
+          not usable by everyone. See the{" "}
+          <Link href="/accessibility">accessibility statement</Link> for what has been
+          tested, and the <Link href="/privacy">privacy notice</Link> for what leaves your
+          browser.
         </p>
       </div>
     </main>

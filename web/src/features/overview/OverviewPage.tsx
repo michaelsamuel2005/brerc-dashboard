@@ -10,11 +10,6 @@ function formatNumber(value: number): string {
   return value.toLocaleString("en-GB");
 }
 
-/** Metres as a reader would say them: 10000 -> "10 km", 100 -> "100 m". */
-function formatMetres(metres: number): string {
-  return metres >= 1000 ? `${(metres / 1000).toLocaleString("en-GB")} km` : `${metres} m`;
-}
-
 /** ISO timestamp -> a date a reader recognises. Falls back to the raw string. */
 function formatDate(iso: string): string {
   const parsed = new Date(iso);
@@ -24,34 +19,32 @@ function formatDate(iso: string): string {
 }
 
 /**
- * Where the release says what it is.
+ * When the data was last refreshed, and who holds it.
  *
- * This uses /api/meta/provenance, which the API has served since the canonical port but
- * which nothing rendered — so the generalisation tiers and the update date were being
- * published and then thrown away. A public dashboard that will not say when its data
- * was last refreshed, or how coarse the protected locations are, is asking to be
- * trusted rather than earning it.
+ * Uses /api/meta/provenance, which the API has served since the canonical port with
+ * nothing rendering it — the update date was being published and thrown away. Only the
+ * date and the holder are shown; see the comment inside for what was taken out after
+ * client meeting 2 and why.
  */
 function ProvenanceStrip() {
   const state = toAsyncState(useProvenance());
   if (state.status !== "ready") return null;
-  const { lastUpdated, sensitivityPolicy, sources } = state.data;
-  const tiers = sensitivityPolicy.generalisationTiersMetres;
-  // The coarsest tier, phrased as the WEAKEST precision in the release. Saying
-  // "generalised to 10 km or coarser" would claim every location is at least that
-  // blurred, which is the opposite of what a tier list means — most are finer.
-  const coarsest = tiers.length > 0 ? Math.max(...tiers) : null;
+  const { lastUpdated } = state.data;
 
+  // Deliberately short. BRERC were confused by the data-source section at client meeting
+  // 2 — "the only data source is BRERC" — so the list of source labels is gone; a
+  // multi-source line described a data model they do not have.
+  //
+  // The generalisation tiers are gone from here too. BRERC asked for the explanation of
+  // how sensitive locations are blurred to be removed, and a coarsest-tier figure in
+  // metres IS that explanation, stated numerically. What stays is on the squares
+  // themselves, where each one gives its own capture resolution: that is what the square
+  // means, not how it was produced.
   return (
     <p className="provenance-strip">
       <span className="dot" aria-hidden="true" />
+      <span>Records held by <strong>BRERC</strong></span>
       <span>Last updated <strong>{formatDate(lastUpdated)}</strong></span>
-      {sources.length > 0 ? <span>Source: <strong>{sources.join(", ")}</strong></span> : null}
-      {coarsest === null ? null : (
-        <span>
-          Locations shown as squares, the largest <strong>{formatMetres(coarsest)}</strong> across
-        </span>
-      )}
       <Link href="/about">How to read this</Link>
     </p>
   );
@@ -168,8 +161,14 @@ export function OverviewPage() {
           The living record of the West of England
         </h1>
         <p>
-          Explore where species have been recorded across the region — shown honestly, at
-          the resolution the records actually support, and with sensitive places protected.
+          {/* The count comes from the release, never from a figure typed here. BRERC put
+              their catalogue at 15,000-16,000 species, but this page must describe what
+              is actually published — writing that number in would state something the
+              current release does not support, which is the habit this whole review was
+              about. */}
+          {summary
+            ? `Search ${formatNumber(summary.totalSpecies)} ${summary.totalSpecies === 1 ? "species" : "species"} and see where each has been recorded across the region, square by square, at the resolution the records actually support.`
+            : "Search the region's species and see where each has been recorded, square by square, at the resolution the records actually support."}
         </p>
         <form className="herosearch" role="search" aria-label="Search species" onSubmit={submit}>
           <label className="visually-hidden" htmlFor="overview-search">
@@ -235,7 +234,11 @@ export function OverviewPage() {
                       peak ? ` The highest year is ${peak.year} with ${formatNumber(peak.count)} records.` : ""
                     } The same figures are in the table below.`}
                   />
-                  <p className="map-note">{summary?.coverageCaveat}</p>
+                  <p className="map-note">
+                    {summary?.coverageCaveat} Years count when a record was{" "}
+                    <em>made</em>, not when BRERC received it — a batch of older records
+                    added recently raises the earlier year it belongs to, not this one.
+                  </p>
                   <details className="chart-table">
                     <summary>Yearly figures as a table ({years.length} years)</summary>
                     <div className="tscroll" tabIndex={0} role="group" aria-label="Records by year, scrollable">

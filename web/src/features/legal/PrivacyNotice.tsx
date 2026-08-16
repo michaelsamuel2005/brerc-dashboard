@@ -89,9 +89,18 @@ export function PrivacyNotice() {
         <p>
           The records shown here have had personal data removed before publication. Recorder
           names and any other identifying fields are not sent to your browser and are not
-          present in the published data at all — this is enforced in the database, not by the
-          website. Precise locations are generalised before publication for the same reason;
-          see <Link href="/about">about the data</Link>.
+          present in the published data at all.
+        </p>
+        {/* The single sentence below is the one place location generalisation is still
+            mentioned anywhere on the site. BRERC asked at client meeting 2 for the
+            explanation of how it works to be removed, and it has been removed everywhere
+            else — this says only THAT it happens, with no method, no tiers and no
+            indication of which species. A privacy notice silent on processing that does
+            occur is a weaker document, so this is our recommendation, not a decision;
+            Tim can strike it. */}
+        <p>
+          Locations of protected species are generalised before publication. See{" "}
+          <Link href="/about">about the data</Link> for what each square means.
         </p>
 
         <h2>Your rights and who to contact</h2>

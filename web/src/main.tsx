@@ -6,11 +6,11 @@ import { App } from "./app/App";
 import { shouldEnableMocking } from "./app/mocking";
 import { Providers } from "./app/providers";
 import { applyStoredPreferences } from "./app/theme";
-// Self-hosted (OFL-1.1), served from our own origin. Loading these from Google would
+// Self-hosted (OFL-1.1), served from our own origin. Loading this from Google would
 // send every visitor's IP address to a third party and is blocked by our own CSP.
-// Weight-axis variable files only: ~85 kB for both, against four static faces.
+// Weight-axis variable file only: ~48 kB, and one face for the whole site since BRERC
+// asked for the serif to go (client meeting 2).
 import "@fontsource-variable/inter/wght.css";
-import "@fontsource-variable/fraunces/wght.css";
 import "./styles/tokens.css";
 import "./styles/views.css";
 

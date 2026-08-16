@@ -62,7 +62,10 @@ describe("SpeciesList — server-driven public directory", () => {
     await screen.findByRole("link", { name: /Explore West European hedgehog/i });
     await waitFor(() => {
       const names = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
-      expect(names).toEqual(["West European hedgehog", "Common lizard", "Slow-worm"]);
+      // All four fixture species now fit one page: BRERC hold 15,000-16,000 species and
+      // asked for a layout showing several at a time, so PAGE_SIZE went from 3 to 24.
+      // Ordered by record count, descending.
+      expect(names).toEqual(["West European hedgehog", "Common lizard", "Slow-worm", "Adder"]);
     });
 
     fireEvent.change(screen.getByLabelText("Group"), { target: { value: "reptile" } });
@@ -73,18 +76,60 @@ describe("SpeciesList — server-driven public directory", () => {
   });
 
   it("paginates without losing filters and resets the page when a filter changes", async () => {
+    // Driven by a server that reports far more species than it returns, rather than by
+    // the fixture happening to be one item longer than a page. That coupling is what
+    // broke when PAGE_SIZE changed, and it would break again at the real catalogue size.
+    const pages = new Map<string, string[]>([
+      ["1", ["West European hedgehog", "Common lizard"]],
+      ["2", ["Slow-worm", "Adder"]],
+    ]);
+    server.use(
+      http.get("*/api/species", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const wanted = pages.get(params.get("page") ?? "1") ?? [];
+        const page = buildSpeciesListPage({
+          q: "",
+          sort: "records-desc",
+          page: 1,
+          pageSize: 24,
+          ...(params.get("group") ? { group: params.get("group") ?? undefined } : {}),
+        });
+        const items = page.items.filter((item) =>
+          wanted.includes(item.commonName ?? item.scientificName),
+        );
+        // A total larger than one page, so the control has somewhere to go.
+        return HttpResponse.json({ ...page, items, page: Number(params.get("page") ?? 1), total: 400 });
+      }),
+    );
+
     renderDirectory("/species?sort=records-desc");
     await screen.findByRole("link", { name: /Explore West European hedgehog/i });
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByRole("link", { name: /Explore Adder/i })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Explore Slow-worm/i })).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("sort=records-desc");
     expect(screen.getByTestId("location")).toHaveTextContent("page=2");
 
     fireEvent.change(screen.getByLabelText("Group"), { target: { value: "reptile" } });
-    expect(await screen.findByRole("link", { name: /Explore Common lizard/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("page="));
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+  });
+
+  it("asks the server for a page a reader can actually use", async () => {
+    // BRERC hold roughly 15,000-16,000 species (client meeting 2) and said scrolling a
+    // list that long takes too long. Three per page would be 5,333 pages of catalogue.
+    let requestedPageSize: string | null = null;
+    server.use(
+      http.get("*/api/species", ({ request }) => {
+        requestedPageSize = new URL(request.url).searchParams.get("pageSize");
+        return HttpResponse.json(
+          buildSpeciesListPage({ q: "", sort: "name-asc", page: 1, pageSize: 24 }),
+        );
+      }),
+    );
+    renderDirectory();
+    await screen.findByRole("link", { name: /Explore Adder/i });
+    expect(Number(requestedPageSize)).toBeGreaterThanOrEqual(12);
   });
 
   it("keeps the controls usable through empty and recoverable error states", async () => {

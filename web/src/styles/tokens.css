@@ -28,7 +28,12 @@
   --hero-btn-bg:#ffffff; --hero-btn-fg:#123f28;
   --shadow:0 1px 2px rgba(18,40,30,.06),0 8px 24px rgba(18,40,30,.08);
   --shadow-lg:0 2px 6px rgba(18,40,30,.08),0 24px 60px rgba(18,40,30,.14);
-  --display:"Fraunces Variable",Georgia,"Times New Roman",serif;
+  /* One typeface. BRERC reviewed the serif at client meeting 2 and asked for it to
+     change, and separately said the style should read more modern — the same note twice.
+     Headings keep their own weight, size and tighter tracking below, so the hierarchy is
+     unchanged; only the letterforms are. Inter is self-hosted and has real tabular
+     figures, which the record tables rely on. */
+  --display:"Inter Variable",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
   --sans:"Inter Variable",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
   --radius:14px; --sp-1:.5rem; --sp-2:1rem; --sp-3:1.5rem;
   --row-pad:.55rem;
@@ -76,7 +81,7 @@
 :root[data-density="compact"] { --sp-3:1rem; --row-pad:.35rem; }
 * { box-sizing: border-box; }
 body { margin:0; font-family:var(--sans); color:var(--body); background:var(--paper); line-height:1.55; -webkit-font-smoothing:antialiased; }
-h1,h2,h3 { font-family:var(--display); color:var(--ink); line-height:1.14; margin:0; font-weight:700; letter-spacing:-.015em; }
+h1,h2,h3 { font-family:var(--display); color:var(--ink); line-height:1.14; margin:0; font-weight:750; letter-spacing:-.022em; }
 a { color:var(--green-d); }
 :focus-visible { outline:3px solid var(--focus); outline-offset:2px; border-radius:6px; }
 @media (prefers-reduced-motion: reduce){ *{ animation:none!important; transition:none!important; } }

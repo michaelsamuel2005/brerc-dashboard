@@ -3,8 +3,8 @@ import { Link, useSearchParams } from "wouter";
 import { Caveat } from "../../components/Caveat";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
-import { toAsyncState, useDistributionCells, useSpeciesList } from "../../lib/api";
-import { MAX_PAGE_SIZE } from "../../lib/api/schemas";
+import { toAsyncState, useDistributionCells, useSpeciesDetail } from "../../lib/api";
+import { SpeciesPicker } from "../species/SpeciesPicker";
 import { gridRefToPolygon } from "../../lib/geo/osgb";
 import { cellsWithinRadius, radiusIsFinerThanData } from "../../lib/geo/radius";
 
@@ -44,14 +44,11 @@ export default function ExplorePage() {
   const [radiusMetres, setRadiusMetres] = useState<number>(DEFAULT_RADIUS);
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null);
 
-  const speciesQuery = useSpeciesList({ sort: "records-desc", page: 1, pageSize: MAX_PAGE_SIZE });
-  const speciesState = toAsyncState(speciesQuery);
-  const options = speciesState.status === "ready" ? speciesState.data.items : [];
-  const requested = searchParams.get("species") ?? "";
-  const activeId = options.some((item) => item.speciesId === requested)
-    ? requested
-    : options[0]?.speciesId ?? "";
-  const active = options.find((item) => item.speciesId === activeId) ?? null;
+  // The chosen species is resolved by id, not looked up in a list the page holds. BRERC
+  // have 15,000-16,000 species: a page cannot keep the catalogue in memory to search it.
+  const activeId = searchParams.get("species") ?? "";
+  const detailQuery = useSpeciesDetail(activeId || undefined);
+  const active = detailQuery.data ?? null;
   const activeName = active ? (active.commonName ?? active.scientificName) : "";
 
   const cellsQuery = useDistributionCells(activeId ? { species: activeId } : undefined);
@@ -102,9 +99,13 @@ export default function ExplorePage() {
 
       <div className="explore-layout">
         <div className="map-col">
-          {speciesState.status === "error" ? (
+          {!activeId ? (
             <div className="directory-state">
-              <ErrorState message={speciesState.error.message} onRetry={() => void speciesQuery.refetch()} />
+              <EmptyState message="Choose a species to see where it has been recorded." />
+            </div>
+          ) : cellsState.status === "error" ? (
+            <div className="directory-state">
+              <ErrorState message={cellsState.error.message} onRetry={() => void cellsQuery.refetch()} />
             </div>
           ) : cellsState.status === "empty" ? (
             <div className="directory-state">
@@ -134,26 +135,12 @@ export default function ExplorePage() {
               <h2 id="explore-species-heading" style={{ fontSize: "1.05rem", marginBottom: ".5rem" }}>
                 Species
               </h2>
-              {speciesState.status === "loading" ? (
-                <LoadingState label="species" />
-              ) : (
-                <div className="splist" role="group" aria-label="Choose a species">
-                  {options.map((item) => {
-                    const name = item.commonName ?? item.scientificName;
-                    return (
-                      <button
-                        key={item.speciesId}
-                        type="button"
-                        aria-pressed={item.speciesId === activeId}
-                        onClick={() => chooseSpecies(item.speciesId)}
-                      >
-                        <span>{name}</span>
-                        {item.commonName ? <span className="sci">{item.scientificName}</span> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <SpeciesPicker
+                idPrefix="explore"
+                label="Search species"
+                selectedId={activeId || null}
+                onSelect={chooseSpecies}
+              />
             </div>
           </section>
 
@@ -193,11 +180,11 @@ export default function ExplorePage() {
 
                   {coarserThanQuery ? (
                     <p className="unavailable" style={{ marginTop: ".6rem", fontSize: ".84rem" }}>
-                      <strong>The answer is coarser than the question.</strong> These records
-                      are published as{" "}
+                      <strong>Your search is smaller than the squares.</strong> These records
+                      are shown as{" "}
                       {describeResolution(Math.max(...nearby.map((c) => c.precisionMetres)))}s,
-                      so a {formatDistance(radiusMetres)} radius cannot narrow them further —
-                      any square it touches is returned whole.
+                      so every square your circle touches is listed whole. A smaller circle
+                      will not give a smaller answer.
                     </p>
                   ) : null}
 

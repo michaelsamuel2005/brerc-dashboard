@@ -55,6 +55,19 @@ export function AccessibilityStatement() {
           device easier to use if you have a disability.
         </p>
 
+        <h3>Typography</h3>
+        <p>
+          The site is set in Inter, a typeface designed for screen reading, with clearly
+          distinguished letterforms — a capital I, a lower-case l and the digit 1 do not
+          look alike — and figures of even width so numbers line up in the data tables.
+        </p>
+        <p>
+          It is served from this website rather than a font service, so no third party is
+          told which pages you visit. All text sizes are set in relative units, so the
+          site follows the text size set in your browser or operating system, and remains
+          usable when text is enlarged to 200% and when the page is zoomed to 400%.
+        </p>
+
         <h2>How accessible this website is</h2>
         <p>
           We believe this website is <strong>partially compliant</strong> with the{" "}
@@ -68,8 +81,8 @@ export function AccessibilityStatement() {
           <li>
             <strong>The map itself cannot be operated by a screen reader as a map.</strong> It
             is a graphical rendering of grid squares. Every square it draws, with its record
-            count, its capture resolution and the years covered, is published in the table
-            directly beneath it, and that table is fully keyboard- and screen-reader-operable;
+            count and its capture resolution, is published in the table directly beneath it,
+            and that table is fully keyboard- and screen-reader-operable;
             selecting a row highlights the square and vice versa. We consider the table the
             accessible equivalent, but a user who wants the spatial relationships themselves
             does not get them.
