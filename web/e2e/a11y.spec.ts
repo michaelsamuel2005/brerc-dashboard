@@ -69,13 +69,19 @@ test("species directory deep-link searches and opens a coherent species route", 
     await page.waitForLoadState("networkidle");
     const canvas = page.locator(".maplibregl-canvas").first();
     await expect(canvas).toBeVisible();
+    // Bring the map into view before measuring anything. The species page now opens with
+    // a heading, a lead and two guidance panels, so the canvas starts 500px down and its
+    // centre lands at y≈750 in a 720px viewport — and page.mouse.click() takes VIEWPORT
+    // coordinates, so every click went nowhere and the square was never selected. The
+    // "before" position is captured after this scroll, so the assertion underneath is
+    // still about the click and not about the scroll.
+    await canvas.scrollIntoViewIfNeeded();
     const topBefore = await canvas.evaluate((el) => el.getBoundingClientRect().top);
     const bbox = await canvas.boundingBox();
     if (!bbox) throw new Error("no map canvas");
-    const cx = bbox.x + bbox.width / 2;
-    const cy = bbox.y + bbox.height / 2;
     await expect(async () => {
-      await page.mouse.click(cx, cy);
+      // Element-relative: Playwright resolves these against the canvas, not the page.
+      await canvas.click({ position: { x: bbox.width / 2, y: bbox.height / 2 } });
       await expect(page.locator(".cell-card__id")).toHaveText(/ST\d/, { timeout: 1500 });
     }).toPass({ timeout: 15000 });
     const topAfter = await canvas.evaluate((el) => el.getBoundingClientRect().top);

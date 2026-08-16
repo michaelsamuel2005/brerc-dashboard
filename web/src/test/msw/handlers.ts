@@ -18,12 +18,19 @@ import { MAX_PAGE_SIZE, SpeciesSortSchema } from "../../lib/api/schemas";
 const A11Y_SCENARIO_COOKIE = "brerc-a11y-scenario";
 type A11yScenario = "loading" | "empty" | "error";
 
-function a11yScenario(request: Request): A11yScenario | null {
-  const cookie = request.headers.get("cookie") ?? "";
-  const value = cookie
-    .split(";")
-    .map((part) => part.trim().split("=", 2))
-    .find(([name]) => name === A11Y_SCENARIO_COOKIE)?.[1];
+/**
+ * Reads the scenario from MSW's parsed cookies, NOT from `request.headers`.
+ *
+ * `Cookie` is a forbidden header name: the browser attaches it in the network layer, and
+ * a service worker never sees it on the intercepted Request. Reading the header therefore
+ * always returned "" in the browser, so `empty` and `error` silently did nothing and the
+ * page served ordinary data. (`loading` appeared to work only because a cold page is
+ * briefly loading anyway, which is exactly how a broken scenario hides.) MSW supplies
+ * `cookies` for this reason, parsed from document.cookie in the browser and from the
+ * header under Node, so one code path is correct in both.
+ */
+function a11yScenario(cookies: Record<string, string>): A11yScenario | null {
+  const value = cookies[A11Y_SCENARIO_COOKIE];
   return value === "loading" || value === "empty" || value === "error" ? value : null;
 }
 
@@ -83,10 +90,10 @@ export const handlers = [
       ? HttpResponse.json(detail)
       : HttpResponse.json({ error: "Unknown synthetic species" }, { status: 404 });
   }),
-  http.get("*/api/distribution/cells", async ({ request }) => {
+  http.get("*/api/distribution/cells", async ({ request, cookies }) => {
     // Playwright sets a same-origin cookie before navigation. Handling the scenario
     // inside MSW is deterministic; page.route cannot reliably beat a service worker.
-    const scenario = a11yScenario(request);
+    const scenario = a11yScenario(cookies);
     if (scenario === "loading") await delay("infinite");
     if (scenario === "empty") {
       return HttpResponse.json({ verificationAvailable: true, cells: [] });

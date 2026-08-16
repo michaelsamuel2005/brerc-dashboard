@@ -3,12 +3,23 @@
  * be filtered out. This harness lets a test declare each element's box with
  * data-rect="left,top,width,height" and have the DOM report it.
  *
+ * A second, optional data-rect-spaced="..." is used INSTEAD while one of the text-spacing
+ * diagnostics has its style injected. Those diagnostics ask whether the spacing override
+ * changed the geometry, and a single fixed box cannot answer that: without a before and
+ * an after, a label that was always outside its SVG is indistinguishable from one the
+ * spacing pushed out. Elements without the second attribute keep one box throughout.
+ *
  * Test-only. Not shipped to the browser.
  */
 export function installRectHarness(): () => void {
   const original = Element.prototype.getBoundingClientRect;
   Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
-    const spec = this.getAttribute('data-rect');
+    const spacingApplied =
+      document.getElementById('__wcag1412__') !== null ||
+      document.getElementById('__wcag1412svg__') !== null;
+    const spec =
+      (spacingApplied ? this.getAttribute('data-rect-spaced') : null) ??
+      this.getAttribute('data-rect');
     if (spec === null) return original.call(this);
     const parts = spec.split(',').map(Number);
     const left = parts[0] ?? 0, top = parts[1] ?? 0;

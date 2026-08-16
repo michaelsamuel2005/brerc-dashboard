@@ -109,6 +109,18 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
     return () => observer.disconnect();
   }, [mapError, state.status]);
 
+  // `mapReady` describes ONE MapLibre instance, and the instance is destroyed whenever the
+  // card stops rendering the map — which happens on every year filter, because the new
+  // year is fetched before it can be drawn. Left latched at true across that gap, the flag
+  // then described a map that no longer existed: when a fresh <Map> mounted, `onLoad`
+  // called setMapReady(true), React saw no change, and the effect below never re-ran, so
+  // the accessibility bridge stayed removed for the rest of the session. Resetting here
+  // ties the flag back to the instance it is about.
+  const mapIsMounted = state.status === "ready" && !mapError;
+  useEffect(() => {
+    if (!mapIsMounted) setMapReady(false);
+  }, [mapIsMounted]);
+
   // Expose the real projection and the same canonical polygons used by the <Source>,
   // but only in the explicit accessibility-test mode. Refresh it after year filtering.
   useEffect(() => {

@@ -224,6 +224,26 @@ async function waitForMapReady(page: Page): Promise<void> {
   }, A11Y_CONFIG.map.global);
 }
 
+/**
+ * Map -0 to 0 and leave every other number alone.
+ *
+ * MapLibre keeps the bearing internally as a negated angle, so a camera set to a bearing
+ * of exactly 0 reads back through `getBearing()` as -0, not 0. `expect(...).toEqual()`
+ * compares numbers with Object.is semantics, under which -0 and 0 are DIFFERENT values —
+ * so the camera assertion below could never converge. It burned its full 10-second
+ * timeout on every camera, in every state, in every viewport project, and then failed:
+ * that single sign bit is what a 25-minute red e2e job was made of.
+ *
+ * Verified against the running app rather than assumed: after
+ * `jumpTo({ bearing: 0 })`, `Object.is(map.getBearing(), -0)` is true.
+ *
+ * This corrects the comparison only. It does not relax it — a real bearing of -0.5 or
+ * -180 still has to match, and 0 still has to be 0.
+ */
+function withoutNegativeZero(values: readonly number[]): number[] {
+  return values.map((value) => (Object.is(value, -0) ? 0 : value));
+}
+
 async function applyCamera(page: Page, camera: Camera): Promise<void> {
   await page.evaluate(({ mapGlobal, value }) => {
     const globals = window as unknown as Record<string, unknown>;
@@ -248,7 +268,7 @@ async function applyCamera(page: Page, camera: Camera): Promise<void> {
     }
   });
 
-  await expect.poll(async () => page.evaluate((mapGlobal) => {
+  await expect.poll(async () => withoutNegativeZero(await page.evaluate((mapGlobal) => {
     const globals = window as unknown as Record<string, unknown>;
     const map = globals[mapGlobal] as {
       getZoom: () => number;
@@ -256,9 +276,9 @@ async function applyCamera(page: Page, camera: Camera): Promise<void> {
       getPitch: () => number;
     };
     return [map.getZoom(), map.getBearing(), map.getPitch()];
-  }, A11Y_CONFIG.map.global), {
+  }, A11Y_CONFIG.map.global)), {
     timeout: A11Y_CONFIG.mapIdleTimeoutMs
-  }).toEqual([camera.zoom, camera.bearing, camera.pitch]);
+  }).toEqual(withoutNegativeZero([camera.zoom, camera.bearing, camera.pitch]));
 
   await waitForMapReady(page);
 }
@@ -276,9 +296,26 @@ async function enterState(page: Page, state: A11yState): Promise<void> {
       break;
     case 'attribution-expanded': {
       await waitForMapReady(page);
-      await page.locator(A11Y_CONFIG.selectors.attributionToggle).first().click();
-      await expect(page.locator(A11Y_CONFIG.selectors.attributionPanel).first())
-        .toHaveClass(/maplibregl-compact-show/);
+      const attribution = page.locator(A11Y_CONFIG.selectors.attributionPanel).first();
+      // Assert the credit exists before trying to open it. MapLibre marks a control with
+      // no attribution `maplibregl-attrib-empty` and hides its button, so the previous
+      // version of this state waited 45 seconds to click a button that was display:none
+      // and never asked the question it was named after.
+      await expect(attribution).not.toHaveClass(/maplibregl-attrib-empty/);
+      // Reach the expanded state instead of toggling blindly. MapLibre renders the
+      // compact control ALREADY open (`maplibregl-compact-show`), so the previous
+      // unconditional click closed the credit and then asserted it was open. It also
+      // only folds the attribution behind a button when the map canvas is narrow
+      // (<=640px); on a wide viewport the credit is inline and there is nothing to
+      // expand. Asserting the credit is visible is the property this state is named for,
+      // and it holds in both layouts and across MapLibre's markup changes.
+      const credit = attribution.locator('.maplibregl-ctrl-attrib-inner').first();
+      const toggle = page.locator(A11Y_CONFIG.selectors.attributionToggle).first();
+      if (await toggle.isVisible() && !(await credit.isVisible())) {
+        await toggle.click();
+      }
+      await expect(credit).toBeVisible();
+      await expect(credit).toContainText(/OpenStreetMap/);
       break;
     }
     case 'chart-table-expanded':

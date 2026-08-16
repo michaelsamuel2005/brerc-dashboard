@@ -18,7 +18,16 @@ export const MAP_STYLE: StyleSpecification = A11Y_TEST_MODE
           attribution: "© OpenStreetMap contributors © CARTO",
         },
       },
-      layers: [{ id: "base", type: "background", paint: { "background-color": "#f2efe5" } }],
+      layers: [
+        { id: "base", type: "background", paint: { "background-color": "#f2efe5" } },
+        // MapLibre only publishes a source's attribution once a layer USES that source
+        // (AttributionControl skips unused source caches). Without this layer the credits
+        // source was ignored, the control rendered with class `maplibregl-attrib-empty`,
+        // and the accessibility suite was measuring an attribution control that had no
+        // attribution in it. The source holds an empty FeatureCollection, so this draws
+        // nothing; it exists to make the credit real.
+        { id: "credits", type: "circle", source: "credits" },
+      ],
     }
   : {
       version: 8,

@@ -281,11 +281,27 @@ describe('collectReflow — element filtering edge cases', () => {
 });
 
 describe('toggleDomTextSpacing — clipping detection axes', () => {
-  const stub = (el: Element, o: { cw?: number; sw?: number; ch?: number; sh?: number }): void => {
-    for (const [k, v] of Object.entries({
+  type Dims = { cw?: number; sw?: number; ch?: number; sh?: number };
+  /**
+   * jsdom has no layout, so BOTH sides of the measurement have to be modelled: the
+   * diagnostic asks whether the spacing override caused the clipping, which a single
+   * fixed number cannot express. The getters answer with `after` only while the
+   * diagnostic's own style element is in the document — exactly when a browser would
+   * report the spaced geometry. `before` defaults to comfortably unclipped.
+   */
+  const stub = (el: Element, after: Dims, before: Dims = {}): void => {
+    const resolve = (o: Dims) => ({
       clientWidth: o.cw ?? 100, scrollWidth: o.sw ?? 100,
       clientHeight: o.ch ?? 20, scrollHeight: o.sh ?? 20
-    })) Object.defineProperty(el, k, { value: v, configurable: true });
+    });
+    const spaced = resolve(after);
+    const plain = resolve(before);
+    for (const k of ['clientWidth', 'scrollWidth', 'clientHeight', 'scrollHeight'] as const) {
+      Object.defineProperty(el, k, {
+        configurable: true,
+        get: () => (document.getElementById('__wcag1412__') ? spaced[k] : plain[k])
+      });
+    }
   };
   it('detects vertical clipping alone', () => {
     document.body.innerHTML = `<div id="t" style="overflow-y:hidden">text</div>`;
@@ -324,11 +340,57 @@ describe('toggleDomTextSpacing — clipping detection axes', () => {
     expect(toggleDomTextSpacing().clippedCandidates).toHaveLength(0);
     toggleDomTextSpacing();
   });
+
+  // The regression this whole measurement exists to avoid. Screen-reader-only text uses a
+  // 1px box with overflow:hidden, so it is clipped with or without the spacing override.
+  // Reporting it made the gate impossible to pass on any page with an accessible hidden
+  // label — which was every page — while telling nobody anything about SC 1.4.12.
+  it('does not blame text spacing for a visually-hidden element, which is clipped by design', () => {
+    document.body.innerHTML =
+      // jsdom does not expand the `overflow` shorthand into the two axes, so both are
+      // written out; the real rule in tokens.css is the shorthand.
+      `<span id="t" class="visually-hidden" style="overflow-x:hidden;overflow-y:hidden">— highlight on the map</span>`;
+    const el = document.getElementById('t');
+    if (el) stub(el, { cw: 1, sw: 220, ch: 1, sh: 24 }, { cw: 1, sw: 180, ch: 1, sh: 20 });
+    const r = toggleDomTextSpacing();
+    expect(r.clippedCandidates).toHaveLength(0);
+    expect(r.clippedTotal).toBe(0);
+    expect(r.preexistingClips).toBeGreaterThan(0);
+    toggleDomTextSpacing();
+  });
+
+  it('still reports an element that only the spacing override pushes out of its box', () => {
+    document.body.innerHTML = `<div id="t" style="overflow-y:hidden">text</div>`;
+    const el = document.getElementById('t');
+    if (el) stub(el, { ch: 20, sh: 200 }, { ch: 20, sh: 20 });
+    const r = toggleDomTextSpacing();
+    expect(r.clippedTotal).toBe(1);
+    expect(r.preexistingClips).toBe(0);
+    toggleDomTextSpacing();
+  });
+
+  it('reports the true total even when the candidate list is capped', () => {
+    document.body.innerHTML = Array.from({ length: 30 },
+      (_unused, i) => `<div class="c${i}" style="overflow-y:hidden">text</div>`).join('');
+    for (const el of document.querySelectorAll('div')) stub(el, { ch: 20, sh: 200 });
+    const r = toggleDomTextSpacing();
+    expect(r.clippedCandidates).toHaveLength(25);
+    expect(r.clippedTotal).toBe(30);
+    toggleDomTextSpacing();
+  });
 });
 
 describe('toggleSvgTextSpacing — escape directions', () => {
-  const svgWith = (textRect: string, svgRect: string): void => {
-    document.body.innerHTML = `<svg data-rect="${svgRect}"><text data-rect="${textRect}">1994</text></svg>`;
+  /**
+   * `textRect` is the box AFTER the spacing override — the one each assertion is about.
+   * Unless a test says otherwise the label starts comfortably inside its SVG, so what is
+   * being detected is the spacing pushing it out, which is what SC 1.4.12 asks.
+   */
+  const svgWith = (textRect: string, svgRect: string, textRectBefore = '10,0,40,20'): void => {
+    document.body.innerHTML =
+      `<svg data-rect="${svgRect}">` +
+      `<text data-rect="${textRectBefore}" data-rect-spaced="${textRect}">1994</text>` +
+      `</svg>`;
   };
   it('detects a label escaping to the right only', () => {
     svgWith('0,0,300,20', '0,0,200,100');
@@ -345,6 +407,18 @@ describe('toggleSvgTextSpacing — escape directions', () => {
   it('does not flag a label inside its SVG', () => {
     svgWith('10,0,40,20', '0,0,200,100');
     expect(toggleSvgTextSpacing().escaping).toHaveLength(0);
+    toggleSvgTextSpacing();
+  });
+
+  // The counterpart of the visually-hidden case above. A chart axis whose last tick
+  // already sits outside the plot at a narrow width fails this check on every run
+  // whatever the spacing does, so reporting it says nothing about SC 1.4.12 — and it
+  // blocked the accessibility gate on all three narrow viewports.
+  it('does not blame text spacing for a label that was already outside its SVG', () => {
+    svgWith('0,0,300,20', '0,0,200,100', '0,0,300,20');
+    const r = toggleSvgTextSpacing();
+    expect(r.escaping).toHaveLength(0);
+    expect(r.preexistingEscapes).toBe(1);
     toggleSvgTextSpacing();
   });
 });
