@@ -17,6 +17,7 @@ import {
   SpeciesListPageSchema,
   SummarySchema,
 } from "./schemas";
+import type { SpeciesListPage } from "./schemas";
 import {
   cellsFixture,
   healthFixture,
@@ -169,6 +170,12 @@ describe("C2 contract gate", () => {
     if (unknownGroup.items[0]) unknownGroup.items[0].group = "not-in-facets";
     expect(() => SpeciesListPageSchema.parse(unknownGroup)).toThrow();
 
+    // An empty string is not "ungrouped" — it is a group with no name, which
+    // would render as a blank chip and a blank filter option.
+    const blankGroup = structuredClone(speciesListFixture);
+    if (blankGroup.items[0]) blankGroup.items[0].group = "   ";
+    expect(() => SpeciesListPageSchema.parse(blankGroup)).toThrow();
+
     const pageOverflow = structuredClone(speciesListFixture);
     pageOverflow.pageSize = 1;
     expect(() => SpeciesListPageSchema.parse(pageOverflow)).toThrow();
@@ -180,6 +187,24 @@ describe("C2 contract gate", () => {
     const recordsWithoutBothYears = structuredClone(speciesListFixture);
     if (recordsWithoutBothYears.items[0]) recordsWithoutBothYears.items[0].lastYear = null;
     expect(() => SpeciesListPageSchema.parse(recordsWithoutBothYears)).toThrow();
+  });
+
+  it("ACCEPTS an ungrouped species, with no facet to belong to", () => {
+    // The release publishes no taxonomic grouping until the source's taxon
+    // field is mapped to a reviewed vocabulary, and even then a value outside
+    // that vocabulary must stay visible rather than be hidden or relabelled.
+    // A null group therefore has to parse, and must not require a facet.
+    const ungrouped: SpeciesListPage = structuredClone(speciesListFixture);
+    ungrouped.facets.groups = [];
+    for (const species of ungrouped.items) species.group = null;
+    const parsed = SpeciesListPageSchema.parse(ungrouped);
+    expect(parsed.items.every((species) => species.group === null)).toBe(true);
+    expect(parsed.facets.groups).toEqual([]);
+
+    // Mixed is legitimate too: a grouped species still needs its facet.
+    const mixed: SpeciesListPage = structuredClone(speciesListFixture);
+    if (mixed.items[0]) mixed.items[0].group = null;
+    expect(() => SpeciesListPageSchema.parse(mixed)).not.toThrow();
   });
 
   it("REJECTS impossible species detail statistics", () => {

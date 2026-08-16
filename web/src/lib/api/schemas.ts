@@ -101,7 +101,15 @@ export const SpeciesListItemSchema = z
     slug: speciesSlug,
     scientificName: displayText,
     commonName: displayText.nullable(),
-    group: displayText,
+    /** Null when the release publishes no taxonomic grouping for this species.
+     *
+     *  Two cases produce it, and both must stay visible rather than be hidden
+     *  or relabelled: a release that publishes no grouping at all (the source's
+     *  taxon field is free text and is not published without a reviewed
+     *  vocabulary), and a species whose source value falls outside that
+     *  vocabulary once one exists. A placeholder string would be a taxonomic
+     *  claim the release does not support. */
+    group: displayText.nullable(),
     recordCount: z.number().int().nonnegative(),
     firstYear: z.number().int().nullable(),
     lastYear: z.number().int().nullable(),
@@ -147,7 +155,10 @@ export const SpeciesListPageSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["facets", "groups"], message: "group facets must be unique" });
     }
     for (const [index, species] of result.items.entries()) {
-      if (!facetValues.has(species.group)) {
+      // An ungrouped species is legitimate and has no facet to belong to. A
+      // group that IS published still must appear in the authoritative facet
+      // list, so the filter can never omit a value the results contain.
+      if (species.group !== null && !facetValues.has(species.group)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["items", index, "group"],
@@ -202,7 +213,8 @@ export const SpeciesDetailSchema = z
     slug: speciesSlug,
     scientificName: displayText,
     commonName: displayText.nullable(),
-    group: displayText,
+    /** Null when ungrouped — see SpeciesListItemSchema.group. */
+    group: displayText.nullable(),
     description: displayText.optional(),
     descriptionSource: DescriptionSourceSchema.optional(),
     imagePublication: z.enum(["fallback-only", "approved-assets"]),

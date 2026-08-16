@@ -22,7 +22,9 @@ export function SpeciesPanel({ speciesId }: { speciesId: string }) {
       <div className="panel-body">
         <div className="species-title-row">
           <h2 id="species-heading">{name}</h2>
-          <span className="chip">{s.group}</span>
+          {/* Omitted entirely when ungrouped: an empty chip reads as a missing
+              value rather than as "this release publishes no grouping". */}
+          {s.group === null ? null : <span className="chip">{s.group}</span>}
         </div>
         <p className="sci">{s.scientificName}</p>
         {s.description && s.descriptionSource ? (

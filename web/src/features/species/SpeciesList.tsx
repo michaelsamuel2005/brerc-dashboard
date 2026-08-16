@@ -89,21 +89,26 @@ export function SpeciesList() {
           </div>
         </div>
 
-        <div className="control-field">
-          <label htmlFor="species-group">Group</label>
-          <select
-            id="species-group"
-            value={group}
-            onChange={(event) => updateSearchParams({ group: event.target.value || undefined }, true)}
-          >
-            <option value="">All groups</option>
-            {groups.map((facet) => (
-              <option key={facet.value} value={facet.value}>
-                {facet.label} ({facet.speciesCount})
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Hidden when the release publishes no groups at all. A select whose
+            only option is "All groups" is a control that cannot change
+            anything, and offering it implies a filter the data cannot honour. */}
+        {groups.length === 0 ? null : (
+          <div className="control-field">
+            <label htmlFor="species-group">Group</label>
+            <select
+              id="species-group"
+              value={group}
+              onChange={(event) => updateSearchParams({ group: event.target.value || undefined }, true)}
+            >
+              <option value="">All groups</option>
+              {groups.map((facet) => (
+                <option key={facet.value} value={facet.value}>
+                  {facet.label} ({facet.speciesCount})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="control-field">
           <label htmlFor="species-sort">Sort</label>
@@ -159,11 +164,20 @@ export function SpeciesList() {
           <ul className="species-grid">
             {state.data.items.map((species) => {
               const name = species.commonName ?? species.scientificName;
-              const groupLabel = state.data.facets.groups.find((facet) => facet.value === species.group)?.label ?? species.group;
+              // Null group = this release publishes no grouping for the species.
+              // Render nothing rather than an empty element: a labelled span with
+              // no text is announced as an empty item by a screen reader.
+              const groupLabel =
+                species.group === null
+                  ? null
+                  : (state.data.facets.groups.find((facet) => facet.value === species.group)?.label ??
+                    species.group);
               return (
                 <li className="species-card" key={species.speciesId}>
                   <div>
-                    <span className="species-card__group">{groupLabel}</span>
+                    {groupLabel === null ? null : (
+                      <span className="species-card__group">{groupLabel}</span>
+                    )}
                     <h3>{name}</h3>
                     {species.commonName ? <p className="species-card__scientific">{species.scientificName}</p> : null}
                   </div>
