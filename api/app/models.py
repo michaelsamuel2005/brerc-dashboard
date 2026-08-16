@@ -146,3 +146,67 @@ class Summary(StrictModel):
     recordsByYear: list[YearCount]
     topGroups: list[TopGroup]
     coverageCaveat: str
+
+
+class SpeciesGroupFacet(StrictModel):
+    value: str
+    label: str
+    speciesCount: int
+
+
+class SpeciesListItem(StrictModel):
+    """One row of the species directory.
+
+    ``group`` is nullable because a release may publish no taxonomic grouping,
+    or may hold a source value outside the reviewed vocabulary.  Both cases must
+    render as ungrouped: hiding the species would lose data, and substituting a
+    placeholder would put an unapproved taxonomic claim on a public page.
+
+    ``firstYear``/``lastYear`` are null exactly when ``recordCount`` is zero.
+    """
+
+    speciesId: str
+    slug: str
+    scientificName: str
+    commonName: str | None
+    group: str | None
+    recordCount: int
+    firstYear: int | None
+    lastYear: int | None
+    hasImage: bool
+
+
+class SpeciesFacets(StrictModel):
+    groups: list[SpeciesGroupFacet]
+
+
+class SpeciesListPage(StrictModel):
+    items: list[SpeciesListItem]
+    page: int
+    pageSize: int
+    total: int
+    facets: SpeciesFacets
+
+
+class SpeciesStats(StrictModel):
+    """``yearRange`` is a two-element tuple here, unlike the summary's object.
+
+    ``verifiedCount`` is null exactly when verification is unavailable, which
+    the contract checks both ways — a zero would assert "none verified" where
+    the truth is "not published".
+    """
+
+    recordCount: int
+    yearRange: tuple[int, int] | None
+    verificationAvailable: bool
+    verifiedCount: int | None
+
+
+class SpeciesDetail(StrictModel):
+    speciesId: str
+    slug: str
+    scientificName: str
+    commonName: str | None
+    group: str | None
+    imagePublication: str
+    stats: SpeciesStats

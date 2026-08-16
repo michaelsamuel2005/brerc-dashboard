@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import ALLOWED_ORIGINS, IS_PROD
-from app.routers import distribution, health, provenance, records, summary
+from app.routers import distribution, health, provenance, records, species, summary
 
 app = FastAPI(
     title="BRERC Public Dashboard API",
@@ -37,3 +37,4 @@ app.include_router(provenance.router)
 app.include_router(records.router)
 app.include_router(distribution.router)
 app.include_router(summary.router)
+app.include_router(species.router)

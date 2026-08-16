@@ -44,6 +44,28 @@ RECORD_REQUIRED_KEYS = {
 RECORD_OPTIONAL_KEYS = {"abundance", "recordType", "verified"}
 CELL_DISTRIBUTION_KEYS = {"verificationAvailable", "cells"}
 CELL_REQUIRED_KEYS = {"cellId", "precisionMetres", "recordCount"}
+SPECIES_PAGE_KEYS = {"items", "page", "pageSize", "total", "facets"}
+SPECIES_ITEM_KEYS = {
+    "speciesId",
+    "slug",
+    "scientificName",
+    "commonName",
+    "group",
+    "recordCount",
+    "firstYear",
+    "lastYear",
+    "hasImage",
+}
+SPECIES_DETAIL_KEYS = {
+    "speciesId",
+    "slug",
+    "scientificName",
+    "commonName",
+    "group",
+    "imagePublication",
+    "stats",
+}
+SPECIES_STATS_KEYS = {"recordCount", "yearRange", "verificationAvailable", "verifiedCount"}
 SUMMARY_KEYS = {
     "totalRecords",
     "totalSpecies",
@@ -327,6 +349,109 @@ class TestPublicApiContract(unittest.TestCase):
                 "SELECT count(*) AS n FROM serve.public_species WHERE taxon_group IS NOT NULL"
             )
             self.assertEqual(cursor.fetchone()["n"], 0)
+
+    def test_species_page_matches_the_contract_and_its_invariants(self) -> None:
+        from app.slugs import SLUG_PATTERN
+
+        response = self.client.get("/api/species")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), SPECIES_PAGE_KEYS)
+        self.assertEqual(set(body["facets"]), {"groups"})
+
+        facet_values = set()
+        for facet in body["facets"]["groups"]:
+            self.assertEqual(set(facet), {"value", "label", "speciesCount"})
+            facet_values.add(facet["value"])
+        self.assertEqual(len(facet_values), len(body["facets"]["groups"]), "facets must be unique")
+
+        self.assertLessEqual(len(body["items"]), body["pageSize"])
+        self.assertLessEqual(len(body["items"]), body["total"])
+
+        for item in body["items"]:
+            self.assertEqual(set(item), SPECIES_ITEM_KEYS)
+            self.assertRegex(item["slug"], SLUG_PATTERN)
+            # A species with no records must carry no year range, and one with
+            # records must carry both years — the schema checks both directions.
+            has_years = item["firstYear"] is not None and item["lastYear"] is not None
+            self.assertEqual(item["recordCount"] == 0, not has_years)
+            if has_years:
+                self.assertLessEqual(item["firstYear"], item["lastYear"])
+            # A published group must appear in the authoritative facet list.
+            if item["group"] is not None:
+                self.assertIn(item["group"], facet_values)
+
+        self.assertEqual(
+            len({i["speciesId"] for i in body["items"]}), len(body["items"]), "ids must be unique"
+        )
+        self.assertEqual(
+            len({i["slug"] for i in body["items"]}), len(body["items"]), "slugs must be unique"
+        )
+
+    def test_species_group_is_null_rather_than_invented(self) -> None:
+        """The release publishes no grouping, and says so.
+
+        taxa_nb is unbounded free text and public_species.taxon_group is
+        CHECK-constrained to NULL until it is mapped and approval-bound.  Null
+        is the honest report; a placeholder would be an unapproved taxonomic
+        claim, and hiding ungrouped species would silently lose data.
+        """
+        items = self.client.get("/api/species").json()["items"]
+        self.assertTrue(items, "the fixture must publish at least one species")
+        for item in items:
+            self.assertIsNone(item["group"])
+
+    def test_species_detail_matches_the_contract(self) -> None:
+        listing = self.client.get("/api/species").json()["items"]
+        species_id = listing[0]["speciesId"]
+        body = self.client.get(f"/api/species/{species_id}").json()
+        self.assertEqual(set(body), SPECIES_DETAIL_KEYS)
+        self.assertEqual(body["speciesId"], species_id)
+        self.assertEqual(body["slug"], listing[0]["slug"], "slugs must agree across endpoints")
+
+        # fallback-only forbids an image; approved-assets would require one.
+        self.assertEqual(body["imagePublication"], "fallback-only")
+        self.assertNotIn("image", body)
+
+        stats = body["stats"]
+        self.assertEqual(set(stats), SPECIES_STATS_KEYS)
+        # Null exactly when verification is unavailable: a zero would assert
+        # "none verified" where the truth is "not published".
+        self.assertEqual(stats["verificationAvailable"], stats["verifiedCount"] is not None)
+        if stats["verifiedCount"] is not None:
+            self.assertLessEqual(stats["verifiedCount"], stats["recordCount"])
+        self.assertEqual(stats["recordCount"] == 0, stats["yearRange"] is None)
+        if stats["yearRange"] is not None:
+            self.assertEqual(len(stats["yearRange"]), 2)
+            self.assertLessEqual(stats["yearRange"][0], stats["yearRange"][1])
+
+    def test_a_missing_species_is_404_not_an_empty_body(self) -> None:
+        self.assertEqual(self.client.get("/api/species/NO-SUCH-SPECIES").status_code, 404)
+
+    def test_search_wildcards_are_escaped_rather_than_executed(self) -> None:
+        """A search box must not become a pattern the caller controls."""
+        everything = self.client.get("/api/species").json()["total"]
+        self.assertGreater(everything, 0)
+        for pattern in ("%", "_", "%%", "\\"):
+            with self.subTest(pattern=pattern):
+                matched = self.client.get("/api/species", params={"search": pattern}).json()[
+                    "total"
+                ]
+                self.assertEqual(matched, 0, f"{pattern!r} was treated as a wildcard")
+
+    def test_only_reviewed_sort_orders_are_accepted(self) -> None:
+        for sort in ("name-asc", "scientific-name-asc", "records-desc", "latest-record-desc"):
+            with self.subTest(sort=sort):
+                self.assertEqual(
+                    self.client.get("/api/species", params={"sort": sort}).status_code, 200
+                )
+        # An unknown value selects no clause at all rather than being interpolated.
+        self.assertEqual(
+            self.client.get(
+                "/api/species", params={"sort": "total_records; DROP TABLE"}
+            ).status_code,
+            422,
+        )
 
     def test_base_tables_are_not_reachable_through_the_query_guard(self) -> None:
         from app.db import ServingRelationError, assert_serving_relation
