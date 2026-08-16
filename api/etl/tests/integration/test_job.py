@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from etl.job import (
+    describe_failure,
     load_source_data,
     load_species_dictionary,
     get_current_ui_map,
@@ -175,6 +176,8 @@ def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
 
 # --- nightly_job tests ---
 
+@patch("etl.job.mark_run_successful")
+@patch("etl.job.start_run", return_value=1)
 @patch("etl.job.check_table_exists", return_value=True)
 @patch("etl.job.check_table_has_rows", return_value=True)
 @patch("etl.job.should_run_initial_load", return_value=False)
@@ -194,6 +197,8 @@ def test_nightly_job_incremental_flow(
     mock_initial_check,
     mock_has_rows,
     mock_exists,
+    mock_start_run,
+    mock_mark_successful,
 ):
     # Confirms nightly_job orchestrates an incremental run when the
     # destination table exists and already contains rows.
@@ -221,3 +226,127 @@ def test_nightly_job_incremental_flow(
     args = mock_run_pipeline.call_args[0]
 
     assert args[4] == "incremental"
+
+    # Confirms the run history row is opened as "running" (job_type =
+    # the resolved load_mode) before the pipeline runs, and updated in
+    # place to "successful" once it completes.
+    mock_start_run.assert_called_once_with(job_type="incremental")
+    mock_mark_successful.assert_called_once()
+    assert mock_mark_successful.call_args[0][0] == 1
+
+    # run_pipeline's mocked "reconciliation" summary has no real inserts/
+    # updates/deletes lists, so the counts recorded alongside the run are 0.
+    assert mock_mark_successful.call_args.kwargs["inserts"] == 0
+    assert mock_mark_successful.call_args.kwargs["updates"] == 0
+    assert mock_mark_successful.call_args.kwargs["deletes"] == 0
+
+
+@patch("etl.job.mark_run_failed")
+@patch("etl.job.start_run", return_value=7)
+@patch("etl.job.check_table_exists", return_value=True)
+@patch("etl.job.check_table_has_rows", return_value=True)
+@patch("etl.job.should_run_initial_load", return_value=False)
+@patch("etl.job.get_last_load_date", return_value="2026-01-01")
+@patch("etl.job.load_source_data", return_value=pd.DataFrame())
+@patch("etl.job.load_species_dictionary", return_value=pd.DataFrame())
+@patch("etl.job.get_current_ui_map", return_value={})
+@patch("etl.job.run_pipeline", side_effect=RuntimeError("boom"))
+@patch("etl.job.get_destination_connection")
+def test_nightly_job_marks_run_failed_on_exception(
+    mock_get_conn,
+    mock_run_pipeline,
+    mock_ui_map,
+    mock_dict,
+    mock_source,
+    mock_last_date,
+    mock_initial_check,
+    mock_has_rows,
+    mock_exists,
+    mock_start_run,
+    mock_mark_failed,
+):
+    # Confirms that when the pipeline raises, the run history row started
+    # for this run is updated in place to "failed" and the exception still
+    # propagates to the caller.
+    mock_conn_ctx = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn_ctx
+
+    with patch(
+        "etl.job.get_config",
+        return_value={
+            "source": {
+                "mode": "csv",
+            },
+            "destination": {
+                "table": "occurrence_public",
+            },
+            "load": {
+                "incremental_check": True,
+            },
+        },
+    ):
+        with pytest.raises(RuntimeError):
+            nightly_job()
+
+    mock_mark_failed.assert_called_once_with(
+        7,
+        error_message="RuntimeError",
+        error_summary="An unexpected error occurred during the update.",
+    )
+
+
+# --- describe_failure tests ---
+# describe_failure() turns a raised exception into the plain-English summary
+# shown to BRERC staff on the run-history dashboard. Only the exception's
+# type name is stored alongside it (as error_message) — never its message,
+# which can carry fragments of source data. The full error and traceback go
+# to the server logs via logger.exception() instead.
+
+def test_describe_failure_database_mismatch():
+    from etl.load.reload import DatabaseMismatchError
+
+    assert describe_failure(DatabaseMismatchError("targets differ")) == (
+        "A safety check blocked a full database reset because the settings "
+        "pointed at two different databases. No data was changed — check the "
+        "database configuration."
+    )
+
+
+def test_describe_failure_missing_file():
+    assert describe_failure(FileNotFoundError("no such file")) == (
+        "A required data file could not be found."
+    )
+
+
+def test_describe_failure_connection_problem():
+    # FileNotFoundError is itself an OSError, so this also confirms the more
+    # specific case above is checked first.
+    assert describe_failure(ConnectionRefusedError("connection refused")) == (
+        "Couldn't connect to the database — it may be down or unreachable."
+    )
+
+
+def test_describe_failure_bad_source_data():
+    assert describe_failure(ValueError("unknown species code 'XYZ'")) == (
+        "A problem was found in the source data (e.g. an unrecognised species code)."
+    )
+
+
+def test_describe_failure_missing_column():
+    assert describe_failure(KeyError("species_no")) == (
+        "The source data was missing an expected column."
+    )
+
+
+def test_describe_failure_database_error():
+    import psycopg
+
+    assert describe_failure(psycopg.OperationalError("connection lost")) == (
+        "A database error occurred while saving records."
+    )
+
+
+def test_describe_failure_unrecognised_exception_falls_back_to_generic_message():
+    assert describe_failure(RuntimeError("boom")) == (
+        "An unexpected error occurred during the update."
+    )

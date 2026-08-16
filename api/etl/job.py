@@ -19,9 +19,10 @@ from etl.db import (
 from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
 from etl.load.mode import should_run_initial_load
-from etl.load.reload import force_full_reload
+from etl.load.reload import DatabaseMismatchError, force_full_reload
 from etl.pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
+from etl.run_history import mark_run_failed, mark_run_successful, start_run
 
 import pandas as pd
 
@@ -125,9 +126,43 @@ def get_current_ui_map(connection):
     return get_ui_map(connection)
 
 
+# Ordered most-specific-first: FileNotFoundError is itself an OSError, so it
+# must be checked before the general connection-failure case below it.
+def describe_failure(error: Exception) -> str:
+    """
+    Translates a raised exception into a short, plain-English reason for the
+    run-history dashboard, which BRERC staff (not just engineers) read. The
+    full technical error (message, traceback) is logged server-side via
+    logger.exception() below — only the exception's type name is stored
+    alongside this summary, since exception messages can otherwise carry
+    fragments of source data (a bad species code, a file path, a DB error
+    detail) onto a browser-accessible page.
+    """
+    if isinstance(error, DatabaseMismatchError):
+        return (
+            "A safety check blocked a full database reset because the settings "
+            "pointed at two different databases. No data was changed — check the "
+            "database configuration."
+        )
+    if isinstance(error, FileNotFoundError):
+        return "A required data file could not be found."
+    if isinstance(error, OSError):
+        return "Couldn't connect to the database — it may be down or unreachable."
+    if isinstance(error, ValueError):
+        return "A problem was found in the source data (e.g. an unrecognised species code)."
+    if isinstance(error, KeyError):
+        return "The source data was missing an expected column."
+    if type(error).__module__.startswith("psycopg"):
+        return "A database error occurred while saving records."
+
+    return "An unexpected error occurred during the update."
+
+
 def nightly_job():
     """Orchestrates the nightly ETL pipeline run."""
     logger.info("Starting nightly ETL job pipeline.")
+
+    run_number = None
 
     try:
         config = get_config()
@@ -160,6 +195,8 @@ def nightly_job():
             elif load_mode == "incremental" and mode == "database":
                 load_mode = "initial"
 
+            run_number = start_run(job_type=load_mode)
+
             if load_mode == "initial":
                 connection.commit()
                 logger.warning("Forcing full reload of table: %s", table_name)
@@ -190,19 +227,46 @@ def nightly_job():
                 load_mode,
             )
 
+            # Read back the Load_date that upsert_provenance() just committed,
+            # so the run history reflects what's actually in the database
+            # rather than a separately-timed value from this process's clock.
+            with connection.cursor() as cur:
+                cur.execute('SELECT "Load_date" FROM provenance WHERE id = 1')
+                provenance_row = cur.fetchone()
+                db_load_date = provenance_row["Load_date"] if provenance_row else None
+
         reconciliation_summary = result.get("reconciliation", {})
+        insert_count = len(reconciliation_summary.get("inserts", []))
+        update_count = len(reconciliation_summary.get("updates", []))
+        delete_count = len(reconciliation_summary.get("deletes", []))
 
         logger.info(
             "Nightly ETL completed successfully. Summary -> "
             "Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
-            len(reconciliation_summary.get("inserts", [])),
-            len(reconciliation_summary.get("updates", [])),
-            len(reconciliation_summary.get("deletes", [])),
+            insert_count,
+            update_count,
+            delete_count,
             len(reconciliation_summary.get("unchanged", [])),
+        )
+
+        mark_run_successful(
+            run_number,
+            load_no=db_load_date.isoformat() if db_load_date else None,
+            inserts=insert_count,
+            updates=update_count,
+            deletes=delete_count,
         )
 
         return result
 
     except Exception as error:
         logger.exception("Nightly ETL failed: %s", error)
+
+        if run_number is not None:
+            mark_run_failed(
+                run_number,
+                error_message=type(error).__name__,
+                error_summary=describe_failure(error),
+            )
+
         raise

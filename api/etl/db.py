@@ -77,10 +77,17 @@ def get_source_connection() -> psycopg.Connection:
 
 def _build_destination_database_url() -> str:
     """
-    Assemble the UI database connection string, checking environment variables 
-    (DESTINATION_DATABASE_URL or generic DATABASE_URL) before falling back to safety.yaml.
+    Assemble the UI database connection string from the DESTINATION_DATABASE_URL
+    environment variable, falling back to safety.yaml if it isn't set.
+
+    Deliberately does NOT fall back to the generic DATABASE_URL — that variable
+    is what app/db.py uses for the public API's read-only connection. If the
+    ETL silently reused it, either the ETL's writes would fail against a
+    read-only role, or someone "fixing" that by widening DATABASE_URL's
+    permissions would unknowingly give the public API write access too.
+    Keeping the names distinct means that mistake can't happen by accident.
     """
-    explicit_url = os.getenv("DESTINATION_DATABASE_URL") or os.getenv("DATABASE_URL")
+    explicit_url = os.getenv("DESTINATION_DATABASE_URL")
 
     if explicit_url:
         return explicit_url

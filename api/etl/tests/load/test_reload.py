@@ -4,6 +4,8 @@ import pytest
 from unittest.mock import MagicMock, mock_open, patch
 
 from etl.load.reload import (
+    DatabaseMismatchError,
+    _assert_admin_matches_destination,
     _build_admin_database_url,
     get_admin_connection,
     force_full_reload,
@@ -47,11 +49,44 @@ def test_build_admin_database_url_uses_fallback_config():
     assert result == "postgresql://test_user:test_password@test_host:5432/test_db"
 
 
+# --- _assert_admin_matches_destination tests ---
+
+
+def test_assert_admin_matches_destination_allows_matching_target():
+    # host/port/dbname agree, so no exception should be raised even though
+    # the credentials (user/password) differ — that's expected, not a mismatch.
+    with patch(
+        "etl.db.DESTINATION_DATABASE_URL",
+        "postgresql://api_user:secret@db.example.com:5432/brerc_ui",
+    ):
+        _assert_admin_matches_destination(
+            "postgresql://admin_user:other_secret@db.example.com:5432/brerc_ui"
+        )
+
+
+@pytest.mark.parametrize(
+    "admin_url",
+    [
+        "postgresql://admin:pw@different-host:5432/brerc_ui",  # different host
+        "postgresql://admin:pw@db.example.com:5433/brerc_ui",  # different port
+        "postgresql://admin:pw@db.example.com:5432/some_other_db",  # different dbname
+    ],
+)
+def test_assert_admin_matches_destination_rejects_mismatched_target(admin_url):
+    with patch(
+        "etl.db.DESTINATION_DATABASE_URL",
+        "postgresql://api_user:secret@db.example.com:5432/brerc_ui",
+    ):
+        with pytest.raises(DatabaseMismatchError):
+            _assert_admin_matches_destination(admin_url)
+
+
 # --- get_admin_connection tests ---
 
 
 def test_get_admin_connection_opens_valid_connection():
-    # Confirms the function opens a psycopg connection using the correct DDL-capable URL.
+    # Confirms the function opens a psycopg connection using the correct DDL-capable URL,
+    # once the admin/destination match check has passed.
     # Expects psycopg.connect to be called exactly once with the built admin URL, else fails.
     with (
         patch("etl.load.reload.psycopg.connect") as mock_connect,
@@ -59,10 +94,31 @@ def test_get_admin_connection_opens_valid_connection():
             "etl.load.reload._build_admin_database_url",
             return_value="postgresql://mock_url",
         ),
+        patch("etl.load.reload._assert_admin_matches_destination"),
     ):
         get_admin_connection()
 
         mock_connect.assert_called_once_with("postgresql://mock_url")
+
+
+def test_get_admin_connection_refuses_mismatched_target():
+    # Confirms get_admin_connection never opens a connection at all if the
+    # admin URL doesn't match the destination database.
+    with (
+        patch("etl.load.reload.psycopg.connect") as mock_connect,
+        patch(
+            "etl.load.reload._build_admin_database_url",
+            return_value="postgresql://admin:pw@wrong-host:5432/brerc_ui",
+        ),
+        patch(
+            "etl.db.DESTINATION_DATABASE_URL",
+            "postgresql://api:pw@right-host:5432/brerc_ui",
+        ),
+    ):
+        with pytest.raises(DatabaseMismatchError):
+            get_admin_connection()
+
+        mock_connect.assert_not_called()
 
 
 # --- force_full_reload tests ---

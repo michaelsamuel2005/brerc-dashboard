@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BRERC ETL Run History</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --border: #e1e4e8;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --running: #b45309;
+    --running-bg: #fef3c7;
+    --successful: #15803d;
+    --successful-bg: #dcfce7;
+    --failed: #b91c1c;
+    --failed-bg: #fee2e2;
+    --mono-bg: #f0f1f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --panel: #161a20;
+      --border: #2a2f38;
+      --text: #e6e8eb;
+      --muted: #9aa2ad;
+      --running-bg: #3a2c0d;
+      --successful-bg: #0f2e1c;
+      --failed-bg: #3a1414;
+      --mono-bg: #1d222a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+  }
+  h1 {
+    font-size: 1.375rem;
+    margin: 0 0 0.25rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin: 0 0 1.5rem;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  th, td {
+    text-align: left;
+    vertical-align: middle;
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+  .badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .badge.running { color: var(--running); background: var(--running-bg); }
+  .badge.successful { color: var(--successful); background: var(--successful-bg); }
+  .badge.failed { color: var(--failed); background: var(--failed-bg); }
+  .reason {
+    max-width: 480px;
+    white-space: normal;
+    color: var(--failed);
+  }
+  .reason details {
+    margin-top: 0.35rem;
+  }
+  .reason summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .reason summary:hover { color: var(--text); }
+  .reason code {
+    display: block;
+    margin-top: 0.35rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 6px;
+    background: var(--mono-bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  tr.expandable { cursor: pointer; }
+  tr.expandable:hover td { background: rgba(127, 127, 127, 0.06); }
+  .hover-hint {
+    display: none;
+    color: var(--muted);
+    font-style: italic;
+  }
+  tr.expandable:hover .dash { display: none; }
+  tr.expandable:hover .hover-hint { display: inline; }
+  tr.detail-row td {
+    background: var(--bg);
+    padding: 0.5rem 1rem 0.85rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  tr.detail-row.hidden { display: none; }
+  .counts {
+    display: flex;
+    gap: 1.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .counts strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .empty {
+    padding: 2.5rem 1rem;
+    text-align: center;
+    color: var(--muted);
+  }
+  .meta {
+    margin-top: 0.75rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .logout {
+    color: var(--muted);
+    font-size: 0.8125rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .logout:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>BRERC ETL Run History</h1>
+      <p class="subtitle">Live status of every "UI ETL RUN" pipeline run. Refreshes automatically.</p>
+    </div>
+    <a class="logout" href="/logout">Log out</a>
+  </header>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Run #</th>
+          <th>Job name</th>
+          <th>Job type</th>
+          <th>Date</th>
+          <th>Load no</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="runs-body"></tbody>
+    </table>
+    <div id="empty-state" class="empty" hidden>No runs recorded yet.</div>
+  </div>
+  <p class="meta" id="last-updated"></p>
+</main>
+
+<script>
+  const REFRESH_MS = 5000;
+  const tbody = document.getElementById("runs-body");
+  const emptyState = document.getElementById("empty-state");
+  const lastUpdated = document.getElementById("last-updated");
+
+  function formatDuration(seconds) {
+    if (seconds === null || seconds === undefined) return "—";
+    if (seconds < 60) return `${seconds.toFixed(2)}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.round(seconds % 60).toString().padStart(2, "0");
+    return `${minutes}m ${remainder}s`;
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement("div");
+    div.textContent = value ?? "";
+    return div.innerHTML;
+  }
+
+  function renderReason(run, expandable) {
+    // error_summary is the plain-English version for non-technical staff;
+    // error_message is just the exception's type name (e.g. "ValueError"),
+    // tucked behind a toggle — deliberately not the full exception message,
+    // since that can carry fragments of source data. The full error and
+    // traceback are in the server logs for anyone who needs to dig further.
+    const summary = run.error_summary || run.error_message;
+    if (!summary) {
+      // Expandable rows (successful runs) never have a reason, so this
+      // otherwise-empty cell doubles as a hover hint that the row expands.
+      if (expandable) {
+        return '<span class="dash">—</span><span class="hover-hint">Click for details</span>';
+      }
+      return "—";
+    }
+
+    let html = escapeHtml(summary);
+    if (run.error_message && run.error_message !== summary) {
+      html += `<details><summary>Error type</summary><code>${escapeHtml(run.error_message)}</code></details>`;
+    }
+    return html;
+  }
+
+  // Which runs the user has expanded to see their insert/update/delete
+  // counts, kept across the 5s auto-refresh so the table doesn't collapse
+  // under someone mid-read.
+  const expandedRuns = new Set();
+
+  function hasCounts(run) {
+    return run.inserts !== null || run.updates !== null || run.deletes !== null;
+  }
+
+  function renderCounts(run) {
+    const count = (value) => (value === null || value === undefined ? 0 : value);
+    return `
+      <div class="counts">
+        <span>Inserted <strong>${count(run.inserts)}</strong></span>
+        <span>Updated <strong>${count(run.updates)}</strong></span>
+        <span>Deleted <strong>${count(run.deletes)}</strong></span>
+      </div>
+    `;
+  }
+
+  function renderRow(run) {
+    const tr = document.createElement("tr");
+    const status = (run.status || "").toLowerCase();
+    const expandable = hasCounts(run);
+    const isExpanded = expandable && expandedRuns.has(run.run_number);
+
+    if (expandable) {
+      tr.classList.add("expandable");
+      if (isExpanded) tr.classList.add("expanded");
+    }
+
+    tr.innerHTML = `
+      <td>${run.run_number}</td>
+      <td>${escapeHtml(run.job_name)}</td>
+      <td>${escapeHtml(run.job_type)}</td>
+      <td>${escapeHtml(run.date)}</td>
+      <td>${escapeHtml(run.load_no) || "—"}</td>
+      <td>${formatDuration(run.duration_seconds)}</td>
+      <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
+      <td class="reason">${renderReason(run, expandable)}</td>
+    `;
+
+    if (!expandable) return [tr];
+
+    const detailRow = document.createElement("tr");
+    detailRow.className = `detail-row${isExpanded ? "" : " hidden"}`;
+    detailRow.innerHTML = `<td colspan="8">${renderCounts(run)}</td>`;
+
+    tr.addEventListener("click", (event) => {
+      // Don't hijack clicks on the Reason column's own "Technical details"
+      // toggle — only the rest of the row expands/collapses the counts.
+      if (event.target.closest(".reason")) return;
+
+      const nowExpanded = detailRow.classList.toggle("hidden") === false;
+      tr.classList.toggle("expanded", nowExpanded);
+      if (nowExpanded) {
+        expandedRuns.add(run.run_number);
+      } else {
+        expandedRuns.delete(run.run_number);
+      }
+    });
+
+    return [tr, detailRow];
+  }
+
+  async function loadRuns() {
+    try {
+      const response = await fetch("/api/runs");
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const runs = await response.json();
+
+      tbody.innerHTML = "";
+      emptyState.hidden = runs.length > 0;
+      runs.forEach((run) => renderRow(run).forEach((row) => tbody.appendChild(row)));
+
+      lastUpdated.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
+    } catch (error) {
+      lastUpdated.textContent = "Failed to load run history — is the server running?";
+    }
+  }
+
+  loadRuns();
+  setInterval(loadRuns, REFRESH_MS);
+</script>
+</body>
+</html>
