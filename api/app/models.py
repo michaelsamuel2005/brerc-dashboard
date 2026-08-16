@@ -100,3 +100,49 @@ class Provenance(StrictModel):
     coverageCaveats: list[str]
     sensitivityPolicy: SensitivityPolicy
     attributions: list[Attribution]
+
+
+class GridCell(StrictModel):
+    """One map square.
+
+    Deliberately carries no geometry.  The client derives the polygon from the
+    validated ``cellId``, so the shape drawn always matches the identifier it
+    was drawn for — a precise polygon cannot be mislabelled as a coarse cell,
+    which is the failure that would undo generalisation at the last step.
+
+    ``verifiedCount`` is present exactly when the release publishes verification.
+    """
+
+    cellId: str
+    precisionMetres: int
+    recordCount: int
+    verifiedCount: int | None = None
+
+
+class CellDistribution(StrictModel):
+    verificationAvailable: bool
+    cells: list[GridCell]
+
+
+class YearCount(StrictModel):
+    year: int
+    count: int
+
+
+class TopGroup(StrictModel):
+    group: str
+    count: int
+
+
+class YearRange(StrictModel):
+    min: int
+    max: int
+
+
+class Summary(StrictModel):
+    totalRecords: int
+    totalSpecies: int
+    yearRange: YearRange | None
+    recordsByYear: list[YearCount]
+    topGroups: list[TopGroup]
+    coverageCaveat: str

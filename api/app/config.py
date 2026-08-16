@@ -29,6 +29,11 @@ ALLOWED_ORIGINS: list[str] = (
 #: Caps applied in SQL, on the server.  A caller may ask for less, never more.
 #: These bound one request; they are not a substitute for the publication policy.
 MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "100"))
+#: Map squares returned in one distribution response.  Higher than a page size
+#: because a map legitimately draws many squares at once.
+MAX_CELLS = int(os.getenv("MAX_CELLS", "5000"))
+#: Year buckets in the summary.  Bristol's records span roughly a century.
+MAX_YEAR_BUCKETS = int(os.getenv("MAX_YEAR_BUCKETS", "300"))
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 
 #: Published alongside the data so a reader can see what generalisation means.

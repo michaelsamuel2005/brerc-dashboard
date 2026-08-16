@@ -42,6 +42,30 @@ RECORD_REQUIRED_KEYS = {
     "source",
 }
 RECORD_OPTIONAL_KEYS = {"abundance", "recordType", "verified"}
+CELL_DISTRIBUTION_KEYS = {"verificationAvailable", "cells"}
+CELL_REQUIRED_KEYS = {"cellId", "precisionMetres", "recordCount"}
+SUMMARY_KEYS = {
+    "totalRecords",
+    "totalSpecies",
+    "yearRange",
+    "recordsByYear",
+    "topGroups",
+    "coverageCaveat",
+}
+
+#: Mirrors gridRefPrecisionMetres in schemas.ts: two letters then 2, 4 or 6
+#: digits, resolving to 10 km, 1 km or 100 m.  Duplicated here on purpose — if
+#: the two ever disagree, that is exactly the bug worth catching.
+_PRECISION_BY_DIGITS = {2: 10_000, 4: 1_000, 6: 100}
+
+
+def grid_ref_precision_metres(cell_id: str) -> int | None:
+    if len(cell_id) < 3 or not cell_id[:2].isalpha():
+        return None
+    digits = cell_id[2:]
+    if not digits.isdigit():
+        return None
+    return _PRECISION_BY_DIGITS.get(len(digits))
 
 
 @unittest.skipUnless(ENABLED, "requires a publication database and the read-only API role")
@@ -209,6 +233,100 @@ class TestPublicApiContract(unittest.TestCase):
             self.assertRaises(psycopg.errors.ReadOnlySqlTransaction),
         ):
             cursor.execute("CREATE TEMP TABLE api_should_not_write (id int)")
+
+    def test_distribution_matches_the_contract_and_sends_no_geometry(self) -> None:
+        """Geometry must not cross this boundary.
+
+        The client derives each polygon from the cell id it validated, so the
+        shape drawn always matches the identifier.  If the server also sent a
+        polygon, a precise one could be labelled with a coarse cell id and the
+        map would draw the true location of a generalised record.
+        """
+        response = self.client.get("/api/distribution/cells")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), CELL_DISTRIBUTION_KEYS)
+        self.assertIsInstance(body["verificationAvailable"], bool)
+
+        forbidden = {
+            "geom",
+            "geometry",
+            "coordinates",
+            "polygon",
+            "lat",
+            "lon",
+            "latitude",
+            "longitude",
+            "easting",
+            "northing",
+        }
+        for cell in body["cells"]:
+            keys = set(cell)
+            self.assertEqual(keys - {"verifiedCount"}, CELL_REQUIRED_KEYS)
+            self.assertEqual(keys & forbidden, set(), "geometry must not be published")
+
+            # The identifier and the stated precision must agree, or the client
+            # would draw a square of the wrong size for the id it was given.
+            derived = grid_ref_precision_metres(cell["cellId"])
+            self.assertIsNotNone(derived, f"unparseable cell id {cell['cellId']!r}")
+            self.assertEqual(derived, cell["precisionMetres"])
+            self.assertGreaterEqual(cell["precisionMetres"], 100)
+
+            if body["verificationAvailable"]:
+                self.assertIn("verifiedCount", cell)
+                self.assertLessEqual(cell["verifiedCount"], cell["recordCount"])
+            else:
+                self.assertNotIn("verifiedCount", cell)
+
+    def test_summary_matches_the_contract_and_its_invariants(self) -> None:
+        response = self.client.get("/api/summary")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), SUMMARY_KEYS)
+        self.assertTrue(body["coverageCaveat"].strip())
+
+        buckets = body["recordsByYear"]
+        for bucket in buckets:
+            self.assertEqual(set(bucket), {"year", "count"})
+            # A zero bucket is refused by the schema; omit the year instead.
+            self.assertGreater(bucket["count"], 0)
+        self.assertEqual([b["year"] for b in buckets], sorted(b["year"] for b in buckets))
+
+        year_range = body["yearRange"]
+        # Null exactly when there are no records — the schema checks both ways.
+        self.assertEqual(body["totalRecords"] == 0, year_range is None)
+        if year_range is not None:
+            self.assertEqual(set(year_range), {"min", "max"})
+            self.assertLessEqual(year_range["min"], year_range["max"])
+            # The range must be the years that actually carry records.
+            self.assertEqual(year_range["min"], buckets[0]["year"])
+            self.assertEqual(year_range["max"], buckets[-1]["year"])
+
+        for group in body["topGroups"]:
+            self.assertEqual(set(group), {"group", "count"})
+            self.assertTrue(group["group"].strip())
+
+    def test_summary_year_buckets_reconcile_with_the_record_total(self) -> None:
+        """The chart and the headline number must describe the same data."""
+        body = self.client.get("/api/summary").json()
+        self.assertEqual(sum(b["count"] for b in body["recordsByYear"]), body["totalRecords"])
+
+    def test_taxon_group_is_absent_rather_than_invented(self) -> None:
+        """publication.public_species.taxon_group is CHECK-constrained to NULL.
+
+        Until taxa_nb is mapped into the safe projection and approval-bound, the
+        release publishes no taxonomic grouping.  Reporting an empty list is the
+        honest answer; a placeholder group would put a taxonomic claim on a
+        public page that no approved contract supports.
+        """
+        from app.db import serving_connection
+
+        self.assertEqual(self.client.get("/api/summary").json()["topGroups"], [])
+        with serving_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) AS n FROM serve.public_species WHERE taxon_group IS NOT NULL"
+            )
+            self.assertEqual(cursor.fetchone()["n"], 0)
 
     def test_base_tables_are_not_reachable_through_the_query_guard(self) -> None:
         from app.db import ServingRelationError, assert_serving_relation
