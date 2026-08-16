@@ -53,8 +53,16 @@ connector-binary = [
     "PyYAML==6.0.3",
 ]
 
+# The read-only public API.  Separate from the gate on purpose: `app` serves what
+# a release already published, so a web framework can never become a dependency
+# of the code that decides what may be published.  Pinned like the adapters.
+api = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.46.0",
+]
+
 [tool.setuptools]
-packages = ["etl", "brerc_source", "brerc_loader"]
+packages = ["etl", "brerc_source", "brerc_loader", "app", "app.routers"]
 
 # ---------------------------------------------------------------------------
 # Ruff

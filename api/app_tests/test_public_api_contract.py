@@ -1,0 +1,227 @@
+"""The API's real HTTP responses, checked against the front end's Zod contract.
+
+``web/src/lib/api/schemas.ts`` is ``.strict()`` throughout: an extra key is a
+rejected response, not a tolerated one, and several schemas carry cross-field
+invariants that a shape check alone would miss.  These tests therefore assert
+exact key sets and the invariants themselves, against a real publication
+database rather than a mock, because the properties being tested are produced by
+the ``serve.*`` views and not by this code.
+
+Enabled with ``BRERC_API_INTEGRATION=1`` and a ``DATABASE_URL`` for the
+read-only API role.  Skipped otherwise, like the other integration suites.
+"""
+
+from __future__ import annotations
+
+import os
+import unittest
+
+ENABLED = os.environ.get("BRERC_API_INTEGRATION") == "1"
+
+#: Exact key sets from schemas.ts.  Listed rather than derived so that a change
+#: on either side shows up here as a deliberate edit.
+PROVENANCE_KEYS = {
+    "lastUpdated",
+    "recordTotal",
+    "sources",
+    "coverageCaveats",
+    "sensitivityPolicy",
+    "attributions",
+}
+SENSITIVITY_POLICY_KEYS = {"generalisationTiersMetres", "appliesToProtectedTaxa", "note"}
+RECORD_PAGE_KEYS = {"publication", "items", "page", "pageSize", "total"}
+PUBLICATION_FIELD_KEYS = {"abundance", "place", "recordType", "verification"}
+RECORD_REQUIRED_KEYS = {
+    "id",
+    "scientificName",
+    "commonName",
+    "gridRef",
+    "precisionMetres",
+    "place",
+    "year",
+    "source",
+}
+RECORD_OPTIONAL_KEYS = {"abundance", "recordType", "verified"}
+
+
+@unittest.skipUnless(ENABLED, "requires a publication database and the read-only API role")
+class TestPublicApiContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        cls.client = TestClient(app)
+
+    def test_health_is_reachable_without_touching_data(self) -> None:
+        response = self.client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()), {"status", "version"})
+        self.assertEqual(response.json()["status"], "ok")
+
+    def test_provenance_matches_the_contract_exactly(self) -> None:
+        response = self.client.get("/api/meta/provenance")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), PROVENANCE_KEYS)
+
+        self.assertIsInstance(body["recordTotal"], int)
+        self.assertGreaterEqual(body["recordTotal"], 0)
+        self.assertIsInstance(body["sources"], list)
+        self.assertIsInstance(body["coverageCaveats"], list)
+        self.assertTrue(all(isinstance(c, str) and c.strip() for c in body["coverageCaveats"]))
+
+        policy = body["sensitivityPolicy"]
+        self.assertEqual(set(policy), SENSITIVITY_POLICY_KEYS)
+        # Zod pins this to the literal true; anything else fails the schema.
+        self.assertIs(policy["appliesToProtectedTaxa"], True)
+        self.assertIsInstance(policy["note"], str)
+        self.assertTrue(policy["note"].strip())
+
+        tiers = policy["generalisationTiersMetres"]
+        self.assertIsInstance(tiers, list)
+        self.assertTrue(all(isinstance(t, int) and t > 0 for t in tiers))
+        # Measured from the released cells, so they must be sorted and unique.
+        self.assertEqual(tiers, sorted(set(tiers)))
+
+        for attribution in body["attributions"]:
+            self.assertEqual(set(attribution), {"label", "url", "licence"})
+            self.assertTrue(attribution["url"].startswith("https://"))
+
+    def test_generalisation_tiers_cover_every_published_resolution(self) -> None:
+        """The tiers must describe this release, not a configured aspiration.
+
+        Both surfaces count.  Cells and records are generalised independently,
+        so a release can aggregate cells to 1 km while publishing records at
+        100 m; reading only the cells would advertise a tier list that omits a
+        resolution the release actually used.
+        """
+        from app.db import serving_connection
+
+        published = self.client.get("/api/meta/provenance").json()
+        with serving_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT DISTINCT precision_metres FROM serve.public_distribution_cell "
+                "UNION SELECT DISTINCT precision_metres FROM serve.public_record "
+                "ORDER BY precision_metres"
+            )
+            observed = [int(row["precision_metres"]) for row in cursor.fetchall()]
+        self.assertEqual(published["sensitivityPolicy"]["generalisationTiersMetres"], observed)
+
+    def test_no_published_location_is_finer_than_an_advertised_tier(self) -> None:
+        """A record must never be more precise than the policy the page states."""
+        provenance = self.client.get("/api/meta/provenance").json()
+        tiers = provenance["sensitivityPolicy"]["generalisationTiersMetres"]
+        rows = self.client.get("/api/records", params={"pageSize": 100}).json()["items"]
+        for row in rows:
+            self.assertIn(
+                row["precisionMetres"],
+                tiers,
+                "a record is published at a resolution the policy does not declare",
+            )
+
+    def test_timestamps_are_iso_8601_and_parse_as_dates(self) -> None:
+        """``str()`` on a timestamp yields a space where ISO-8601 needs a "T".
+
+        The schema accepts any string, so a malformed one passes validation and
+        fails later in the browser, where ``new Date()`` on a non-ISO string is
+        implementation-defined.
+        """
+        from datetime import datetime
+
+        last_updated = self.client.get("/api/meta/provenance").json()["lastUpdated"]
+        self.assertTrue(last_updated, "provenance must state when the data is from")
+        self.assertNotIn(" ", last_updated)
+        datetime.fromisoformat(last_updated)
+
+    def test_record_total_equals_the_published_basis(self) -> None:
+        from app.db import serving_connection
+
+        published = self.client.get("/api/meta/provenance").json()
+        with serving_connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COALESCE(SUM(record_count), 0) AS total FROM serve.public_species_year"
+            )
+            observed = int(cursor.fetchone()["total"])
+        self.assertEqual(published["recordTotal"], observed)
+
+    def test_records_page_matches_the_contract_and_its_invariants(self) -> None:
+        response = self.client.get("/api/records", params={"page": 1, "pageSize": 20})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), RECORD_PAGE_KEYS)
+
+        publication = body["publication"]
+        self.assertEqual(set(publication), {"mode", "fields"})
+        self.assertIn(publication["mode"], {"aggregates-only", "individual-records"})
+        self.assertEqual(set(publication["fields"]), PUBLICATION_FIELD_KEYS)
+        self.assertTrue(all(isinstance(v, bool) for v in publication["fields"].values()))
+
+        self.assertGreater(body["page"], 0)
+        self.assertGreater(body["pageSize"], 0)
+        self.assertGreaterEqual(body["total"], 0)
+        self.assertLessEqual(len(body["items"]), body["pageSize"])
+        self.assertLessEqual(len(body["items"]), body["total"])
+
+        if publication["mode"] == "aggregates-only":
+            # The schema refuses any row at all in this mode.
+            self.assertEqual(body["items"], [])
+            self.assertEqual(body["total"], 0)
+
+    def test_a_row_never_advertises_a_field_the_release_withheld(self) -> None:
+        """The gate the front end relies on, asserted against real rows."""
+        body = self.client.get("/api/records", params={"pageSize": 20}).json()
+        fields = body["publication"]["fields"]
+        capability_of = {
+            "abundance": "abundance",
+            "recordType": "recordType",
+            "verified": "verification",
+        }
+        for row in body["items"]:
+            self.assertEqual(set(row) - RECORD_OPTIONAL_KEYS, RECORD_REQUIRED_KEYS)
+            for field, capability in capability_of.items():
+                if fields[capability]:
+                    self.assertIn(field, row, f"{field} required when {capability} is published")
+                else:
+                    self.assertNotIn(field, row, f"{field} present while {capability} is withheld")
+            # verified is the raw source verdict as text; a boolean would collapse
+            # "rejected" and "not yet checked" into one value.
+            if "verified" in row and row["verified"] is not None:
+                self.assertIsInstance(row["verified"], str)
+
+    def test_page_size_cap_is_enforced_by_the_server(self) -> None:
+        from app import config
+
+        response = self.client.get("/api/records", params={"pageSize": config.MAX_PAGE_SIZE + 500})
+        # The request validator refuses it outright rather than silently trimming.
+        self.assertEqual(response.status_code, 422)
+
+    def test_the_api_session_cannot_write(self) -> None:
+        """Negative control on the read-only posture, not just its configuration."""
+        import psycopg
+
+        from app.db import serving_connection
+
+        with (
+            serving_connection() as connection,
+            connection.cursor() as cursor,
+            self.assertRaises(psycopg.errors.ReadOnlySqlTransaction),
+        ):
+            cursor.execute("CREATE TEMP TABLE api_should_not_write (id int)")
+
+    def test_base_tables_are_not_reachable_through_the_query_guard(self) -> None:
+        from app.db import ServingRelationError, assert_serving_relation
+
+        for relation in (
+            "loader_control.source_disposition",
+            "publication.public_record",
+            "loader_stage.disposition_delta",
+            "serve.etl_job_status",
+        ):
+            with self.subTest(relation=relation), self.assertRaises(ServingRelationError):
+                assert_serving_relation(relation)
+
+
+if __name__ == "__main__":
+    unittest.main()
