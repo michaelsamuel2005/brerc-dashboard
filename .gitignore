@@ -8,6 +8,14 @@ Thumbs.db
 # Secrets / environment
 .env
 .env.*
+# The credential-free example is the documentation of which variables the
+# run-history dashboard needs; it holds placeholders only and is safe to track.
+!run-dashboard/.env.example
+
+# Local runtime state — the ETL run-history SQLite log written by
+# api/etl/run_history.py and read by run-dashboard/. Run metadata only (no
+# record content), but runtime state never belongs in git.
+logs/
 
 # Trusted PostgreSQL source connector — deployment configuration, credential
 # lookup files and private client keys live in BRERC's secret store, never git.
