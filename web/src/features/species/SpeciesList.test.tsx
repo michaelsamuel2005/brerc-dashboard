@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -159,5 +160,80 @@ describe("SpeciesList — server-driven public directory", () => {
     fail = false;
     fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("link", { name: /Explore Adder/i })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Ported from PR #23 (species-index, Athul). That branch pinned two behaviours the
+ * directory rebuild had left untested — every species entry is a REAL, keyboard-reachable
+ * link, and pagination works without a pointer. The implementation Athul tested was
+ * superseded by the server-driven directory, but the properties are implementation-
+ * independent, so they are re-stated here against the current markup rather than lost
+ * with the branch. Method preserved too: real Tab keys and a real Enter, not synthetic
+ * click() calls — a click handler on a div would pass those and still fail a keyboard.
+ */
+describe("SpeciesList — keyboard operability (ported from PR #23)", () => {
+  it("reaches and activates a species link with the keyboard alone", async () => {
+    const user = userEvent.setup();
+    renderDirectory();
+    const link = await screen.findByRole("link", { name: /Explore Slow-worm/i });
+    expect(link).toHaveAttribute("href", "/species/DEMO-001/anguis-fragilis");
+
+    // Tab until the link is focused, proving it is reachable in the natural order —
+    // bounded so a regression fails with "not focused" instead of hanging the suite.
+    let guard = 0;
+    await user.tab();
+    while (document.activeElement !== link && guard < 40) {
+      await user.tab();
+      guard += 1;
+    }
+    expect(link).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/species/DEMO-001/anguis-fragilis",
+      ),
+    );
+  });
+
+  it("operates the Prev/Next pagination with the keyboard alone", async () => {
+    // Same shape as the pointer pagination test above: a server that reports more
+    // species than it returns, so the control genuinely has somewhere to go.
+    const pages = new Map<string, string[]>([
+      ["1", ["West European hedgehog", "Common lizard"]],
+      ["2", ["Slow-worm", "Adder"]],
+    ]);
+    server.use(
+      http.get("*/api/species", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const wanted = pages.get(params.get("page") ?? "1") ?? [];
+        const page = buildSpeciesListPage({ q: "", sort: "records-desc", page: 1, pageSize: 24 });
+        const items = page.items.filter((item) =>
+          wanted.includes(item.commonName ?? item.scientificName),
+        );
+        return HttpResponse.json({
+          ...page,
+          items,
+          page: Number(params.get("page") ?? 1),
+          total: 400,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderDirectory("/species?sort=records-desc");
+    await screen.findByRole("link", { name: /Explore West European hedgehog/i });
+
+    const next = screen.getByRole("button", { name: "Next" });
+    // A real <button> activates on Enter and Space natively; a div with role="button"
+    // and a click handler would satisfy the role query and silently lose that.
+    expect(next.tagName).toBe("BUTTON");
+    next.focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("link", { name: /Explore Slow-worm/i })).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("page=2");
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
   });
 });
