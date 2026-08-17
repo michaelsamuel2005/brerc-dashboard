@@ -50,35 +50,38 @@ B6_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "b6_schema.sql"
 
 def _build_admin_database_url() -> str:
     """
-    Builds the admin connection string, preferring the DATABASE_URL_ADMIN
-    environment variable if available, otherwise falling back to safety.yaml.
+    Builds the admin connection string, preferring config/safety.yaml's
+    'admin' block — the normal way to configure this, plain user/password
+    fields with nothing to assemble by hand. DATABASE_URL_ADMIN is only an
+    override for when one's specifically needed (e.g. a Docker deployment
+    injecting secrets as environment variables).
 
-    Fails closed: user/password have no default, so a genuinely unconfigured
-    environment raises instead of silently connecting as postgres/postgres —
-    this is the credential used for destructive full schema resets, so it
-    matters more here than anywhere else in the ETL.
+    Fails closed: if neither supplies real credentials, raises instead of
+    silently connecting as postgres/postgres — this is the credential used
+    for destructive full schema resets, so it matters more here than
+    anywhere else in the ETL.
     """
+    admin = _get_admin()
+
+    user = admin.get("user")
+    password = admin.get("password")
+
+    if user and password:
+        host = admin.get("dbhostname") or "localhost"
+        port = admin.get("port") or 5432
+        dbname = admin.get("dbname") or "brerc_ui"
+        return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+
     explicit_url = os.getenv("DATABASE_URL_ADMIN")
 
     if explicit_url:
         return explicit_url
 
-    admin = _get_admin()
-
-    host = admin.get("dbhostname") or "localhost"
-    port = admin.get("port") or 5432
-    dbname = admin.get("dbname") or "brerc_ui"
-    user = admin.get("user")
-    password = admin.get("password")
-
-    if not user or not password:
-        raise RuntimeError(
-            "No admin database credentials configured. Set DATABASE_URL_ADMIN, "
-            "or admin.user/admin.password in config/safety.yaml — there is no "
-            "default credential."
-        )
-
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    raise RuntimeError(
+        "No admin database credentials configured. Set admin.user/"
+        "admin.password in config/safety.yaml, or DATABASE_URL_ADMIN as an "
+        "override — there is no default credential."
+    )
 
 
 def _database_target(url: str) -> tuple:

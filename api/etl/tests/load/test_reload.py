@@ -13,40 +13,46 @@ from etl.load.reload import (
 
 
 # --- _build_admin_database_url tests ---
+# Every test here explicitly patches etl.load.reload.get_config rather than
+# relying on whatever real config/safety.yaml happens to be on the machine
+# running the suite — otherwise these silently pick up (and can leak into
+# test output) real credentials from a developer's own machine.
+
+YAML_ADMIN = {
+    "dbhostname": "test_host",
+    "port": 5432,
+    "dbname": "test_db",
+    "user": "test_user",
+    "password": "test_password",
+}
 
 
-def test_build_admin_database_url_uses_env_var():
-    # Confirms the function prioritizes the DATABASE_URL_ADMIN environment variable.
-    # Expects the exact connection string from the environment to be returned, else fails.
+def test_build_admin_database_url_prefers_yaml_when_set():
+    # safety.yaml is the normal way to configure this; DATABASE_URL_ADMIN is
+    # only an override, so yaml must win when both are present.
     with patch.dict(
         os.environ,
-        {"DATABASE_URL_ADMIN": ("postgresql://test_admin:pass@db:5432/test_db")},
+        {"DATABASE_URL_ADMIN": "postgresql://test_admin:pass@db:5432/test_db"},
+        clear=True,
     ):
-        result = _build_admin_database_url()
-
-    assert result == "postgresql://test_admin:pass@db:5432/test_db"
-
-
-def test_build_admin_database_url_uses_fallback_config():
-    # Confirms the function falls back to the admin configuration when
-    # DATABASE_URL_ADMIN is not set.
-    # Expects the connection string to be built correctly from the config, else fails.
-    with patch.dict(os.environ, {}, clear=True):
-        with patch(
-            "etl.load.reload.get_config",
-            return_value={
-                "admin": {
-                    "dbhostname": "test_host",
-                    "port": 5432,
-                    "dbname": "test_db",
-                    "user": "test_user",
-                    "password": "test_password",
-                }
-            },
-        ):
+        with patch("etl.load.reload.get_config", return_value={"admin": YAML_ADMIN}):
             result = _build_admin_database_url()
 
     assert result == "postgresql://test_user:test_password@test_host:5432/test_db"
+
+
+def test_build_admin_database_url_falls_back_to_env_var_when_yaml_unset():
+    # Confirms the function falls back to the DATABASE_URL_ADMIN environment
+    # variable when safety.yaml's admin block has no credentials.
+    with patch.dict(
+        os.environ,
+        {"DATABASE_URL_ADMIN": "postgresql://test_admin:pass@db:5432/test_db"},
+        clear=True,
+    ):
+        with patch("etl.load.reload.get_config", return_value={"admin": {}}):
+            result = _build_admin_database_url()
+
+    assert result == "postgresql://test_admin:pass@db:5432/test_db"
 
 
 def test_build_admin_database_url_raises_when_unconfigured():

@@ -44,34 +44,36 @@ B6_PUBLIC_RELATIONS = {
 
 def _build_database_url() -> str:
     """
-    Assembles the database connection string from safety.yaml's destination block
-    or falls back to the explicit DATABASE_URL environment variable if provided.
+    Assembles the database connection string, preferring config/safety.yaml's
+    destination block — the normal way to configure this, plain user/password
+    fields with nothing to assemble by hand. DATABASE_URL is only an override
+    for when one's specifically needed (e.g. a Docker deployment injecting
+    secrets as environment variables).
 
-    Fails closed: user/password have no default, so a genuinely unconfigured
-    environment raises instead of silently connecting as postgres/postgres.
+    Fails closed: if neither supplies real credentials, raises instead of
+    silently connecting as postgres/postgres.
     """
+    destination = _get_destination()
+
+    user = destination.get("user")
+    password = destination.get("password")
+
+    if user and password:
+        host = destination.get("dbhostname") or "localhost"
+        port = destination.get("port") or 5432
+        dbname = destination.get("dbname") or "brerc_ui"
+        return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+
     explicit_url = os.getenv("DATABASE_URL")
 
     if explicit_url:
         return explicit_url
 
-    # Local development defaults if safety.yaml is missing credentials
-    destination = _get_destination()
-
-    host = destination.get("dbhostname") or "localhost"
-    port = destination.get("port") or 5432
-    dbname = destination.get("dbname") or "brerc_ui"
-    user = destination.get("user")
-    password = destination.get("password")
-
-    if not user or not password:
-        raise RuntimeError(
-            "No database credentials configured. Set DATABASE_URL, or "
-            "destination.user/destination.password in config/safety.yaml — "
-            "there is no default credential."
-        )
-
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    raise RuntimeError(
+        "No database credentials configured. Set destination.user/"
+        "destination.password in config/safety.yaml, or DATABASE_URL as an "
+        "override — there is no default credential."
+    )
 
 
 @lru_cache(maxsize=1)

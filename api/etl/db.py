@@ -30,32 +30,34 @@ _CONNECTION = CONFIG.get("connection", {})
 
 def _build_source_database_url() -> str:
     """
-    Assembles the source database connection URL from safety.yaml's
-    'connection' configuration block or environment variables.
+    Assembles the source database connection URL, preferring config/safety.yaml's
+    'connection' block — the normal way to configure this, plain user/password
+    fields with nothing to assemble by hand. SOURCE_DATABASE_URL is only an
+    override for when one's specifically needed (e.g. a Docker deployment
+    injecting secrets as environment variables).
 
-    Fails closed: user/password have no default, so a genuinely unconfigured
-    environment raises instead of silently connecting as postgres/postgres.
+    Fails closed: if neither supplies real credentials, raises instead of
+    silently connecting as postgres/postgres.
     """
+    user = _CONNECTION.get("user")
+    password = _CONNECTION.get("password")
+
+    if user and password:
+        host = _CONNECTION.get("dbhostname") or "localhost"
+        port = _CONNECTION.get("port") or 5432
+        dbname = _CONNECTION.get("dbname") or "brerc_source"
+        return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
     explicit_url = os.getenv("SOURCE_DATABASE_URL")
 
     if explicit_url:
         return explicit_url
 
-    host = _CONNECTION.get("dbhostname") or "localhost"
-    port = _CONNECTION.get("port") or 5432
-    dbname = _CONNECTION.get("dbname") or "brerc_source"
-    user = _CONNECTION.get("user")
-    password = _CONNECTION.get("password")
-
-    if not user or not password:
-        raise RuntimeError(
-            "No source database credentials configured. Set SOURCE_DATABASE_URL, "
-            "or connection.user/connection.password in config/safety.yaml — "
-            "there is no default credential."
-        )
-
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    raise RuntimeError(
+        "No source database credentials configured. Set connection.user/"
+        "connection.password in config/safety.yaml, or SOURCE_DATABASE_URL "
+        "as an override — there is no default credential."
+    )
 
 
 def get_source_connection() -> psycopg.Connection:
@@ -90,8 +92,12 @@ def get_source_connection() -> psycopg.Connection:
 
 def _build_destination_database_url() -> str:
     """
-    Assemble the UI database connection string from the DESTINATION_DATABASE_URL
-    environment variable, falling back to safety.yaml if it isn't set.
+    Assembles the UI destination database connection string, preferring
+    config/safety.yaml's 'destination' block — the normal way to configure
+    this, plain user/password fields with nothing to assemble by hand.
+    DESTINATION_DATABASE_URL is only an override for when one's specifically
+    needed (e.g. a Docker deployment injecting secrets as environment
+    variables).
 
     Deliberately does NOT fall back to the generic DATABASE_URL — that variable
     is what app/db.py uses for the public API's read-only connection. If the
@@ -100,31 +106,32 @@ def _build_destination_database_url() -> str:
     permissions would unknowingly give the public API write access too.
     Keeping the names distinct means that mistake can't happen by accident.
 
-    Also fails closed on credentials: user/password have no default, so a
-    genuinely unconfigured environment raises instead of silently connecting
-    as postgres/postgres.
+    Also fails closed on credentials: if neither safety.yaml nor
+    DESTINATION_DATABASE_URL supplies real credentials, raises instead of
+    silently connecting as postgres/postgres.
     """
+    destination = CONFIG.get("destination", {})
+
+    user = destination.get("user")
+    password = destination.get("password")
+
+    if user and password:
+        host = destination.get("dbhostname") or "localhost"
+        port = destination.get("port") or 5432
+        dbname = destination.get("dbname") or "brerc_ui"
+        return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+
     explicit_url = os.getenv("DESTINATION_DATABASE_URL")
 
     if explicit_url:
         return explicit_url
 
-    destination = CONFIG.get("destination", {})
-
-    host = destination.get("dbhostname") or "localhost"
-    port = destination.get("port") or 5432
-    dbname = destination.get("dbname") or "brerc_ui"
-    user = destination.get("user")
-    password = destination.get("password")
-
-    if not user or not password:
-        raise RuntimeError(
-            "No destination database credentials configured. Set "
-            "DESTINATION_DATABASE_URL, or destination.user/destination.password "
-            "in config/safety.yaml — there is no default credential."
-        )
-
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    raise RuntimeError(
+        "No destination database credentials configured. Set "
+        "destination.user/destination.password in config/safety.yaml, or "
+        "DESTINATION_DATABASE_URL as an override — there is no default "
+        "credential."
+    )
 
 
 DESTINATION_DATABASE_URL = _build_destination_database_url()
