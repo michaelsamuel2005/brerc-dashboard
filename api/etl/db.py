@@ -30,8 +30,11 @@ _CONNECTION = CONFIG.get("connection", {})
 
 def _build_source_database_url() -> str:
     """
-    Assembles the source database connection URL from safety.yaml's 
+    Assembles the source database connection URL from safety.yaml's
     'connection' configuration block or environment variables.
+
+    Fails closed: user/password have no default, so a genuinely unconfigured
+    environment raises instead of silently connecting as postgres/postgres.
     """
 
     explicit_url = os.getenv("SOURCE_DATABASE_URL")
@@ -42,18 +45,28 @@ def _build_source_database_url() -> str:
     host = _CONNECTION.get("dbhostname") or "localhost"
     port = _CONNECTION.get("port") or 5432
     dbname = _CONNECTION.get("dbname") or "brerc_source"
-    user = _CONNECTION.get("user") or "postgres"
-    password = _CONNECTION.get("password") or "postgres"
+    user = _CONNECTION.get("user")
+    password = _CONNECTION.get("password")
+
+    if not user or not password:
+        raise RuntimeError(
+            "No source database credentials configured. Set SOURCE_DATABASE_URL, "
+            "or connection.user/connection.password in config/safety.yaml — "
+            "there is no default credential."
+        )
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
-
-
-SOURCE_DATABASE_URL = _build_source_database_url()
 
 
 def get_source_connection() -> psycopg.Connection:
     """
     Opens a connection to BRERC's private source database.
+
+    Builds the connection URL lazily (only when this is actually called),
+    not at import time — get_source_connection() is only ever called in
+    source.mode == "database" setups (see etl/job.py). A CSV-mode setup
+    never needs source database credentials at all, so importing this
+    module must not fail closed on their absence.
 
     NOTE: deliberately NO row_factory here, unlike the destination connection.
     This connection is only ever handed to pandas.read_sql (see etl/job.py), and
@@ -67,7 +80,7 @@ def get_source_connection() -> psycopg.Connection:
     being blurred fail-closed. If you add a row_factory back, database mode stops
     working without raising anything.
     """
-    return psycopg.connect(SOURCE_DATABASE_URL)
+    return psycopg.connect(_build_source_database_url())
 
 
 # ============================================================
@@ -86,6 +99,10 @@ def _build_destination_database_url() -> str:
     read-only role, or someone "fixing" that by widening DATABASE_URL's
     permissions would unknowingly give the public API write access too.
     Keeping the names distinct means that mistake can't happen by accident.
+
+    Also fails closed on credentials: user/password have no default, so a
+    genuinely unconfigured environment raises instead of silently connecting
+    as postgres/postgres.
     """
     explicit_url = os.getenv("DESTINATION_DATABASE_URL")
 
@@ -97,8 +114,15 @@ def _build_destination_database_url() -> str:
     host = destination.get("dbhostname") or "localhost"
     port = destination.get("port") or 5432
     dbname = destination.get("dbname") or "brerc_ui"
-    user = destination.get("user") or "postgres"
-    password = destination.get("password") or "postgres"
+    user = destination.get("user")
+    password = destination.get("password")
+
+    if not user or not password:
+        raise RuntimeError(
+            "No destination database credentials configured. Set "
+            "DESTINATION_DATABASE_URL, or destination.user/destination.password "
+            "in config/safety.yaml — there is no default credential."
+        )
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 

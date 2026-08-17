@@ -3,7 +3,9 @@
 import os
 from unittest.mock import patch
 
-from etl.db import _build_destination_database_url
+import pytest
+
+from etl.db import _build_destination_database_url, _build_source_database_url
 
 YAML_DESTINATION = {
     "dbhostname": "yaml-host",
@@ -50,3 +52,34 @@ def test_build_destination_database_url_falls_back_to_yaml_when_unset():
             result = _build_destination_database_url()
 
     assert result == "postgresql://yaml_user:yaml_pass@yaml-host:5555/yaml_db"
+
+
+def test_build_destination_database_url_raises_when_unconfigured():
+    # Fails closed: no env var and no safety.yaml credentials must raise,
+    # not silently connect as postgres/postgres.
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("etl.db.CONFIG", {"destination": {}}):
+            with pytest.raises(RuntimeError, match="No destination database credentials"):
+                _build_destination_database_url()
+
+
+def test_build_source_database_url_uses_env_var():
+    with patch.dict(
+        os.environ,
+        {"SOURCE_DATABASE_URL": "postgresql://src:pw@source-host:5432/brerc_source"},
+        clear=True,
+    ):
+        result = _build_source_database_url()
+
+    assert result == "postgresql://src:pw@source-host:5432/brerc_source"
+
+
+def test_build_source_database_url_raises_when_unconfigured():
+    # Fails closed: a CSV-mode setup never calls this at all (see
+    # get_source_connection()'s docstring), so this only matters for
+    # database-mode setups, which must not silently fall back to
+    # postgres/postgres either.
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("etl.db._CONNECTION", {}):
+            with pytest.raises(RuntimeError, match="No source database credentials"):
+                _build_source_database_url()

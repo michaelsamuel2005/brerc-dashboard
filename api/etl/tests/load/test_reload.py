@@ -49,6 +49,16 @@ def test_build_admin_database_url_uses_fallback_config():
     assert result == "postgresql://test_user:test_password@test_host:5432/test_db"
 
 
+def test_build_admin_database_url_raises_when_unconfigured():
+    # Fails closed: this is the credential for destructive full schema
+    # resets, so a genuinely unconfigured environment must raise rather
+    # than silently connecting as postgres/postgres.
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("etl.load.reload.get_config", return_value={"admin": {}}):
+            with pytest.raises(RuntimeError, match="No admin database credentials"):
+                _build_admin_database_url()
+
+
 # --- _assert_admin_matches_destination tests ---
 
 

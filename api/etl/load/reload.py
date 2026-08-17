@@ -50,8 +50,13 @@ B6_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "b6_schema.sql"
 
 def _build_admin_database_url() -> str:
     """
-    Builds the admin connection string, preferring the DATABASE_URL_ADMIN 
+    Builds the admin connection string, preferring the DATABASE_URL_ADMIN
     environment variable if available, otherwise falling back to safety.yaml.
+
+    Fails closed: user/password have no default, so a genuinely unconfigured
+    environment raises instead of silently connecting as postgres/postgres —
+    this is the credential used for destructive full schema resets, so it
+    matters more here than anywhere else in the ETL.
     """
     explicit_url = os.getenv("DATABASE_URL_ADMIN")
 
@@ -63,8 +68,15 @@ def _build_admin_database_url() -> str:
     host = admin.get("dbhostname") or "localhost"
     port = admin.get("port") or 5432
     dbname = admin.get("dbname") or "brerc_ui"
-    user = admin.get("user") or "postgres"
-    password = admin.get("password") or "postgres"
+    user = admin.get("user")
+    password = admin.get("password")
+
+    if not user or not password:
+        raise RuntimeError(
+            "No admin database credentials configured. Set DATABASE_URL_ADMIN, "
+            "or admin.user/admin.password in config/safety.yaml — there is no "
+            "default credential."
+        )
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 

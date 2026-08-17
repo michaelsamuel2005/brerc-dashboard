@@ -44,8 +44,11 @@ B6_PUBLIC_RELATIONS = {
 
 def _build_database_url() -> str:
     """
-    Assembles the database connection string from safety.yaml's destination block 
+    Assembles the database connection string from safety.yaml's destination block
     or falls back to the explicit DATABASE_URL environment variable if provided.
+
+    Fails closed: user/password have no default, so a genuinely unconfigured
+    environment raises instead of silently connecting as postgres/postgres.
     """
     explicit_url = os.getenv("DATABASE_URL")
 
@@ -58,8 +61,15 @@ def _build_database_url() -> str:
     host = destination.get("dbhostname") or "localhost"
     port = destination.get("port") or 5432
     dbname = destination.get("dbname") or "brerc_ui"
-    user = destination.get("user") or "postgres"
-    password = destination.get("password") or "postgres"
+    user = destination.get("user")
+    password = destination.get("password")
+
+    if not user or not password:
+        raise RuntimeError(
+            "No database credentials configured. Set DATABASE_URL, or "
+            "destination.user/destination.password in config/safety.yaml — "
+            "there is no default credential."
+        )
 
     return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
