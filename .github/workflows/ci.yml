@@ -98,11 +98,26 @@ jobs:
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_sample_data.sql
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b7_tiles.sql
 
-      - name: Run the tests
-        # Scoped to the API test suite (this backend workstream, B0/B6-B9).
-        # The ETL pipeline (etl/, B1-B5) has its own tests; add them here once
-        # they run standalone.
+      - name: Run the API tests
+        # The API test suite (this backend workstream, B0/B6-B9).
         run: python -m pytest tests -q
+
+      # The ETL suite (etl/, B1-B5) was excluded with "add them here once they
+      # run standalone". They do run standalone — no network, and the database
+      # this job already stands up is exactly what the integration tests need.
+      #
+      # Leaving them out was not a small gap. It meant the safety gate — the
+      # code that decides how coarse a protected species' location is before it
+      # reaches the public map — had NO automated coverage on any run, and its
+      # four database-backed generalisation tests skipped silently on every
+      # machine without PostGIS. The properties we most need to be true were
+      # the only ones nothing checked.
+      #
+      # Runs as its own step so a failure says which suite broke, and after the
+      # API tests because the ETL integration tests reconcile against the shared
+      # sample data and re-seed it afterwards.
+      - name: Run the ETL and safety-gate tests
+        run: python -m pytest etl/tests -q
 
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build
