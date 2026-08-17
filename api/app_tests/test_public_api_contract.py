@@ -434,6 +434,19 @@ class TestPublicApiContract(unittest.TestCase):
         Response shapes are covered elsewhere; only a live request catches a
         parameter the server silently ignores. An unknown filter would return
         the unfiltered set, which looks like working software.
+
+        The record assertions follow the release's DECLARED capability. An
+        aggregates-only release publishes no individual records, so an empty
+        page is the contract for every species — matched and missing are
+        rightly identical, and no content can reveal an ignored parameter
+        there. What is pinned in that mode is that the emptiness is the
+        declared policy, not a filter that happened to match nothing. The
+        ?species= name keeps its full matched/ignored force on
+        /api/distribution/cells, which every release publishes rows for.
+        (As written before, this test assumed an individual-records release —
+        the environment it was authored against — and could never pass
+        against the loader's approved test policy, which sets
+        publish_individual_records=False.)
         """
         species_id = self.client.get("/api/species").json()["items"][0]["speciesId"]
         for path in ("/api/records", "/api/distribution/cells"):
@@ -443,6 +456,10 @@ class TestPublicApiContract(unittest.TestCase):
                 self.assertEqual(matched.status_code, 200)
                 self.assertEqual(missing.status_code, 200)
                 key = "items" if path.endswith("records") else "cells"
+                if key == "items" and matched.json()["publication"]["mode"] == "aggregates-only":
+                    self.assertEqual(len(matched.json()[key]), 0, "aggregates-only leaked a row")
+                    self.assertEqual(len(missing.json()[key]), 0, "aggregates-only leaked a row")
+                    continue
                 self.assertGreater(len(matched.json()[key]), 0, "the filter matched nothing")
                 self.assertEqual(len(missing.json()[key]), 0, "the filter was ignored")
 
