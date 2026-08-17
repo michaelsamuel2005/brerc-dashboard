@@ -61,8 +61,15 @@ api = [
     "uvicorn[standard]==0.46.0",
 ]
 
+# Offline species-media curation (python -m curation).  Separate from the api
+# extra on purpose: the serving path never makes outbound media requests, so a
+# production API install does not need an outbound HTTP client at all.
+curation = [
+    "httpx",
+]
+
 [tool.setuptools]
-packages = ["etl", "brerc_source", "brerc_loader", "app", "app.routers"]
+packages = ["etl", "brerc_source", "brerc_loader", "app", "app.routers", "curation"]
 
 # ---------------------------------------------------------------------------
 # Ruff
@@ -110,6 +117,10 @@ ignore = [
 # The operator CLI's only output is its fixed, redacted JSON status envelope.
 "brerc_source/cli.py" = ["T20"]
 "brerc_loader/cli.py" = ["T20"]
+# The curation CLI is operator-run and prints per-species progress and where it
+# wrote the candidates file. Only scientific names and counts appear — the one
+# thing this project permits to leave controlled systems.
+"curation/__main__.py" = ["T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["brerc_loader", "brerc_source", "etl"]

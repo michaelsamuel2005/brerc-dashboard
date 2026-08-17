@@ -65,6 +65,22 @@ SPECIES_DETAIL_KEYS = {
     "imagePublication",
     "stats",
 }
+#: Media keys are .optional() in schemas.ts — absent unless the approved-assets
+#: registry covers the species.  Optional means the KEY may be missing; when
+#: present the value must be complete, and null is never a substitute for
+#: absence (Zod .optional() does not accept null).
+SPECIES_DETAIL_OPTIONAL_KEYS = {"description", "descriptionSource", "image"}
+SPECIES_IMAGE_KEYS = {
+    "url",
+    "attributionText",
+    "licence",
+    "licenceUrl",
+    "sourceUrl",
+    "approvalReference",
+    "alt",
+}
+DESCRIPTION_SOURCE_REQUIRED_KEYS = {"label", "approvalReference"}
+DESCRIPTION_SOURCE_OPTIONAL_KEYS = {"sourceUrl", "licence", "licenceUrl"}
 SPECIES_STATS_KEYS = {"recordCount", "yearRange", "verificationAvailable", "verifiedCount"}
 SUMMARY_KEYS = {
     "totalRecords",
@@ -402,16 +418,66 @@ class TestPublicApiContract(unittest.TestCase):
             self.assertIsNone(item["group"])
 
     def test_species_detail_matches_the_contract(self) -> None:
+        """Key set, media mode and stats invariants, in whichever mode is live.
+
+        The media assertions follow the DEPLOYMENT'S declared capability, like
+        the record assertions above follow the release's.  Without
+        SPECIES_ASSETS_FILE — CI's state — every species is ``fallback-only``
+        and carries no media keys at all.  With an approved registry, a covered
+        species must publish the complete image contract.  Both branches are
+        asserted in full so this test also holds against a deployment that
+        serves approved assets.
+        """
         listing = self.client.get("/api/species").json()["items"]
         species_id = listing[0]["speciesId"]
         body = self.client.get(f"/api/species/{species_id}").json()
-        self.assertEqual(set(body), SPECIES_DETAIL_KEYS)
+        self.assertEqual(set(body) - SPECIES_DETAIL_OPTIONAL_KEYS, SPECIES_DETAIL_KEYS)
         self.assertEqual(body["speciesId"], species_id)
         self.assertEqual(body["slug"], listing[0]["slug"], "slugs must agree across endpoints")
 
-        # fallback-only forbids an image; approved-assets would require one.
-        self.assertEqual(body["imagePublication"], "fallback-only")
-        self.assertNotIn("image", body)
+        # Optional keys are omitted, never null: schemas.ts marks them
+        # .optional(), and Zod's .optional() rejects an explicit null.
+        for key in SPECIES_DETAIL_OPTIONAL_KEYS & set(body):
+            self.assertIsNotNone(body[key], f"{key} must be omitted rather than null")
+
+        # The two endpoints must tell the same story about this species.
+        self.assertIn(body["imagePublication"], {"fallback-only", "approved-assets"})
+        self.assertEqual(
+            body["imagePublication"] == "approved-assets",
+            listing[0]["hasImage"],
+            "the listing's hasImage flag and the detail's publication mode disagree",
+        )
+
+        if body["imagePublication"] == "fallback-only":
+            # fallback-only forbids an image; the front end shows its labelled
+            # placeholder.  (A description may still be published.)
+            self.assertNotIn("image", body)
+        else:
+            # approved-assets requires the whole image: url, deed link, source
+            # link (all https), attribution, human approval reference, alt text.
+            image = body["image"]
+            self.assertEqual(set(image), SPECIES_IMAGE_KEYS)
+            for field in ("url", "licenceUrl", "sourceUrl"):
+                self.assertTrue(image[field].startswith("https://"), f"{field} must be https")
+            for field in SPECIES_IMAGE_KEYS - {"url", "licenceUrl", "sourceUrl"}:
+                self.assertTrue(image[field].strip(), f"{field} must be non-empty text")
+
+        # description and descriptionSource travel strictly together, and the
+        # source's own optional fields follow the same omitted-never-null rule.
+        self.assertEqual(
+            "description" in body,
+            "descriptionSource" in body,
+            "description and descriptionSource must be published together",
+        )
+        if "descriptionSource" in body:
+            self.assertTrue(body["description"].strip())
+            source = body["descriptionSource"]
+            self.assertEqual(
+                set(source) - DESCRIPTION_SOURCE_OPTIONAL_KEYS, DESCRIPTION_SOURCE_REQUIRED_KEYS
+            )
+            self.assertNotIn(None, source.values(), "source fields are omitted, not null")
+            if "licenceUrl" in source:
+                self.assertIn("licence", source, "a deed link needs licence text to label it")
 
         stats = body["stats"]
         self.assertEqual(set(stats), SPECIES_STATS_KEYS)

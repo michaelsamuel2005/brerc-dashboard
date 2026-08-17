@@ -60,3 +60,30 @@ def require_database_url() -> str:
     if IS_PROD:
         raise RuntimeError("DATABASE_URL is not set; refusing to start in production")
     return "postgresql:///brerc_ui_integration"
+
+
+# ---------------------------------------------------------------------------
+# Approved species assets (photographs + descriptions).  See app/species_assets.py.
+# ---------------------------------------------------------------------------
+
+#: Path to the APPROVED assets file.  Unset (the default) means no assets are
+#: approved yet: every species publishes as ``fallback-only`` and the front end
+#: shows its labelled placeholder.  The file is produced by the curation CLI
+#: (api/curation), reviewed by a human, and marked "approved": true — this API
+#: never fetches media from third parties at request time.
+SPECIES_ASSETS_FILE = os.getenv("SPECIES_ASSETS_FILE", "")
+
+#: Which image licences we may display, as canonical tokens (see
+#: curation/species_media.normalise_licence).  Deliberately strict by default:
+#:   cc0    public-domain dedication      — no conditions
+#:   pd     public domain / no copyright  — no conditions
+#:   cc-by  attribution required          — fine for a public site
+#: NonCommercial (nc) and NoDerivatives (nd) are never accepted here; add
+#: "cc-by-sa" only if BRERC's legal position allows share-alike images.
+#: The serving side re-checks this list when loading the approved file, so an
+#: approval cannot quietly override the licence policy.
+SPECIES_IMAGE_ALLOWED_LICENCES = {
+    token.strip().lower()
+    for token in os.getenv("SPECIES_IMAGE_ALLOWED_LICENCES", "cc0,pd,cc-by").split(",")
+    if token.strip()
+}

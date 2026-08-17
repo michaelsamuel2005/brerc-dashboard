@@ -13,7 +13,7 @@ the ``serve.*`` views do not expose them.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -202,7 +202,52 @@ class SpeciesStats(StrictModel):
     verifiedCount: int | None
 
 
+class SpeciesImage(StrictModel):
+    """A photograph the dashboard is licensed to show, with its full provenance.
+
+    Every field is required, matching the web contract: an image without an
+    attribution, a licence deed link, a source link, an approval reference or
+    alt text is not publishable, so there is no optional field to forget.
+    """
+
+    url: str
+    attributionText: str
+    licence: str
+    licenceUrl: str
+    sourceUrl: str
+    approvalReference: str
+    alt: str
+
+
+class DescriptionSource(StrictModel):
+    """Who wrote the description text and under what terms.
+
+    ``licenceUrl`` requires ``licence`` (the web contract's rule): a bare deed
+    link with no licence name would render as an unlabelled hyperlink.
+    """
+
+    label: str
+    approvalReference: str
+    sourceUrl: str | None = Field(default=None)
+    licence: str | None = Field(default=None)
+    licenceUrl: str | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _licence_url_requires_licence(self) -> DescriptionSource:
+        if self.licenceUrl is not None and self.licence is None:
+            raise ValueError("licenceUrl requires licence")
+        return self
+
+
 class SpeciesDetail(StrictModel):
+    """The species page.  ``imagePublication`` is per-response, decided by the
+    approved-assets registry: ``approved-assets`` when this species has an
+    approved image (which is then required), ``fallback-only`` otherwise (an
+    image is then forbidden).  ``description``/``descriptionSource`` travel
+    strictly together.  All three rules are asserted here so a router bug
+    becomes a 500 in our logs rather than a rejected response in the browser.
+    """
+
     speciesId: str
     slug: str
     scientificName: str
@@ -210,3 +255,16 @@ class SpeciesDetail(StrictModel):
     group: str | None
     imagePublication: str
     stats: SpeciesStats
+    description: str | None = Field(default=None)
+    descriptionSource: DescriptionSource | None = Field(default=None)
+    image: SpeciesImage | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _media_contract(self) -> SpeciesDetail:
+        if (self.description is None) != (self.descriptionSource is None):
+            raise ValueError("description and descriptionSource must be published together")
+        if self.imagePublication == "fallback-only" and self.image is not None:
+            raise ValueError("fallback-only publication cannot expose a species image")
+        if self.imagePublication == "approved-assets" and self.image is None:
+            raise ValueError("approved-assets publication requires an approved image")
+        return self

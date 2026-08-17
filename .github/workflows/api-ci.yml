@@ -236,12 +236,18 @@ jobs:
 
       # The read-only public API, against the database the loader just published to.
       #
-      # These 22 tests existed on this branch for weeks without any workflow running
+      # These tests existed on this branch for weeks without any workflow running
       # them, which meant the API's safety properties — that its session cannot write,
       # that it reads only the reviewed serve.* relations, that it omits a field rather
       # than inventing one the release withheld — were asserted and never demonstrated.
       # They run here rather than in their own job because they need what this job has
       # already built: the migration, the reviewed roles, and an activated release.
+      #
+      # Discovery over app_tests also picks up the suites that need no database:
+      # the approved species-assets registry (fail-closed file validation) and the
+      # curation licence gate (httpx.MockTransport, no live network).  They live in
+      # app_tests rather than tests/ because they need the [api] dependencies and
+      # httpx, which only this job installs.
       - name: Install the pinned API adapter
         run: python -m pip install --disable-pip-version-check ".[api]" httpx
 
@@ -262,13 +268,17 @@ jobs:
             exit 1
           fi
 
-      - name: Run the public API contract tests against the read-only role
+      - name: Run the public API suites against the read-only role
         env:
           BRERC_API_INTEGRATION: "1"
           APP_ENV: dev
           DATABASE_URL: >-
             postgresql://brerc_api_test:synthetic-api-password@127.0.0.1:5432/brerc_ui_integration
-        run: python -m unittest app_tests.test_public_api_contract
+        run: >-
+          python -m unittest discover
+          --start-directory app_tests
+          --top-level-directory .
+          --pattern "test_*.py"
 
   lint:
     name: Ruff lint and format

@@ -11,8 +11,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import species_assets
 from app.config import ALLOWED_ORIGINS, IS_PROD
 from app.routers import distribution, health, provenance, records, species, summary
+
+# Validate the approved species-assets file (if configured) at import time, so a
+# malformed or still-unapproved file is a refused DEPLOY, not a per-request
+# surprise.  Unset/absent is the ordinary state and loads the inactive registry.
+species_assets.registry()
 
 app = FastAPI(
     title="BRERC Public Dashboard API",

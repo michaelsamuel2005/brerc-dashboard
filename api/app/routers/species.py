@@ -10,19 +10,26 @@ and the facet list is correspondingly empty.  When a reviewed vocabulary exists
 this becomes additive: groups appear, and species outside the vocabulary keep
 rendering as ungrouped rather than being hidden or mislabelled.
 
-Images are ``fallback-only``: no approved image assets exist, and a species
-image may only be published with a verified licence and attribution.
+Images and descriptions come only from the APPROVED assets registry
+(app/species_assets.py): media a human has signed off, each with a verified
+licence, full attribution and an approval reference.  A species with an
+approved image publishes as ``approved-assets``; every other species — and
+every deployment without an assets file — publishes as ``fallback-only``, and
+the front end shows its labelled placeholder.  This endpoint never fetches
+media from a third party at request time.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app import config
+from app import config, species_assets
 from app.db import assert_serving_relation, serving_connection
 from app.models import (
+    DescriptionSource,
     SpeciesDetail,
     SpeciesFacets,
+    SpeciesImage,
     SpeciesListItem,
     SpeciesListPage,
     SpeciesStats,
@@ -126,9 +133,9 @@ def _item(row: dict, ambiguous: set[str]) -> SpeciesListItem:
         recordCount=record_count,
         firstYear=int(row["first_year"]) if has_records else None,
         lastYear=int(row["last_year"]) if has_records else None,
-        # No approved image assets exist; a species image needs a verified
-        # licence and attribution before it may be shown.
-        hasImage=False,
+        # True only when the approved-assets registry holds a signed-off,
+        # licence-verified image for this species.
+        hasImage=species_assets.registry().has_image(row["scientific_name"]),
     )
 
 
@@ -179,7 +186,13 @@ def list_species(
     )
 
 
-@router.get("/species/{species_id}", response_model=SpeciesDetail)
+@router.get(
+    "/species/{species_id}",
+    response_model=SpeciesDetail,
+    # Optional media keys are OMITTED when unset, never sent as null — the web
+    # schema marks them .optional(), not nullable.  Same mechanism as /records.
+    response_model_exclude_unset=True,
+)
 def species_detail(species_id: str) -> SpeciesDetail:
     with serving_connection() as connection:
         release: ActiveRelease = load_active_release(connection)
@@ -197,6 +210,40 @@ def species_detail(species_id: str) -> SpeciesDetail:
 
     record_count = int(row["total_records"])
     has_records = record_count > 0
+
+    # Media come only from the approved-assets registry.  The publication mode
+    # is per-response: approved-assets exactly when THIS species has an approved
+    # image (the contract then requires the image), fallback-only otherwise (the
+    # contract then forbids one).  Optional keys are added to `media` only when
+    # present, so response_model_exclude_unset omits them entirely.
+    assets = species_assets.registry().for_name(row["scientific_name"])
+    media: dict[str, object] = {}
+    if assets is not None and assets.image is not None:
+        approved = assets.image
+        media["image"] = SpeciesImage(
+            url=approved.url,
+            attributionText=approved.attributionText,
+            licence=approved.licence,
+            licenceUrl=approved.licenceUrl,
+            sourceUrl=approved.sourceUrl,
+            approvalReference=approved.approvalReference,
+            alt=approved.alt,
+        )
+    if assets is not None and assets.description is not None:
+        source = assets.descriptionSource
+        source_fields: dict[str, object] = {
+            "label": source.label,
+            "approvalReference": source.approvalReference,
+        }
+        if source.sourceUrl is not None:
+            source_fields["sourceUrl"] = source.sourceUrl
+        if source.licence is not None:
+            source_fields["licence"] = source.licence
+        if source.licenceUrl is not None:
+            source_fields["licenceUrl"] = source.licenceUrl
+        media["description"] = assets.description
+        media["descriptionSource"] = DescriptionSource(**source_fields)
+
     return SpeciesDetail(
         speciesId=str(row["species_id"]),
         slug=species_slug(
@@ -207,12 +254,12 @@ def species_detail(species_id: str) -> SpeciesDetail:
         scientificName=row["scientific_name"],
         commonName=row["common_name"],
         group=row["taxon_group"],
-        # No approved assets: the contract forbids an image under this value.
-        imagePublication="fallback-only",
+        imagePublication="approved-assets" if "image" in media else "fallback-only",
         stats=SpeciesStats(
             recordCount=record_count,
             yearRange=(int(row["first_year"]), int(row["last_year"])) if has_records else None,
             verificationAvailable=release.verification_available,
             verifiedCount=verified_count,
         ),
+        **media,
     )
