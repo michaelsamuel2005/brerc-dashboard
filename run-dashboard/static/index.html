@@ -193,7 +193,6 @@
           <th>Job name</th>
           <th>Job type</th>
           <th>Date</th>
-          <th>Load no</th>
           <th>Duration</th>
           <th>Status</th>
           <th>Reason</th>
@@ -284,7 +283,6 @@
       <td>${run.run_number}</td>
       <td>${escapeHtml(run.job_name)}</td>
       <td>${escapeHtml(run.job_type)}</td>
-      <td>${escapeHtml(run.date)}</td>
       <td>${escapeHtml(run.load_no) || "—"}</td>
       <td>${formatDuration(run.duration_seconds)}</td>
       <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
@@ -295,7 +293,7 @@
 
     const detailRow = document.createElement("tr");
     detailRow.className = `detail-row${isExpanded ? "" : " hidden"}`;
-    detailRow.innerHTML = `<td colspan="8">${renderCounts(run)}</td>`;
+    detailRow.innerHTML = `<td colspan="7">${renderCounts(run)}</td>`;
 
     tr.addEventListener("click", (event) => {
       // Don't hijack clicks on the Reason column's own "Technical details"
