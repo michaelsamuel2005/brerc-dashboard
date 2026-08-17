@@ -222,6 +222,42 @@ jobs:
           python -m unittest
           loader_tests.test_postgis16_destination_integration
 
+      # The read-only public API, against the database the loader just published to.
+      #
+      # These 22 tests existed on this branch for weeks without any workflow running
+      # them, which meant the API's safety properties — that its session cannot write,
+      # that it reads only the reviewed serve.* relations, that it omits a field rather
+      # than inventing one the release withheld — were asserted and never demonstrated.
+      # They run here rather than in their own job because they need what this job has
+      # already built: the migration, the reviewed roles, and an activated release.
+      - name: Install the pinned API adapter
+        run: python -m pip install --disable-pip-version-check ".[api]" httpx
+
+      # The step above depends on the lifecycle tests leaving a release active. That is
+      # an ordering assumption, so it is asserted rather than trusted: without a release
+      # every endpoint correctly answers 503, and a suite that only ever saw 503 would
+      # pass nothing while looking green.
+      - name: Confirm an active release exists for the API to serve
+        env:
+          PGPASSWORD: synthetic-admin-password
+        run: |
+          ACTIVE=$(psql -h 127.0.0.1 -p 5432 -U postgres -d brerc_ui_integration -tAc \
+            "SELECT count(*) FROM serve.public_release")
+          echo "active releases: ${ACTIVE}"
+          if [ "${ACTIVE}" != "1" ]; then
+            echo "::error::The API contract tests need exactly one active release; found ${ACTIVE}."
+            echo "Add an explicit activation step before this one."
+            exit 1
+          fi
+
+      - name: Run the public API contract tests against the read-only role
+        env:
+          BRERC_API_INTEGRATION: "1"
+          APP_ENV: dev
+          DATABASE_URL: >-
+            postgresql://brerc_api_test:synthetic-api-password@127.0.0.1:5432/brerc_ui_integration
+        run: python -m unittest app_tests.test_public_api_contract
+
   lint:
     name: Ruff lint and format
     runs-on: ubuntu-latest
