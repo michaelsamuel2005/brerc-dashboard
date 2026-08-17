@@ -222,6 +222,18 @@ jobs:
           python -m unittest
           loader_tests.test_postgis16_destination_integration
 
+      # unittest runs a class's tests in alphabetical method order, and the lifecycle
+      # suite deliberately ends most of its scenarios failed, superseded or rolled
+      # back — so what it leaves in serve.public_release is an accident of test
+      # naming, and CI proved the accident lands on zero. Publish the release the
+      # API will serve explicitly: the same end-to-end test that proves the atomic
+      # publish, re-run on its own as the LAST database write, leaves exactly one
+      # active release whose data came through the real loader path.
+      - name: Publish and activate the release the API will serve
+        run: >-
+          python -m unittest
+          loader_tests.test_postgis16_destination_integration.TestPostGIS16DestinationIntegration.test_real_source_connector_streams_into_one_atomic_public_release
+
       # The read-only public API, against the database the loader just published to.
       #
       # These 22 tests existed on this branch for weeks without any workflow running
