@@ -87,17 +87,35 @@ def load_sensitive_species():
     df = pd.read_csv(sensitive_species_file)
     df = clean_data(df)
 
+    # Both columns are validated, not just species_no. classify_chunk() uses
+    # the species_no set, and profiling.classify uses the nbn_number set for
+    # its mismatch check — a renamed or blanked nbn_number column would
+    # silently hand that check an empty set. A renamed column would otherwise
+    # also surface as a bare KeyError, which describe_failure() reports as a
+    # SOURCE data problem — pointing staff at entirely the wrong file.
+    for required_column in ("species_no", "nbn_number"):
+        if required_column not in df.columns:
+            raise SensitiveSpeciesListUnavailable(
+                f"The sensitive-species list at {sensitive_species_file} has no "
+                f"'{required_column}' column after cleaning. Check the file's "
+                "header row — both species_no and nbn_number are required."
+            )
+
     sensitive_species_nos = set(df["species_no"].dropna())
     sensitive_nbn_numbers = set(df["nbn_number"].dropna())
 
-    # A file that parses but yields no species numbers is the same hazard as no
-    # file at all — a truncated download or a renamed column would otherwise
-    # sail through and disable the gate just as quietly.
+    # A file that parses but yields no values is the same hazard as no file at
+    # all — a truncated download would otherwise sail through and disable the
+    # gate (or profiling's mismatch check) just as quietly.
     if not sensitive_species_nos:
         raise SensitiveSpeciesListUnavailable(
             f"The sensitive-species list at {sensitive_species_file} loaded but "
-            "contains no usable species_no values. Check the file is complete "
-            "and that its species number column is named 'species_no'."
+            "contains no usable species_no values. Check the file is complete."
+        )
+    if not sensitive_nbn_numbers:
+        raise SensitiveSpeciesListUnavailable(
+            f"The sensitive-species list at {sensitive_species_file} loaded but "
+            "contains no usable nbn_number values. Check the file is complete."
         )
 
     return (

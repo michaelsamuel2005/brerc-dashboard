@@ -23,6 +23,10 @@ from etl.load.reload import DatabaseMismatchError, force_full_reload
 from etl.pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
 from etl.run_history import mark_run_failed, mark_run_successful, start_run
+from etl.safety_gate.rules import (
+    SensitiveSpeciesListUnavailable,
+    load_sensitive_species,
+)
 
 import pandas as pd
 
@@ -138,6 +142,13 @@ def describe_failure(error: Exception) -> str:
     fragments of source data (a bad species code, a file path, a DB error
     detail) onto a browser-accessible page.
     """
+    if isinstance(error, SensitiveSpeciesListUnavailable):
+        return (
+            "The sensitive-species list could not be loaded, so the update "
+            "stopped before changing any data. Check that the file named in "
+            "config/safety.yaml (normally data/sensitive_species.csv) is in "
+            "place and has its species_no and nbn_number columns."
+        )
     if isinstance(error, DatabaseMismatchError):
         return (
             "A safety check blocked a full database reset because the settings "
@@ -196,6 +207,16 @@ def nightly_job():
                 load_mode = "initial"
 
             run_number = start_run(job_type=load_mode)
+
+            # Prove the sensitive-species list is loadable before ANYTHING
+            # writes. run_pipeline() has its own preflight, but on an initial
+            # run force_full_reload() resets the schema below, before the
+            # pipeline is reached — so the check has to happen here too for
+            # "the update stopped before changing any data" to be true in
+            # every mode. Placed after start_run() so a missing list is a
+            # visible failed run on the dashboard, not a silent no-op.
+            # The result is lru_cached; the later uses cost nothing extra.
+            load_sensitive_species()
 
             if load_mode == "initial":
                 connection.commit()

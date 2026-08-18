@@ -101,6 +101,66 @@ def test_load_sensitive_species_refuses_a_list_with_no_species_numbers(monkeypat
     assert "species_no" in str(raised.value)
 
 
+def test_load_sensitive_species_refuses_a_list_with_no_nbn_numbers(monkeypatch):
+    """
+    The nbn_number set gets the same protection as species_no.
+
+    profiling.classify uses the NBN set for its mismatch check, so a blanked
+    nbn_number column would silently hand that check an empty set while the
+    file looked correctly configured. (Review finding, Ting Ting, 17 Aug.)
+    """
+    rules.load_sensitive_species.cache_clear()
+
+    fake_config = {
+        "files": {"sensitive_species": {"path": "/absolute/path/to/sensitive.csv"}}
+    }
+    monkeypatch.setattr(rules, "CONFIG", fake_config)
+
+    # species_no populated, nbn_number entirely blank.
+    blank_nbn_df = pd.DataFrame({"species_no": [101, 102], "nbn_number": [None, None]})
+
+    with patch("pandas.read_csv", return_value=blank_nbn_df), patch(
+        "etl.safety_gate.rules.clean_data", return_value=blank_nbn_df
+    ), patch("pathlib.Path.exists", return_value=True):
+
+        with pytest.raises(SensitiveSpeciesListUnavailable) as raised:
+            load_sensitive_species()
+
+    rules.load_sensitive_species.cache_clear()
+
+    assert "nbn_number" in str(raised.value)
+
+
+def test_load_sensitive_species_refuses_a_list_missing_a_required_column(monkeypatch):
+    """
+    A renamed column must be reported as a LIST problem, naming the column.
+
+    Without this check, df["nbn_number"] raised a bare KeyError, which
+    describe_failure() summarises as "the source data was missing an expected
+    column" — sending staff to investigate the wrong file entirely.
+    """
+    rules.load_sensitive_species.cache_clear()
+
+    fake_config = {
+        "files": {"sensitive_species": {"path": "/absolute/path/to/sensitive.csv"}}
+    }
+    monkeypatch.setattr(rules, "CONFIG", fake_config)
+
+    renamed_df = pd.DataFrame({"species_no": [101], "nbn_no": ["NBN1"]})
+
+    with patch("pandas.read_csv", return_value=renamed_df), patch(
+        "etl.safety_gate.rules.clean_data", return_value=renamed_df
+    ), patch("pathlib.Path.exists", return_value=True):
+
+        with pytest.raises(SensitiveSpeciesListUnavailable) as raised:
+            load_sensitive_species()
+
+    rules.load_sensitive_species.cache_clear()
+
+    assert "nbn_number" in str(raised.value)
+    assert "header" in str(raised.value)
+
+
 def test_classification_stops_rather_than_publishing_without_the_list(monkeypatch):
     """
     The refusal must reach the caller, not be swallowed on the way.
