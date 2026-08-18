@@ -128,9 +128,25 @@
 table.data th, table.data td { padding: var(--row-pad) .85rem; }
 
 /* ---------- explore ---------- */
+/* The explore page is a map tool, not a reading page, so it opts out of the
+   1100px prose measure that `main` sets for text pages. The side panel stays a
+   fixed 20rem, so every extra pixel of width goes to the map. Only binds above
+   1100px — narrower viewports, including every reflow case, are untouched. */
+main.explore-page { max-width: 1400px; }
+/* Width is for the map, not for the prose. Both callouts keep a readable line
+   length — a sentence stretched across 1300px is measurably harder to read, and
+   widening the page must not quietly cost that. */
+main.explore-page .caveat,
+main.explore-page .map-instructions { max-width: 62rem; }
+
 .explore-layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: var(--sp-2); align-items: start; }
 @media (max-width: 980px) { .explore-layout { grid-template-columns: 1fr; } }
-.explore-layout .map-card { height: min(74vh, 620px); }
+/* 74vh is unchanged, so short and mobile viewports render exactly as before —
+   the old 620px ceiling was reached at a viewport height of only ~838px, which
+   left a laptop or desktop screen showing a stunted map above dead space. The
+   higher ceiling lets the map keep growing to the point where the page itself
+   is the constraint. */
+.explore-layout .map-card { height: min(74vh, 820px); }
 .side-panel { display: flex; flex-direction: column; gap: var(--sp-2); }
 .splist { display: flex; flex-direction: column; gap: .25rem; max-height: 20rem; overflow: auto; padding: .35rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .splist button {

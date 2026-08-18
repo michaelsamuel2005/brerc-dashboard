@@ -86,7 +86,7 @@ export default function ExplorePage() {
   }
 
   return (
-    <main id="main">
+    <main id="main" className="explore-page">
       <span className="eyebrow">Distribution</span>
       <h1 className="page-title" tabIndex={-1}>Explore the map</h1>
       <p className="page-lead">
