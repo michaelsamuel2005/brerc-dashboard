@@ -125,7 +125,12 @@ export function AccessibilityStatement() {
             that the menu returns focus to the button that opened it.
           </li>
           <li>
-            <strong>Touch targets</strong> are 44 × 44 pixels or larger throughout.
+            <strong>Touch targets</strong> are sized to a minimum of 44 × 44 pixels —
+            stricter than the 24-pixel minimum WCAG 2.2 requires. Automated measurement
+            across seven viewport sizes finds no smaller control. Where a control sits
+            over the interactive map, its bounding box alone cannot prove the real hit
+            area, so those controls are additionally confirmed by a named reviewer as
+            part of the manual testing round described below.
           </li>
         </ul>
         <p>
