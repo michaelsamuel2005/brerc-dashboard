@@ -25,9 +25,18 @@ def get_config() -> dict:
     return load_safety_config()
 
 
-def _get_destination() -> dict:
-    """Retrieves the destination connection configuration block."""
-    return get_config().get("destination", {})
+def _get_api_readonly() -> dict:
+    """
+    Retrieves the API's own read-only connection block (api_readonly), kept
+    separate from safety.yaml's 'destination' block. 'destination' holds the
+    ETL's write-capable credentials — sharing it here would mean that on any
+    host where safety.yaml wins (the intended behaviour), this "read-only"
+    API silently starts connecting with write credentials instead. The
+    read-only-ness of this connection is enforced entirely by the database
+    role's own grants (see db/docker/99_set_ro_password.sh), so which
+    credentials land here matters.
+    """
+    return get_config().get("api_readonly", {})
 
 
 # Statement timeout guard: caps query execution at 10 seconds to prevent runaway queries
@@ -45,23 +54,27 @@ B6_PUBLIC_RELATIONS = {
 def _build_database_url() -> str:
     """
     Assembles the database connection string, preferring config/safety.yaml's
-    destination block — the normal way to configure this, plain user/password
+    api_readonly block — the normal way to configure this, plain user/password
     fields with nothing to assemble by hand. DATABASE_URL is only an override
     for when one's specifically needed (e.g. a Docker deployment injecting
     secrets as environment variables).
 
+    Deliberately reads api_readonly, not destination: destination holds the
+    ETL's write-capable credentials, and this connection must never end up
+    using them (see _get_api_readonly).
+
     Fails closed: if neither supplies real credentials, raises instead of
     silently connecting as postgres/postgres.
     """
-    destination = _get_destination()
+    api_readonly = _get_api_readonly()
 
-    user = destination.get("user")
-    password = destination.get("password")
+    user = api_readonly.get("user")
+    password = api_readonly.get("password")
 
     if user and password:
-        host = destination.get("dbhostname") or "localhost"
-        port = destination.get("port") or 5432
-        dbname = destination.get("dbname") or "brerc_ui"
+        host = api_readonly.get("dbhostname") or "localhost"
+        port = api_readonly.get("port") or 5432
+        dbname = api_readonly.get("dbname") or "brerc_ui"
         return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
 
     explicit_url = os.getenv("DATABASE_URL")
@@ -70,8 +83,8 @@ def _build_database_url() -> str:
         return explicit_url
 
     raise RuntimeError(
-        "No database credentials configured. Set destination.user/"
-        "destination.password in config/safety.yaml, or DATABASE_URL as an "
+        "No database credentials configured. Set api_readonly.user/"
+        "api_readonly.password in config/safety.yaml, or DATABASE_URL as an "
         "override — there is no default credential."
     )
 
