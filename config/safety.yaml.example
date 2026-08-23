@@ -4,7 +4,9 @@ files:
   sensitive_species:
     path: "data/sensitive_species.csv"
 
-# Source connection
+# Source connection. When using YAML credentials, set dbhostname, dbname,
+# user and password together; leave user/password empty to use the matching
+# environment fallback instead.
 
 connection:
   dbhostname:
@@ -16,7 +18,8 @@ connection:
   schema:
   table:
 
-# Destination database — the ETL's write-capable connection.
+# Destination database — the ETL's write-capable connection. Set dbhostname,
+# dbname, user and password together when configuring credentials here.
 
 destination:
   dbhostname:
@@ -41,7 +44,7 @@ api_readonly:
   user:
   password:
 
-# Admin database connection
+# Admin database connection. Set dbhostname, dbname, user and password together.
 # Used only for schema-mutating operations such as full rebuilds.
 # Do NOT put real credentials in this file.
 
@@ -49,7 +52,7 @@ admin:
   dbhostname: localhost
   port: 5432
   dbname: brerc_ui
-  user: brerc_admin
+  user: ""
   password: ""
 
 load:

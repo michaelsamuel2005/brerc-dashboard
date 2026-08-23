@@ -4,8 +4,14 @@ import os
 from unittest.mock import patch
 
 import pytest
+from psycopg.conninfo import conninfo_to_dict
 
-from etl.db import _build_destination_database_url, _build_source_database_url
+from etl.db import (
+    _build_destination_database_url,
+    _build_source_database_url,
+    get_destination_connection,
+    get_source_connection,
+)
 
 YAML_DESTINATION = {
     "dbhostname": "yaml-host",
@@ -32,8 +38,7 @@ YAML_CONNECTION = {
 
 
 def test_build_destination_database_url_prefers_yaml_when_set():
-    # safety.yaml is the normal way to configure this; the env var is only
-    # an override, so yaml must win when both are present.
+    # safety.yaml is the normal host configuration, so it wins when both are present.
     with patch.dict(
         os.environ,
         {"DESTINATION_DATABASE_URL": "postgresql://etl:pw@dest-host:5432/brerc_ui"},
@@ -42,7 +47,13 @@ def test_build_destination_database_url_prefers_yaml_when_set():
         with patch("etl.db.CONFIG", {"destination": YAML_DESTINATION}):
             result = _build_destination_database_url()
 
-    assert result == "postgresql://yaml_user:yaml_pass@yaml-host:5555/yaml_db"
+    assert conninfo_to_dict(result) == {
+        "user": "yaml_user",
+        "password": "yaml_pass",
+        "host": "yaml-host",
+        "port": "5555",
+        "dbname": "yaml_db",
+    }
 
 
 def test_build_destination_database_url_falls_back_to_env_var_when_yaml_unset():
@@ -73,7 +84,8 @@ def test_build_destination_database_url_ignores_generic_database_url():
             result = _build_destination_database_url()
 
     assert "api-host" not in result
-    assert result == "postgresql://yaml_user:yaml_pass@yaml-host:5555/yaml_db"
+    assert conninfo_to_dict(result)["user"] == "yaml_user"
+    assert conninfo_to_dict(result)["host"] == "yaml-host"
 
 
 def test_build_destination_database_url_raises_when_unconfigured():
@@ -81,8 +93,71 @@ def test_build_destination_database_url_raises_when_unconfigured():
     # silently connect as postgres/postgres.
     with patch.dict(os.environ, {}, clear=True):
         with patch("etl.db.CONFIG", {"destination": {}}):
-            with pytest.raises(RuntimeError, match="No destination database credentials"):
+            with pytest.raises(
+                RuntimeError, match="No destination database credentials"
+            ):
                 _build_destination_database_url()
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        {"user": "writer", "password": "secret", "dbname": "brerc_ui"},
+    ],
+)
+def test_build_destination_database_url_rejects_partial_yaml_credentials(destination):
+    with patch.dict(
+        os.environ,
+        {"DESTINATION_DATABASE_URL": "postgresql://env_writer:pw@env-host/brerc_ui"},
+        clear=True,
+    ):
+        with patch("etl.db.CONFIG", {"destination": destination}):
+            with pytest.raises(RuntimeError, match="destination block is incomplete"):
+                _build_destination_database_url()
+
+
+@pytest.mark.parametrize("destination", [{"user": "writer"}, {"password": "secret"}])
+def test_build_destination_database_url_rejects_one_sided_yaml_credentials(
+    destination,
+):
+    with patch.dict(
+        os.environ,
+        {"DESTINATION_DATABASE_URL": "postgresql://env_writer:pw@env-host/brerc_ui"},
+        clear=True,
+    ):
+        with patch("etl.db.CONFIG", {"destination": destination}):
+            with pytest.raises(RuntimeError, match="destination block is incomplete"):
+                _build_destination_database_url()
+
+
+def test_build_destination_database_url_quotes_reserved_characters():
+    credentials = {
+        **YAML_DESTINATION,
+        "user": "writer@example",
+        "password": "p@ss/word#100%'",
+    }
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("etl.db.CONFIG", {"destination": credentials}):
+            result = conninfo_to_dict(_build_destination_database_url())
+
+    assert result["user"] == credentials["user"]
+    assert result["password"] == credentials["password"]
+
+
+def test_get_destination_connection_resolves_credentials_lazily():
+    with (
+        patch(
+            "etl.db.get_destination_database_url",
+            return_value="postgresql://writer:pw@destination/brerc_ui",
+        ) as build_url,
+        patch("etl.db.psycopg.connect") as connect,
+    ):
+        get_destination_connection()
+
+    build_url.assert_called_once_with()
+    connect.assert_called_once()
+    assert connect.call_args.args == ("postgresql://writer:pw@destination/brerc_ui",)
 
 
 # --- _build_source_database_url tests ---
@@ -97,7 +172,13 @@ def test_build_source_database_url_prefers_yaml_when_set():
         with patch("etl.db._CONNECTION", YAML_CONNECTION):
             result = _build_source_database_url()
 
-    assert result == "postgresql://yaml_source_user:yaml_source_pass@yaml-source-host:5556/yaml_source_db"
+    assert conninfo_to_dict(result) == {
+        "user": "yaml_source_user",
+        "password": "yaml_source_pass",
+        "host": "yaml-source-host",
+        "port": "5556",
+        "dbname": "yaml_source_db",
+    }
 
 
 def test_build_source_database_url_falls_back_to_env_var_when_yaml_unset():
@@ -121,3 +202,65 @@ def test_build_source_database_url_raises_when_unconfigured():
         with patch("etl.db._CONNECTION", {}):
             with pytest.raises(RuntimeError, match="No source database credentials"):
                 _build_source_database_url()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"user": "reader", "password": "secret", "dbname": "brerc_source"},
+    ],
+)
+def test_build_source_database_url_rejects_partial_yaml_credentials(source):
+    with patch.dict(
+        os.environ,
+        {"SOURCE_DATABASE_URL": "postgresql://env_reader:pw@env-host/brerc_source"},
+        clear=True,
+    ):
+        with patch("etl.db._CONNECTION", source):
+            with pytest.raises(
+                RuntimeError, match="source connection block is incomplete"
+            ):
+                _build_source_database_url()
+
+
+@pytest.mark.parametrize("source", [{"user": "reader"}, {"password": "secret"}])
+def test_build_source_database_url_rejects_one_sided_yaml_credentials(source):
+    with patch.dict(
+        os.environ,
+        {"SOURCE_DATABASE_URL": "postgresql://env_reader:pw@env-host/brerc_source"},
+        clear=True,
+    ):
+        with patch("etl.db._CONNECTION", source):
+            with pytest.raises(
+                RuntimeError, match="source connection block is incomplete"
+            ):
+                _build_source_database_url()
+
+
+def test_build_source_database_url_quotes_reserved_characters():
+    credentials = {
+        **YAML_CONNECTION,
+        "user": "reader@example",
+        "password": "p@ss/word#100%'",
+    }
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("etl.db._CONNECTION", credentials):
+            result = conninfo_to_dict(_build_source_database_url())
+
+    assert result["user"] == credentials["user"]
+    assert result["password"] == credentials["password"]
+
+
+def test_get_source_connection_resolves_credentials_lazily():
+    with (
+        patch(
+            "etl.db._build_source_database_url",
+            return_value="postgresql://reader:pw@source/brerc_source",
+        ) as build_url,
+        patch("etl.db.psycopg.connect") as connect,
+    ):
+        get_source_connection()
+
+    build_url.assert_called_once_with()
+    connect.assert_called_once_with("postgresql://reader:pw@source/brerc_source")

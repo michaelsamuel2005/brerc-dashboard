@@ -4,6 +4,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+from psycopg.conninfo import conninfo_to_dict
 
 from app.db import _build_database_url
 
@@ -17,8 +18,7 @@ YAML_API_READONLY = {
 
 
 def test_build_database_url_prefers_yaml_when_set():
-    # safety.yaml is the normal way to configure this; DATABASE_URL is only
-    # an override, so yaml must win when both are present.
+    # safety.yaml is the normal host configuration, so it wins when both are present.
     with patch.dict(
         os.environ,
         {"DATABASE_URL": "postgresql://ro_user:pw@api-host:5432/brerc_ui"},
@@ -27,7 +27,13 @@ def test_build_database_url_prefers_yaml_when_set():
         with patch("app.db._get_api_readonly", return_value=YAML_API_READONLY):
             result = _build_database_url()
 
-    assert result == "postgresql://yaml_user:yaml_pass@yaml-host:5555/yaml_db"
+    assert conninfo_to_dict(result) == {
+        "user": "yaml_user",
+        "password": "yaml_pass",
+        "host": "yaml-host",
+        "port": "5555",
+        "dbname": "yaml_db",
+    }
 
 
 def test_build_database_url_falls_back_to_env_var_when_yaml_unset():
@@ -49,6 +55,52 @@ def test_build_database_url_raises_when_unconfigured():
         with patch("app.db._get_api_readonly", return_value={}):
             with pytest.raises(RuntimeError, match="No database credentials"):
                 _build_database_url()
+
+
+@pytest.mark.parametrize(
+    "api_readonly",
+    [
+        {"user": "reader", "password": "secret", "dbname": "brerc_ui"},
+    ],
+)
+def test_build_database_url_rejects_partial_yaml_credentials(api_readonly):
+    with patch.dict(
+        os.environ,
+        {"DATABASE_URL": "postgresql://env_reader:pw@env-host:5432/brerc_ui"},
+        clear=True,
+    ):
+        with patch("app.db._get_api_readonly", return_value=api_readonly):
+            with pytest.raises(RuntimeError, match="api_readonly block is incomplete"):
+                _build_database_url()
+
+
+@pytest.mark.parametrize("api_readonly", [{"user": "reader"}, {"password": "secret"}])
+def test_build_database_url_rejects_one_sided_yaml_credentials(
+    api_readonly,
+):
+    with patch.dict(
+        os.environ,
+        {"DATABASE_URL": "postgresql://env_reader:pw@env-host:5432/brerc_ui"},
+        clear=True,
+    ):
+        with patch("app.db._get_api_readonly", return_value=api_readonly):
+            with pytest.raises(RuntimeError, match="api_readonly block is incomplete"):
+                _build_database_url()
+
+
+def test_build_database_url_quotes_reserved_characters():
+    credentials = {
+        **YAML_API_READONLY,
+        "user": "reader@example",
+        "password": "p@ss/word#100%'",
+    }
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("app.db._get_api_readonly", return_value=credentials):
+            result = conninfo_to_dict(_build_database_url())
+
+    assert result["user"] == credentials["user"]
+    assert result["password"] == credentials["password"]
 
 
 def test_build_database_url_ignores_etl_write_credentials():
@@ -74,4 +126,27 @@ def test_build_database_url_ignores_etl_write_credentials():
             }
             result = _build_database_url()
 
-    assert result == "postgresql://brerc_api_ro:ro_pw@etl-host:5432/brerc_ui"
+    assert conninfo_to_dict(result) == {
+        "user": "brerc_api_ro",
+        "password": "ro_pw",
+        "host": "etl-host",
+        "port": "5432",
+        "dbname": "brerc_ui",
+    }
+
+
+def test_build_database_url_rejects_destination_only_configuration():
+    with patch.dict(os.environ, {}, clear=True):
+        with patch(
+            "app.db.get_config",
+            return_value={
+                "destination": {
+                    "dbhostname": "etl-host",
+                    "dbname": "brerc_ui",
+                    "user": "etl_write",
+                    "password": "etl_write_pw",
+                }
+            },
+        ):
+            with pytest.raises(RuntimeError, match="No database credentials"):
+                _build_database_url()

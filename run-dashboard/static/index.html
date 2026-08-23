@@ -283,7 +283,7 @@
       <td>${run.run_number}</td>
       <td>${escapeHtml(run.job_name)}</td>
       <td>${escapeHtml(run.job_type)}</td>
-      <td>${escapeHtml(run.load_no) || "—"}</td>
+      <td>${escapeHtml(run.load_no || run.date) || "—"}</td>
       <td>${formatDuration(run.duration_seconds)}</td>
       <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
       <td class="reason">${renderReason(run, expandable)}</td>

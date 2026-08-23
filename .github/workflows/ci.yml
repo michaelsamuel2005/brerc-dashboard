@@ -62,6 +62,11 @@ jobs:
       # The API and the tests read this. Same shape as your local .env, pointing
       # at the throwaway database above.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brerc_ui
+      # The ETL deliberately never reuses the public API variable. These two
+      # explicit names point to the same disposable CI database, while real
+      # deployments use separate least-privilege write and admin roles.
+      DESTINATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brerc_ui
+      DATABASE_URL_ADMIN: postgresql://postgres:postgres@localhost:5432/brerc_ui
       # Explicitly off, so CI can never reach out to iNaturalist/GBIF/Wikipedia.
       # The B8 proxy tests use a fake HTTP transport and stay offline either way;
       # this makes that guarantee visible rather than relying on the default.
