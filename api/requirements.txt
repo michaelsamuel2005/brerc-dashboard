@@ -3,6 +3,7 @@ uvicorn[standard]>=0.29
 pydantic>=2.6
 psycopg[binary]>=3.1
 python-dotenv>=1.0
+PyYAML>=6.0          # host-only safety.yaml connection configuration
 httpx>=0.27          # outbound calls for the species image/description proxy (B8)
 pandas>=2.0          # ETL pipeline (B1-B5)
 pyproj>=3.6          # coordinate transforms, EPSG:27700 <-> 4326 (B2)
