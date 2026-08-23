@@ -1,6 +1,6 @@
 """
-Main execution pipeline orchestrator for the BRERC ETL process. 
-Coordinates data cleaning, species resolution, spatial aggregation, database persistence, 
+Main execution pipeline orchestrator for the BRERC ETL process.
+Coordinates data cleaning, species resolution, spatial aggregation, database persistence,
 provenance tracking, and reconciliation into a single unified transactional run.
 """
 
@@ -44,7 +44,7 @@ def run_pipeline(
         5. Upsert pipeline execution provenance metadata.
         6. Run two-pass occurrence record reconciliation against the UI state.
 
-    The load_mode ('initial' or 'incremental') is stamped onto every row written 
+    The load_mode ('initial' or 'incremental') is stamped onto every row written
     during this execution via the 'Load' and 'Load_date' audit metadata columns.
     """
 
