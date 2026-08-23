@@ -16,11 +16,21 @@ from etl.safety_gate.rules import (
 
 def classify_chunk(
     df: pd.DataFrame,
+    *,
+    source_provides_sensitivity: bool | None = None,
 ) -> pd.DataFrame:
     """
-    Evaluates records against multi-factor sensitivity rules, 
-    tracks specific sensitivity reasons per row, and assigns 
+    Evaluates records against multi-factor sensitivity rules,
+    tracks specific sensitivity reasons per row, and assigns
     blur resolution requirements.
+
+    source_provides_sensitivity:
+        Whether this source is expected to carry a "sensitive" column.
+
+        None (the default) means "work it out, and refuse if it is ambiguous".
+        Pass False for a source that genuinely has no sensitivity flag — a CSV
+        extract, for example. That is a statement about the source, and it
+        belongs where the source is configured rather than being assumed here.
     """
     df = df.copy()
 
@@ -51,8 +61,32 @@ def classify_chunk(
     # Sensitive Record Type: True for records whose record type is classified as sensitive.
     flagged_record_type_mask = df["record_type"].isin(FLAGGED_RECORD_TYPES)
 
-    # Source sensitivity flag: True for records explicitly marked as sensitive by the source.
-    if "sensitive" in df.columns:
+    # Source sensitivity flag: True for records explicitly marked as sensitive by
+    # the source.
+    #
+    # A missing column used to mean "nothing here is sensitive". That is right for a
+    # source which genuinely has no flag, and wrong — silently, and at full precision
+    # — for a source which HAS one that was renamed, dropped or misspelled upstream.
+    # The two arrive here looking identical, so the caller has to say which it is.
+    has_sensitivity_column = "sensitive" in df.columns
+
+    if source_provides_sensitivity is None and not has_sensitivity_column:
+        raise ValueError(
+            "classify_chunk(): no 'sensitive' column in this chunk. If this source "
+            "genuinely has no sensitivity flag, pass source_provides_sensitivity=False "
+            "at the call site. Defaulting to 'not sensitive' cannot tell that apart "
+            "from a column that was renamed or dropped upstream, and would publish "
+            "every affected record at full precision."
+        )
+
+    if source_provides_sensitivity and not has_sensitivity_column:
+        raise ValueError(
+            "classify_chunk(): this source is declared to provide 'sensitive', but "
+            "the column is absent. Refusing rather than treating every record as "
+            "not sensitive."
+        )
+
+    if has_sensitivity_column:
         sensitive_source_mask = (
             df["sensitive"]
             .astype("string")
