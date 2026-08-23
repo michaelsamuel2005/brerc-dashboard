@@ -20,7 +20,7 @@ from etl.load.loader import load_safety_config
 from etl.load.metadata import get_last_load_date
 from etl.load.mode import should_run_initial_load
 from etl.load.reload import DatabaseMismatchError, force_full_reload
-from etl.pipeline import run_pipeline
+from etl.nightly_pipeline import run_pipeline
 from etl.reconciliation.state import get_ui_map
 from etl.run_history import mark_run_failed, mark_run_successful, start_run
 from etl.safety_gate.rules import (

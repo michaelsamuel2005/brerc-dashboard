@@ -12,7 +12,7 @@ from tests.conftest import needs_db
 )
 @patch("etl.job.load_source_data")
 @patch("etl.job.load_species_dictionary")
-@patch("etl.pipeline.resolve_species_numbers")
+@patch("etl.nightly_pipeline.resolve_species_numbers")
 @patch("etl.job.force_full_reload")
 def test_nightly_job_end_to_end(
     mock_force_reload,
@@ -114,7 +114,7 @@ def test_nightly_job_end_to_end(
     # ------------------------------------------------------------------
     # Mock species resolution.
     #
-    # run_pipeline() imports resolve_species_numbers into etl.pipeline,
+    # run_pipeline() imports resolve_species_numbers into etl.nightly_pipeline,
     # so this patch is applied at the location where the function is used.
     # ------------------------------------------------------------------
     resolved_records = sample_records.copy()
