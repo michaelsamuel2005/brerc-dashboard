@@ -281,9 +281,10 @@ class TestConfirmedManifest(unittest.TestCase):
         )
         self.assertIsNone(document["approvedLiveViewIdentity"])
 
-    def test_connector_is_implemented_but_endpoint_authority_remains_blocked(self):
+    def test_core_port_keeps_connector_and_endpoint_authority_blocked(self):
         rendered = "\n".join(BRERC_MAIN_DATA_DASH.release_blockers)
-        self.assertNotIn("adapter does not yet derive metadata", rendered)
+        self.assertIn("connector is not present", rendered)
+        self.assertIn("atomic loader are not present", rendered)
         self.assertIn("database/service identity", rendered)
         self.assertIn("deployment assertions only", rendered)
 

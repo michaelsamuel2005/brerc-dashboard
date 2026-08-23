@@ -92,6 +92,15 @@ class TestOneSourceOfTruthForResolutions(unittest.TestCase):
 
 
 class TestApproval(unittest.TestCase):
+    def test_approval_artifact_is_validated_and_contains_no_secret(self):
+        policy = approve(decision_ready_policy())
+        artifact = policy.approval_artifact()
+
+        self.assertEqual(artifact["artifactFormat"], "brerc-publication-policy/v1")
+        self.assertEqual(artifact["status"], "approved")
+        self.assertEqual(artifact["approval"]["approvalDigest"], policy.approval_digest)
+        self.assertNotIn(policy.public_id_salt, repr(artifact))
+
     def test_the_default_policy_is_not_approved(self):
         self.assertFalse(UNAPPROVED_POLICY.is_approved())
         with self.assertRaises(PolicyNotApproved):

@@ -24,7 +24,8 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 #: Bumped to v2 on 15 August 2026 when quote_all_identifiers moved from ON to
-#: OFF in the fixed session (see brerc_source.postgres.FIXED_SESSION_SQL).  That
+#: OFF in the reviewed fixed-session profile. The separate trusted-connector
+#: port must use the same settings. That
 #: GUC changes how PostgreSQL renders both pg_get_viewdef() and
 #: information_schema.columns.data_type, so a definition digest taken under the
 #: old profile is not comparable with one taken under the new profile.  The

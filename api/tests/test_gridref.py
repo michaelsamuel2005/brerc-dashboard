@@ -15,6 +15,7 @@ from etl.gridref import (
     is_public_resolution,
     normalise,
     precision_metres,
+    square_bounds,
     split,
 )
 
@@ -84,6 +85,18 @@ class TestSplit(unittest.TestCase):
 
     def test_tetrad_has_no_positional_split(self):
         self.assertIsNone(split("ST57A"))
+
+
+class TestSquareBounds(unittest.TestCase):
+    def test_public_numeric_references_map_to_exact_bng_bounds(self):
+        self.assertEqual(square_bounds("ST5872"), (358000, 172000, 359000, 173000))
+        self.assertEqual(square_bounds("ST587721"), (358700, 172100, 358800, 172200))
+        self.assertEqual(square_bounds("ST57"), (350000, 170000, 360000, 180000))
+
+    def test_non_public_or_invalid_references_have_no_bounds(self):
+        for value in ("", "ST", "ST57A", "ST58777216", "not-a-grid-ref"):
+            with self.subTest(value=value):
+                self.assertIsNone(square_bounds(value))
 
 
 class TestCoarsen(unittest.TestCase):

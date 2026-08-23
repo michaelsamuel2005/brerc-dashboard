@@ -10,7 +10,7 @@ cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 The publication safety modules listed below are **standard-library only** — no
 pandas and no third-party runtime dependency. The existing nightly ETL remains
 in this package as `nightly_pipeline.py` and its established subpackages; it is
-not used as publication authority by the trusted connector or release loader.
+not used as publication authority by the future trusted connector or release loader.
 `scripts/guard_stdlib_only.py` pins the exact boundary file set so the two paths
 can coexist without making a false package-wide dependency claim.
 
@@ -407,29 +407,18 @@ preview is deliberately not JSON-serialisable and cannot be passed to the releas
 Only `build_payloads(..., policy=approved_policy)` can construct a releasable dictionary: it
 rechecks approval dates, review expiry, the policy decision digest and the exact approval
 digest recorded by the transformation. Changing any publication rule after approval or trying
-to release a development candidate fails closed. The database loader has a separate trusted
-streaming path: it opens the source connector's private safe snapshot itself and accepts only
-already-generalised, HMAC-keyed dispositions. Its public API does not accept caller-built rows,
-dictionaries, candidate previews, connection factories or clock hooks.
+to release a development candidate fails closed. A future public-database writer must accept only
+a trusted source result and invoke the release-gated builder itself; it must never accept
+caller-built dictionaries or candidate previews.
 
-Aggregation, generalisation, packaging, the trusted PostgreSQL initial-source connector and the
-local ETL test/lint gates are done. The connector derives view identity, catalogue metadata,
-the fixed cursor header and rows in one locked, read-only `REPEATABLE READ` transaction; see
-`docs/POSTGRES_SOURCE_CONNECTOR.md`. Its synthetic-driver tests do not replace a BRERC-network
-run. The ordinary complete-run pipeline still materialises its result, but the dedicated release
-loader instead transforms and stages bounded safe batches before whole-candidate database
-suppression and aggregation.
+This port contains the publication safety core, exact source contract, view-identity model,
+manual capture/approval tools, and their regression gates. It deliberately does not contain the
+trusted PostgreSQL connector or the destination release loader. Those are separate items in the
+main-based reconciliation queue and cannot be inferred from dormant helper methods in this
+package. The ordinary complete-run pipeline still materialises its result in memory.
 
-The connector's separate `preflight` path fetches no record rows. It can report live structural
-readiness while approval is pending, but a successful preflight is not a `ValidatedSourceRun` and
-cannot cross the release boundary.
-
-Implemented but still requiring accepted integration/scale evidence: bounded safe transformation,
-inactive PostgreSQL/PostGIS staging, immutable release ledgers, database reconciliation, job/event
-records and atomic initial-release switching. See `docs/POSTGRES_RELEASE_LOADER.md`.
-
-Not yet written or externally approved: the incremental source window, idempotent update/deletion
-coordinator and lookup invalidation; BRERC-approved count/drop thresholds; the outbox email worker
-and ETL dashboard; the frozen OpenAPI contract; read-only FastAPI and Martin services;
-species/summary/provenance payload assembly; taxon-group projection; and the licensed-image
-pipeline.
+Not yet present in this port or externally approved: trusted locked database extraction;
+streaming safe transformation and inactive PostgreSQL/PostGIS staging; immutable release ledgers,
+database reconciliation and atomic activation; the incremental source window, update/deletion
+coordinator and lookup invalidation; BRERC-approved count/drop thresholds; the outbox email worker;
+the frozen public API contract; Martin; and the licensed-image pipeline.

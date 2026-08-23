@@ -32,7 +32,7 @@ PDF proves what is running in BRERC's database today.
 - Shankar coordinates the request and evidence route with BRERC.
 - A BRERC database operator runs the catalogue-only capture inside BRERC's network.
 - An authorised BRERC data owner reviews the capture and grants or refuses approval.
-- The production connector repeats the comparison during each extraction.
+- The queued trusted-connector port must repeat the comparison during each extraction.
 
 The JSON envelope records a claimed procedural approval; it is not a digital signature and cannot
 authenticate a person by itself. Shankar must verify the sender and authority through the agreed
@@ -164,14 +164,14 @@ completed approval envelope, BRERC must also confirm that the approver's name, r
 reference may be stored in this repository; otherwise retain that file in controlled evidence and
 commit only the approved non-reversible identity fields and decision reference.
 
-## What happens at runtime
+## What must happen at runtime
 
-The production PostgreSQL connector repeats the same catalogue capture in the same read-only,
+The separate trusted-connector port must repeat the same catalogue capture in the same read-only,
 repeatable-read transaction used to obtain the column metadata, query header and source rows. It
-takes `ACCESS SHARE` before identity capture and holds it through extraction, computes the digest
-internally, and rolls back the source transaction on success or failure. Callers cannot supply a
-checksum and claim it was observed. See
-[`POSTGRES_SOURCE_CONNECTOR.md`](POSTGRES_SOURCE_CONNECTOR.md).
+must take `ACCESS SHARE` before identity capture and hold it through extraction, compute the digest
+internally, and roll back the source transaction on success or failure. Callers must never be able
+to supply a checksum and claim it was observed. This publication-core port contains no production
+database connector.
 
 Any SQL, column, owner, view-option or PostgreSQL-version mismatch stops the job before a record is
 processed. The previous public release remains active. A view-definition digest identifies the
@@ -206,5 +206,5 @@ Even after view approval, the current 39-column contract supports initial loadin
 - [ ] An authorised BRERC owner assigns the version and approves the exact capture.
 - [ ] Shankar confirms the authority and evidence route; verification passes with the raw capture.
 - [ ] A reviewed source-contract change binds the approval.
-- [x] The production connector repeats the identity check inside each locked extraction snapshot
-  (unit-tested with a synthetic driver; BRERC execution remains pending).
+- [ ] The separate trusted-connector port repeats the identity check inside each locked extraction
+  snapshot and passes its PostgreSQL 16/TLS integration gate.
