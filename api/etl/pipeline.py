@@ -16,6 +16,7 @@ from etl.aggregation.persist import persist_aggregation_outputs
 from etl.matching.species import resolve_species_numbers
 from etl.provenance import upsert_provenance
 from etl.load.loader import load_safety_config
+from etl.safety_gate.rules import load_sensitive_species
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,16 @@ def run_pipeline(
     )
 
     try:
+        # Step 0: Prove the sensitive-species list is loadable BEFORE any
+        # database write. The list is only consumed in step 6 (reconciliation's
+        # safety gate), but steps 4 and 5 have already replaced the public
+        # aggregation outputs and stamped a new provenance row by then — so
+        # without this preflight, a missing or unusable list still lands fresh
+        # public state before the run fails, which defeats the point of
+        # failing. Raising here means a failed run changed nothing. The result
+        # is lru_cached, so the real use in step 6 costs nothing extra.
+        load_sensitive_species()
+
         # Step 1: Clean raw column names and formats
         logger.info("SOURCE columns: %s", sorted(source_df.columns.tolist()))
         logger.info("Cleaning source and dictionary dataframes...")

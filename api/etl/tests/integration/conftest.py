@@ -11,6 +11,7 @@ other test expects to find it.
 import pytest
 
 from app.db import get_connection
+from etl.safety_gate import rules
 
 
 def _reseed_sample_data():
@@ -104,3 +105,36 @@ def _reseed_sample_data():
 def reseed_sample_data_after_pipeline_tests():
     yield
     _reseed_sample_data()
+
+
+@pytest.fixture(autouse=True)
+def sensitive_species_list(tmp_path, monkeypatch):
+    """Give the safety gate a sensitive-species list, the way a deployment does.
+
+    The gate fails closed when no list can be loaded (safety_gate/rules.py), so
+    a test that runs the real pipeline has to supply one — that is the point of
+    the gate, not an inconvenience. Without this, test_nightly_job_end_to_end
+    raises SensitiveSpeciesListUnavailable.
+
+    Deliberately a temporary file rather than something committed under data/:
+    a real BRERC list must never reach git, and a committed placeholder would be
+    worse than no file at all, because rules.py falls back to a .example
+    sibling — so a placeholder would be silently used in production by anything
+    missing the real list, while looking correctly configured.
+
+    The species number is chosen not to collide with the ids these tests use, so
+    the list is present and valid without changing what any test classifies.
+    """
+    csv_path = tmp_path / "sensitive_species.csv"
+    csv_path.write_text(
+        "species_no,nbn_number\n88888,NBNSYS0000088888\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(
+        rules.CONFIG["files"]["sensitive_species"], "path", str(csv_path)
+    )
+    # The loader is lru_cached, so a stale entry from another test would
+    # otherwise mask both the patch above and its removal afterwards.
+    rules.load_sensitive_species.cache_clear()
+    yield
+    rules.load_sensitive_species.cache_clear()
