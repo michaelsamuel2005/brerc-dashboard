@@ -36,5 +36,10 @@ test.describe("BRERC P2 slice", () => {
     expect(mainBox!.width).toBeGreaterThan(1100);
     expect(mapBox!.height).toBeGreaterThan(520);
     expect(mapBox!.height).toBeLessThanOrEqual(630);
+
+    await page.setViewportSize({ width: 320, height: 640 });
+    const mobileMapBox = await page.locator(".map-card").boundingBox();
+    expect(mobileMapBox).not.toBeNull();
+    expect(mobileMapBox!.height).toBe(448);
   });
 });
