@@ -622,6 +622,7 @@ BRERC_MAIN_DATA_DASH = SourceContract(
         "the trusted PostgreSQL connector is not present in the publication-core port",
         "the destination publication writer and atomic loader are not present in the "
         "publication-core port",
+        "BRERC-approved species dictionary and its exact digest have not been received",
         "BRERC-approved live view version and identity envelope have not been received",
         "BRERC-approved source database/service identity and extraction role have not been "
         "independently pinned; connector configuration labels are deployment assertions only",

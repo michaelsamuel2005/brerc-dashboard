@@ -20,21 +20,24 @@ Before a live database path may process a record, it must prove all of the follo
 4. The cursor/result header exactly matches that projection, including for a zero-row batch.
 5. `unique_no` maps to the private source identity and is canonicalised as `numeric(13,2)`
    before duplicate detection or HMAC generation.
-6. `sensitive` maps exactly to the row-level safety control.
-7. Only `No` takes the ordinary-location path. `Yes`, null, blank, whitespace and unknown
+6. A source `species_no` is an identifier, not proof that the taxon is approved or ordinary.
+   Releasable processing treats it as unknown unless it resolves through the exact
+   digest-bound species dictionary used by the approved policy.
+7. `sensitive` maps exactly to the row-level safety control.
+8. Only `No` takes the ordinary-location path. `Yes`, null, blank, whitespace and unknown
    values fail closed as sensitive.
-8. A row marked sensitive is shown at exactly a 1 km floor; any coarser taxon or record-type
+9. A row marked sensitive is shown at exactly a 1 km floor; any coarser taxon or record-type
    rule still wins.
-9. Configured record-type sensitivity rules require the exact `record_type` mapping and column;
+10. Configured record-type sensitivity rules require the exact `record_type` mapping and column;
    the rules cannot remain silently dormant, even for an empty result.
-10. A releasable payload requires a named, dated, unexpired approval bound to the exact
+11. A releasable payload requires a named, dated, unexpired approval bound to the exact
     publication decisions used for that transformation. Development candidates cannot cross
     this release boundary.
-11. Individual record rows are disabled unless BRERC explicitly approves them. Aggregated
+12. Individual record rows are disabled unless BRERC explicitly approves them. Aggregated
     species-by-year grid cells can still be published without exposing row-level records.
-12. Map suppression is applied at species + year + cell + precision, so unrelated species or
+13. Map suppression is applied at species + year + cell + precision, so unrelated species or
     years can never be combined merely to pass a minimum-count threshold.
-13. Development payloads are wrapped in a non-serialisable `CandidatePreview`. A future
+14. Development payloads are wrapped in a non-serialisable `CandidatePreview`. A future
     public-database writer must accept only trusted connector output and invoke the release-gated
     builder itself; accepting caller-provided rows or dictionaries would recreate a confused-deputy
     path around the release attestation.
@@ -188,6 +191,10 @@ This port validates the confirmed BRERC view contract, canonicalises its source 
 the fail-closed publication transformations and approval boundary. It does not connect to a live
 source, write a destination database, or switch a public release. Those mechanisms travel in later
 independent ports with their own PostgreSQL integration evidence.
+
+BRERC has not supplied an approved species dictionary artifact or digest. Until it does, a
+releasable run cannot treat a syntactically valid source species identifier as a known ordinary
+taxon. An absent runtime dictionary is never an implicit allow-list.
 
 It also does **not** perform an approved incremental window, deletion reconciliation,
 failure-email delivery, FastAPI serving, or Martin vector tiles. BRERC approval and representative

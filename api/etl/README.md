@@ -415,7 +415,9 @@ This port contains the publication safety core, exact source contract, view-iden
 manual capture/approval tools, and their regression gates. It deliberately does not contain the
 trusted PostgreSQL connector or the destination release loader. Those are separate items in the
 main-based reconciliation queue and cannot be inferred from dormant helper methods in this
-package. The ordinary complete-run pipeline still materialises its result in memory.
+package. A releasable policy that binds a species dictionary must receive that exact dictionary at
+runtime, and an identifier absent from a dictionary is not treated as known merely because its
+shape is valid. The ordinary complete-run pipeline still materialises its result in memory.
 
 Not yet present in this port or externally approved: trusted locked database extraction;
 streaming safe transformation and inactive PostgreSQL/PostGIS staging; immutable release ledgers,

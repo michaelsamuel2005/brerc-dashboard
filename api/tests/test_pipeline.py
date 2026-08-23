@@ -318,6 +318,10 @@ class TestThePolicyIsRequiredAndValidated(unittest.TestCase):
 
 
 class TestReleasePayloadBoundary(unittest.TestCase):
+    DICTIONARY = SpeciesDictionary(
+        [SpeciesRecord(ORDINARY_ID, "Anguis fragilis", "Slow-worm", False)]
+    )
+
     def approved_policy(self) -> PublicationPolicy:
         today = date.today()
         return PublicationPolicy(
@@ -334,6 +338,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
             default_sensitive_metres=10000,
             sensitive_record_type_metres={"bat roost": 10000},
             record_type_vocabulary=frozenset({"field record", "bat roost"}),
+            species_dictionary_sha256=self.DICTIONARY.digest(),
             public_id_salt="release-test-secret-material-32bytes",
         ).with_approval(
             approved_by="Synthetic test owner",
@@ -358,10 +363,42 @@ class TestReleasePayloadBoundary(unittest.TestCase):
 
     def test_an_unbound_species_dictionary_cannot_contribute_sensitivity(self):
         dictionary = SpeciesDictionary(
-            [SpeciesRecord(ORDINARY_ID, "Anguis fragilis", "Slow-worm", False)]
+            [SpeciesRecord(ORDINARY_ID, "Anguis fragilis", "Slow-worm", True)]
         )
         with self.assertRaises(InvalidPolicy):
             run([row()], policy=self.approved_policy(), dictionary=dictionary)
+
+    def test_a_bound_dictionary_cannot_be_omitted_from_an_approved_run(self):
+        touched = False
+
+        def must_not_iterate():
+            nonlocal touched
+            touched = True
+            yield row(SPECIES_No="777777", TaxonName="Synthetic unlisted taxon")
+
+        with self.assertRaises(InvalidPolicy):
+            run_pipeline(must_not_iterate(), COLUMNS, policy=self.approved_policy())
+        self.assertFalse(touched)
+
+    def test_an_unlisted_id_is_not_treated_as_known_by_shape_alone(self):
+        policy = dataclasses.replace(
+            self.approved_policy(),
+            species_dictionary_sha256=None,
+            approval_digest=None,
+        ).with_approval(
+            approved_by="Synthetic test owner",
+            approver_role="Test data owner",
+            approver_organisation="BRERC",
+            evidence_reference="BRERC-TEST-NO-DICTIONARY-001",
+            approved_on=date.today().isoformat(),
+            review_due=(date.today() + timedelta(days=365)).isoformat(),
+        )
+        records, report = run(
+            [row(SPECIES_No="777777", TaxonName="Synthetic unlisted taxon")],
+            policy=policy,
+        )
+        self.assertEqual(records, [])
+        self.assertEqual(report.withheld["species-not-permitted"], 1)
 
     def test_a_changed_species_dictionary_invalidates_the_bound_run(self):
         today = date.today()
@@ -425,7 +462,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
 
     def test_even_an_approved_plain_pipeline_remains_candidate_only(self):
         policy = self.approved_policy()
-        records, report = run([row()], policy=policy)
+        records, report = run([row()], policy=policy, dictionary=self.DICTIONARY)
         with self.assertRaises(PolicyNotApproved) as ctx:
             build_payloads(
                 records,
@@ -437,7 +474,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
 
     def test_a_changed_policy_cannot_release_records_made_under_old_decisions(self):
         policy = self.approved_policy()
-        records, report = run([row()], policy=policy)
+        records, report = run([row()], policy=policy, dictionary=self.DICTIONARY)
         changed = dataclasses.replace(policy, ordinary_resolution_metres=1000)
         with self.assertRaises(PolicyNotApproved):
             build_payloads(
@@ -449,7 +486,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
 
     def test_a_different_approval_cannot_release_an_existing_candidate(self):
         first = self.approved_policy()
-        records, report = run([row()], policy=first)
+        records, report = run([row()], policy=first, dictionary=self.DICTIONARY)
         today = date.today()
         second = dataclasses.replace(first, approval_digest=None).with_approval(
             approved_by="Different synthetic owner",
@@ -469,10 +506,13 @@ class TestReleasePayloadBoundary(unittest.TestCase):
 
     def test_records_from_another_run_cannot_be_paired_with_an_approved_report(self):
         policy = self.approved_policy()
-        first_records, first_report = run([row(RecordKey="first")], policy=policy)
+        first_records, first_report = run(
+            [row(RecordKey="first")], policy=policy, dictionary=self.DICTIONARY
+        )
         other_records, _ = run(
             [row(RecordKey="second", RecordDate="2024")],
             policy=policy,
+            dictionary=self.DICTIONARY,
         )
         self.assertEqual(len(first_records), len(other_records))
         with self.assertRaises(PolicyNotApproved):
@@ -486,7 +526,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
     def test_a_projection_that_omits_sensitive_can_never_use_the_generic_release_path(self):
         policy = self.approved_policy()
         projected = row()
-        records, report = run([projected], policy=policy)
+        records, report = run([projected], policy=policy, dictionary=self.DICTIONARY)
         self.assertEqual(records[0].precision_metres, 100)
         with self.assertRaises(PolicyNotApproved):
             build_payloads(

@@ -12,10 +12,11 @@ from etl.pipeline import (
     build_candidate_payloads,
     build_payloads,
     run_pipeline,
-    run_pipeline_for_source,
+    run_pipeline_for_source as _run_pipeline_for_source,
 )
 from etl.policy import DEVELOPMENT_POLICY, InvalidPolicy, PolicyNotApproved, PublicationPolicy
 from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
+from etl.species import SpeciesDictionary, SpeciesRecord
 from etl.source_contract import (
     BRERC_MAIN_DATA_DASH,
     BRERC_MAIN_DATA_DASH_COLUMNS,
@@ -77,6 +78,10 @@ VIEW_COLUMNS = ColumnMap(
     sensitivity="sensitive",
 )
 
+VIEW_DICTIONARY = SpeciesDictionary(
+    [SpeciesRecord("999999", "Anguis fragilis", "Slow-worm", False)]
+)
+
 VIEW_POLICY = PublicationPolicy(
     version="view-test",
     precision_mode="approved",
@@ -91,6 +96,7 @@ VIEW_POLICY = PublicationPolicy(
     default_sensitive_metres=10000,
     row_sensitive_resolution_metres=1000,
     non_sensitive_values=frozenset({"no"}),
+    species_dictionary_sha256=VIEW_DICTIONARY.digest(),
     publish_individual_records=True,
     public_id_salt="test" * 8,
 ).with_approval(
@@ -101,6 +107,12 @@ VIEW_POLICY = PublicationPolicy(
     approved_on=date.today().isoformat(),
     review_due=(date.today() + timedelta(days=365)).isoformat(),
 )
+
+
+def run_pipeline_for_source(*args, dictionary=VIEW_DICTIONARY, **kwargs):
+    """Exercise the source boundary with the exact policy-bound test dictionary."""
+    return _run_pipeline_for_source(*args, dictionary=dictionary, **kwargs)
+
 
 VIEW_PROJECTION = (*VIEW_COLUMNS.required(), *VIEW_COLUMNS.optional())
 
@@ -285,6 +297,7 @@ class TestConfirmedManifest(unittest.TestCase):
         rendered = "\n".join(BRERC_MAIN_DATA_DASH.release_blockers)
         self.assertIn("connector is not present", rendered)
         self.assertIn("atomic loader are not present", rendered)
+        self.assertIn("species dictionary", rendered)
         self.assertIn("database/service identity", rendered)
         self.assertIn("deployment assertions only", rendered)
 
@@ -963,6 +976,7 @@ class TestSafetyMappingPreflight(unittest.TestCase):
             [view_row()],
             VIEW_COLUMNS,
             policy=VIEW_POLICY,
+            dictionary=VIEW_DICTIONARY,
         )
         report.source_contract_version = RELEASE_READY_CONTRACT.version
         report.source_contract_digest = RELEASE_READY_CONTRACT.digest()

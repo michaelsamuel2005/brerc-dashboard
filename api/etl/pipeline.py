@@ -454,13 +454,19 @@ def _validate_runtime_sensitivity_inputs(
         raise InvalidPolicy(
             "approved precision policy does not match the runtime sensitive-species snapshot"
         )
-    if dictionary is not None:
-        observed = dictionary.digest()
-        if policy.species_dictionary_sha256 != observed:
+    if dictionary is None:
+        if policy.species_dictionary_sha256 is not None:
             raise InvalidPolicy(
-                "SpeciesDictionary contributes identity/sensitivity data but its "
-                "digest is absent from or differs from the approved precision policy"
+                "approved precision policy binds a SpeciesDictionary, but no dictionary "
+                "was supplied at runtime"
             )
+        return
+    observed = dictionary.digest()
+    if policy.species_dictionary_sha256 != observed:
+        raise InvalidPolicy(
+            "SpeciesDictionary contributes identity/sensitivity data but its "
+            "digest is absent from or differs from the approved precision policy"
+        )
 
 
 def _to_year(value: object) -> int | None:
@@ -572,7 +578,13 @@ def to_public_records(
             if entry is not None and normalise_species_id(entry.species_no) != species_id:
                 report.withheld["species-identity-mismatch"] += 1
                 continue
-            known = entry is not None if dictionary is not None else True
+            # A syntactically valid source id proves identity shape, not that
+            # the taxon appears in the approved dictionary. Without a
+            # dictionary every releasable id is unknown and follows the
+            # policy's explicit unknown-species action; it is never silently
+            # treated as ordinary. Development-only candidates retain their
+            # synthetic convenience because they cannot cross the release gate.
+            known = entry is not None or (dictionary is None and policy.development_only)
             flagged: bool | None = entry.sensitive if entry is not None else None
         else:
             # This is the only permitted fallback path: the source row does not
