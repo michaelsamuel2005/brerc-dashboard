@@ -19,12 +19,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 IS_PROD = APP_ENV == "prod"
 
-# Database connection. The dev fallback holds no real secret; the real one lives
-# in api/.env. In production this is the READ-ONLY role's connection string.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/brerc_ui",
-)
+# Database credentials are resolved fail-closed in app/db.py. Keep that logic
+# in one place so this general application-settings module cannot accidentally
+# reintroduce a postgres/postgres fallback.
 
 # Which browser origins may call the API.
 #   * prod: ONLY the sites listed in ALLOWED_ORIGINS (comma-separated) — e.g.
@@ -75,6 +72,7 @@ MAX_GROUPS = int(os.getenv("MAX_GROUPS", "50"))
 # ---------------------------------------------------------------------------
 # Species image + description proxy (B8). See app/species_info.py.
 # ---------------------------------------------------------------------------
+
 
 def _env_flag(name: str, default: bool = False) -> bool:
     """Read a true/false environment variable ("true", "1", "yes" all mean true)."""

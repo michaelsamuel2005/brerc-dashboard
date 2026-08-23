@@ -3,7 +3,7 @@ Admin and ops database operations for B6 schema rebuilds.
 
 Why this is separate from api/app/db.py:
 That module serves the public API using a read-only user (brerc_api_ro).
-rebuilding or dropping schemas requires admin privileges (DDL rights) and 
+rebuilding or dropping schemas requires admin privileges (DDL rights) and
 has no business being near API request handlers where a bug could wipe data.
 This module uses a separate admin connection via DATABASE_URL_ADMIN or safety.yaml.
 """
@@ -11,9 +11,9 @@ This module uses a separate admin connection via DATABASE_URL_ADMIN or safety.ya
 import os
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urlparse
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 import etl.db as db
 from etl.load.loader import load_safety_config
@@ -50,52 +50,125 @@ B6_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "db" / "b6_schema.sql"
 
 def _build_admin_database_url() -> str:
     """
-    Builds the admin connection string, preferring the DATABASE_URL_ADMIN 
-    environment variable if available, otherwise falling back to safety.yaml.
+    Builds the admin connection string, preferring config/safety.yaml's
+    'admin' block — the normal way to configure this, with explicit
+    host/database/user/password fields. DATABASE_URL_ADMIN is the fallback
+    for deployments that do not mount the YAML file.
+
+    Fails closed: if neither supplies real credentials, raises instead of
+    silently connecting as postgres/postgres — this is the credential used
+    for destructive full schema resets, so it matters more here than
+    anywhere else in the ETL.
     """
+    admin = _get_admin()
+
+    user = admin.get("user")
+    password = admin.get("password")
+
+    if bool(user) != bool(password):
+        raise RuntimeError(
+            "The admin block is incomplete. Set both user and password, or "
+            "leave both empty to use DATABASE_URL_ADMIN."
+        )
+
+    if user and password:
+        host = admin.get("dbhostname")
+        dbname = admin.get("dbname")
+
+        if not all((user, password, host, dbname)):
+            raise RuntimeError(
+                "The admin block is incomplete. Set dbhostname, dbname, user "
+                "and password, or leave user/password empty to use "
+                "DATABASE_URL_ADMIN."
+            )
+
+        return make_conninfo(
+            user=user,
+            password=password,
+            host=host,
+            port=admin.get("port") or 5432,
+            dbname=dbname,
+        )
+
     explicit_url = os.getenv("DATABASE_URL_ADMIN")
 
     if explicit_url:
         return explicit_url
 
-    admin = _get_admin()
-
-    host = admin.get("dbhostname") or "localhost"
-    port = admin.get("port") or 5432
-    dbname = admin.get("dbname") or "brerc_ui"
-    user = admin.get("user") or "postgres"
-    password = admin.get("password") or "postgres"
-
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    raise RuntimeError(
+        "No admin database credentials configured. Set admin.user/"
+        "admin.password in config/safety.yaml, or use DATABASE_URL_ADMIN as "
+        "the fallback — there is no default credential."
+    )
 
 
-def _database_target(url: str) -> tuple:
+def _database_target(connection_string: str) -> tuple:
     """
-    Extracts the (host, port, dbname) a connection URL points at.
+    Extracts a fail-closed routing identity from a direct connection string.
 
     Deliberately excludes user/password: the admin and destination
     connections are SUPPOSED to use different credentials (that's the
     whole point of the privilege separation) — only host/port/dbname
     need to agree.
     """
-    parsed = urlparse(url)
-    return (parsed.hostname, parsed.port or 5432, parsed.path.lstrip("/"))
+    parsed = None
+    try:
+        parsed = conninfo_to_dict(connection_string)
+    except (psycopg.Error, TypeError, ValueError):
+        pass
+
+    if parsed is None:
+        raise DatabaseMismatchError(
+            "Refusing to run a full schema reset: a database connection "
+            "string is invalid."
+        )
+
+    if parsed.get("service"):
+        raise DatabaseMismatchError(
+            "Refusing to run a full schema reset: service-based connection "
+            "settings cannot be compared safely. Use an explicit single-host "
+            "connection string for both admin and destination roles."
+        )
+
+    host = parsed.get("host") or ""
+    hostaddr = parsed.get("hostaddr") or ""
+    port = parsed.get("port")
+    dbname = parsed.get("dbname")
+
+    if not dbname or not port or (not host and not hostaddr):
+        raise DatabaseMismatchError(
+            "Refusing to run a full schema reset: both connections must name "
+            "an explicit database, port and single host."
+        )
+
+    if any("," in value for value in (host, hostaddr, port)):
+        raise DatabaseMismatchError(
+            "Refusing to run a full schema reset: multi-host connection "
+            "settings cannot be compared safely."
+        )
+
+    try:
+        numeric_port = int(port)
+    except (TypeError, ValueError):
+        raise DatabaseMismatchError(
+            "Refusing to run a full schema reset: the database port is invalid."
+        ) from None
+
+    return (host, hostaddr, numeric_port, dbname)
 
 
 def _assert_admin_matches_destination(admin_url: str) -> None:
     """Raises DatabaseMismatchError if admin_url targets a different
-    database than the one normal ETL writes go to (etl.db.DESTINATION_DATABASE_URL)."""
+    database than the one normal ETL writes go to."""
     admin_target = _database_target(admin_url)
-    destination_target = _database_target(db.DESTINATION_DATABASE_URL)
+    destination_target = _database_target(db.get_destination_database_url())
 
     if admin_target != destination_target:
-        admin_host, admin_port, admin_db = admin_target
-        dest_host, dest_port, dest_db = destination_target
         raise DatabaseMismatchError(
             "Refusing to run a full schema reset: the admin connection targets "
-            f"{admin_host}:{admin_port}/{admin_db}, but normal ETL writes target "
-            f"{dest_host}:{dest_port}/{dest_db}. Set DATABASE_URL_ADMIN (or "
-            "config/safety.yaml's 'admin' block) to match the destination database."
+            "a different database endpoint than normal ETL writes. Set "
+            "DATABASE_URL_ADMIN (or config/safety.yaml's 'admin' block) to "
+            "match the destination host, hostaddr, port and database."
         )
 
 
@@ -107,7 +180,7 @@ def get_admin_connection() -> psycopg.Connection:
     """
     admin_url = _build_admin_database_url()
     _assert_admin_matches_destination(admin_url)
-    return psycopg.connect(admin_url)
+    return psycopg.connect(admin_url, options="-c search_path=public")
 
 
 def force_full_reload(

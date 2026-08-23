@@ -3,7 +3,7 @@
 A small, standalone read-only viewer for the ETL run-history log written by
 `api/etl/run_history.py` (`logs/etl_run_history.db`, gitignored local runtime
 state). Shows every "UI ETL RUN" pipeline run — run number, job type
-(initial/incremental), date, load no, and status — and auto-refreshes so a
+(initial/incremental), effective load date, and status — and auto-refreshes so a
 run visibly flips from `running` to `successful`/`failed`.
 
 Kept separate from `api/app` (the public dashboard API, which is deliberately
@@ -35,8 +35,8 @@ One shared username/password, set in `run-dashboard/.env` (copy from
   everyone's logged out on restart); set a fixed value for anything longer-
   lived.
 
-If `.env` is missing entirely, the app falls back to `admin` / `admin` —
-fine for a quick local check, not for anything real.
+If either login value is missing, the dashboard refuses to start. There is no
+default username or password.
 
 If the ETL job hasn't run yet, the page shows "No runs recorded yet." — run
 it from `api/` with:
