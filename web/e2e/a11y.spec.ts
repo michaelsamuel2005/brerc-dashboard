@@ -22,4 +22,19 @@ test.describe("BRERC P2 slice", () => {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: /skip/i })).toBeFocused();
   });
+
+  test("the map working area uses available desktop space without changing the viewport proportion", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/");
+    await expect(page.locator(".maplibregl-canvas").first()).toBeVisible();
+
+    const mainBox = await page.locator("main.explore-page").boundingBox();
+    const mapBox = await page.locator(".map-card").boundingBox();
+
+    expect(mainBox).not.toBeNull();
+    expect(mapBox).not.toBeNull();
+    expect(mainBox!.width).toBeGreaterThan(1100);
+    expect(mapBox!.height).toBeGreaterThan(520);
+    expect(mapBox!.height).toBeLessThanOrEqual(630);
+  });
 });
