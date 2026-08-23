@@ -13,7 +13,7 @@ CI runner that only has the B0 sample — they SKIP rather than fail (see the
 `needs_b6_schema` marker in conftest.py).
 """
 
-from conftest import needs_b6_schema
+from tests.conftest import needs_b6_schema
 
 from app.db import get_connection
 

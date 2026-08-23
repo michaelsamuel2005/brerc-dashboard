@@ -4,7 +4,7 @@ safe vector tiles. Needs db/b7_tiles.sql loaded (skips otherwise, like the
 other DB-backed tests).
 """
 
-from conftest import needs_b7_tiles
+from tests.conftest import needs_b7_tiles
 
 from app.db import get_connection
 

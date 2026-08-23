@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from app import config, species_info
 from app.main import app
-from conftest import needs_b6_schema
+from tests.conftest import needs_b6_schema
 
 client = TestClient(app)
 

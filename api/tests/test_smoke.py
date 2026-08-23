@@ -14,7 +14,7 @@ runner. Its real-data behaviour is covered by tests/test_b0_integration.py.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import needs_db, needs_b6_schema
+from tests.conftest import needs_b6_schema
 
 client = TestClient(app)
 
