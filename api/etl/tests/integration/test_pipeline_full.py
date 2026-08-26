@@ -1,15 +1,12 @@
-import pandas as pd
 from unittest.mock import patch
 
+import pandas as pd
+
 from etl.job import nightly_job
-from tests.conftest import needs_db
+from etl.tests.conftest import needs_db
 
 
 @needs_db
-@patch(
-    "app.db.B6_PUBLIC_RELATIONS",
-    {"occurrence_public", "species", "distribution_cell"},
-)
 @patch("etl.job.load_source_data")
 @patch("etl.job.load_species_dictionary")
 @patch("etl.nightly_pipeline.resolve_species_numbers")
@@ -190,9 +187,7 @@ def test_nightly_job_end_to_end(
             species_index = result["aggregation"]["species_index"]
 
             assert not species_index.empty
-            assert test_species_id in (
-                species_index["species_id"].astype(str).tolist()
-            )
+            assert test_species_id in (species_index["species_id"].astype(str).tolist())
 
             # ------------------------------------------------------------------
             # Verify the occurrence was actually persisted.

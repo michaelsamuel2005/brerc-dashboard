@@ -10,12 +10,13 @@ other test expects to find it.
 
 import pytest
 
-from app.db import get_connection
+from etl.db import get_destination_connection
 from etl.safety_gate import rules
+from etl.tests.conftest import database_available
 
 
 def _reseed_sample_data():
-    with get_connection() as conn:
+    with get_destination_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM occurrence_public;")
             cur.execute("DELETE FROM distribution_cell;")
@@ -104,7 +105,8 @@ def _reseed_sample_data():
 @pytest.fixture(autouse=True)
 def reseed_sample_data_after_pipeline_tests():
     yield
-    _reseed_sample_data()
+    if database_available():
+        _reseed_sample_data()
 
 
 @pytest.fixture(autouse=True)
@@ -130,9 +132,7 @@ def sensitive_species_list(tmp_path, monkeypatch):
         "species_no,nbn_number\n88888,NBNSYS0000088888\n",
         encoding="utf-8",
     )
-    monkeypatch.setitem(
-        rules.CONFIG["files"]["sensitive_species"], "path", str(csv_path)
-    )
+    monkeypatch.setitem(rules.CONFIG["files"]["sensitive_species"], "path", str(csv_path))
     # The loader is lru_cached, so a stale entry from another test would
     # otherwise mask both the patch above and its removal afterwards.
     rules.load_sensitive_species.cache_clear()
