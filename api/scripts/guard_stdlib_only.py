@@ -43,6 +43,7 @@ PUBLICATION_BOUNDARY = frozenset(
         "sensitivity.py",
         "source_contract.py",
         "species.py",
+        "streaming.py",
         "view_identity.py",
     }
 )

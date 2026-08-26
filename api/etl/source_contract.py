@@ -619,7 +619,6 @@ BRERC_MAIN_DATA_DASH = SourceContract(
         "validated against a revised live BRERC view",
     ),
     release_blockers=(
-        "the trusted PostgreSQL connector is not present in the publication-core port",
         "the destination publication writer and atomic loader are not present in the "
         "publication-core port",
         "BRERC-approved species dictionary and its exact digest have not been received",
