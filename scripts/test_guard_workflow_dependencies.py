@@ -7,10 +7,33 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.guard_workflow_dependencies import check
+from scripts.guard_workflow_dependencies import WORKFLOW_DEPENDENCIES, check
 
 
 class TestWorkflowDependencyGuard(unittest.TestCase):
+    def test_ci_manifest_covers_the_publication_api_lifecycle(self) -> None:
+        dependencies = set(WORKFLOW_DEPENDENCIES[".github/workflows/ci.yml"])
+        self.assertTrue(
+            {
+                "api/app",
+                "api/app_tests",
+                "api/package_tests",
+                "api/loader_tests/test_postgis16_destination_integration.py",
+                "api/loader_tests/setup_postgis16_destination.sh",
+                "api/loader_tests/setup_postgres16_e2e_source.sh",
+                "db/migrations/0001_publication_store.sql",
+                "db/roles.sql",
+            }.issubset(dependencies)
+        )
+        self.assertTrue(
+            {
+                "api/tests/test_b0_integration.py",
+                "api/tests/test_b8_query_params.py",
+                "api/tests/test_b8_species_info.py",
+                "api/tests/test_smoke.py",
+            }.issubset(dependencies)
+        )
+
     def test_missing_dependency_and_unregistered_workflow_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

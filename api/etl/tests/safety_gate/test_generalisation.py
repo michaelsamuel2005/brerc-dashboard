@@ -1,16 +1,16 @@
 import pandas as pd
 import pytest
 
+from etl.db import get_destination_connection
 from etl.safety_gate.generalisation import (
     generalise_locations,
 )  # Update with your actual module path if different
-from app.db import get_connection
-from tests.conftest import needs_db
+from etl.tests.conftest import needs_db
 
 
 @pytest.fixture
 def connection():
-    with get_connection() as conn:
+    with get_destination_connection() as conn:
         yield conn
 
 

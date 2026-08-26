@@ -1,12 +1,11 @@
 # Continuous Integration for the whole BRERC dashboard — backend AND front end.
 #
-# GitHub runs this automatically on every push and pull request. Three jobs run
-# in parallel:
+# GitHub runs this automatically on every push and pull request. Nine jobs cover
+# repository safety, the connector/loader/publication lifecycle, and the UI:
 #
-#   api-tests  — stands up a throwaway PostGIS database, loads the invented
-#                sample rows, and runs the Python test suite (the contract-shape
-#                tests AND the safety-boundary tests: no recorder names, no
-#                precise coordinates, sensitive rows blurred).
+#   data/connector/loader jobs — reject unsafe repository state, test TLS source
+#                access, and exercise an atomic synthetic PostGIS publication.
+#   api-tests  — keeps the legacy ETL and database safety suites mandatory.
 #   verify     — front-end typecheck, lint, guard, unit tests and build.
 #   e2e        — front-end end-to-end + accessibility tests in a real browser.
 #
@@ -142,10 +141,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - name: Install pinned build and lint tools
+      - name: Install pinned API, build and lint tools
         run: >-
           python -m pip install --disable-pip-version-check
-          "build==1.2.2.post1" "ruff==0.12.0"
+          ".[api]" "build==1.2.2.post1" "pytest==8.4.2" "ruff==0.12.0"
       - name: Lint and format the connector and loader ports
         run: |
           python -m ruff check \
@@ -156,6 +155,19 @@ jobs:
             brerc_source connector_tests brerc_loader loader_tests \
             etl/streaming.py tests/test_streaming.py \
             scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py
+          # species_info.py is Ting Ting's retained, superseded outbound proxy.
+          # The publication API does not call it; preserve its authorship while
+          # linting every other app module and recording only its four existing
+          # findings as narrow CLI waivers.
+          python -m ruff check app app_tests package_tests \
+            --per-file-ignores 'app/species_info.py:S105' \
+            --per-file-ignores 'app/species_info.py:E731' \
+            --per-file-ignores 'app/species_info.py:S110' \
+            --per-file-ignores 'app/species_info.py:S608'
+          python -m ruff format --check app app_tests package_tests \
+            --exclude app/species_info.py
+      - name: Test the isolated API package and container boundary
+        run: python -m pytest package_tests -q
       - name: Build the combined repository wheel
         run: python -m build --wheel
       - name: Install the wheel without source-tree fallback
@@ -242,8 +254,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - name: Install the pinned PostgreSQL and YAML adapter
-        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Install the pinned loader, public API and test runtime
+        run: >-
+          python -m pip install --disable-pip-version-check
+          ".[connector-binary,api]" "pytest==8.4.2"
       - name: Provision the separate synthetic TLS source
         env:
           SOURCE_CONTAINER: ${{ job.services.sourcepg.id }}
@@ -267,6 +281,38 @@ jobs:
         run: >-
           python -m unittest
           loader_tests.test_postgis16_destination_integration
+      - name: Publish one clean release for the API acceptance boundary
+        # The lifecycle suite deliberately creates, corrupts and removes many
+        # candidates. Its setUp truncates state before each case. Re-running the
+        # single successful end-to-end publication test LAST leaves exactly one
+        # active synthetic release for the read-only API checks below.
+        run: >-
+          python -m unittest
+          loader_tests.test_postgis16_destination_integration.TestPostGIS16DestinationIntegration.test_real_source_connector_streams_into_one_atomic_public_release
+      - name: Run the complete API suite against the active TLS release
+        env:
+          APP_ENV: prod
+          BRERC_API_INTEGRATION: "1"
+          DATABASE_URL: >-
+            postgresql://brerc_api_test:synthetic-api-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          BRERC_LOADER_TEST_DATABASE_URL: >-
+            postgresql://brerc_release_loader_test:synthetic-loader-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+        run: |
+          python - <<'PY'
+          import os
+
+          import psycopg
+
+          with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+              with connection.cursor() as cursor:
+                  cursor.execute("SELECT count(*) FROM serve.public_release")
+                  active_releases = cursor.fetchone()[0]
+          if active_releases != 1:
+              raise SystemExit(
+                  f"expected exactly one active synthetic release, observed {active_releases}"
+              )
+          PY
+          python -m pytest app_tests -q
 
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary
@@ -343,9 +389,17 @@ jobs:
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_sample_data.sql
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b7_tiles.sql
 
-      - name: Run the API tests
-        # The API test suite (this backend workstream, B0/B6-B9).
-        run: python -m pytest tests -q
+      - name: Run the legacy API and B6 safety tests
+        # Preserve every legacy ETL/B6 safety check. Exclude only these four
+        # endpoint/proxy modules: they target the superseded B0/B8 database and
+        # outbound-media contracts. app_tests now replaces them against the
+        # atomic publication store and its dedicated read-only TLS role.
+        run: >-
+          python -m pytest tests -q
+          --ignore=tests/test_b0_integration.py
+          --ignore=tests/test_b8_query_params.py
+          --ignore=tests/test_b8_species_info.py
+          --ignore=tests/test_smoke.py
 
       # The ETL suite (etl/, B1-B5) was excluded with "add them here once they
       # run standalone". They do run standalone — no network, and the database

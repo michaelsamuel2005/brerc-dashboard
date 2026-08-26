@@ -31,12 +31,25 @@ _origins_env = os.getenv("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = (
     [origin.strip() for origin in _origins_env.split(",") if origin.strip()]
     if IS_PROD
-    else ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
+    else [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
 )
 
 # Safety valve: the maximum time (milliseconds) any single SQL query may run
 # before PostgreSQL cancels it, so a heavy/runaway query can't hang the API.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
+
+# Published alongside the release. The actual tiers are measured from the
+# serving views; this note explains their meaning without asserting a tier.
+SENSITIVITY_POLICY_NOTE = os.getenv(
+    "SENSITIVITY_POLICY_NOTE",
+    "Locations of protected species are generalised before publication. "
+    "Precise coordinates are never released.",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +75,15 @@ MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "100"))
 # Higher than a page size because the map legitimately draws many squares.
 MAX_CELLS = int(os.getenv("MAX_CELLS", "5000"))
 
-# Caps on the two grouped lists inside /api/summary. Bristol's records span
-# roughly a century, and there are a few dozen species groups, so these are
-# generous — they exist to bound the response, not to trim real data.
-MAX_YEAR_BUCKETS = int(os.getenv("MAX_YEAR_BUCKETS", "300"))
+# The publication contract permits years 1500 through 2200 inclusive.  A
+# summary can therefore contain at most 701 distinct year buckets.  Keep this
+# schema-derived ceiling non-configurable: a smaller deployment setting would
+# silently truncate a valid release and make its bucket total disagree with
+# its headline total.
+MAX_YEAR_BUCKETS = 2200 - 1500 + 1
+
+# Taxonomic groups remain unpublished in the current release contract, but
+# retain the bounded response setting for the reviewed future extension.
 MAX_GROUPS = int(os.getenv("MAX_GROUPS", "50"))
 
 
@@ -123,11 +141,7 @@ SPECIES_INFO_CACHE_PATH = os.getenv(
 )
 
 # Minimum gap between outbound calls, so we stay a polite API client.
-SPECIES_INFO_MIN_INTERVAL_SECONDS = float(
-    os.getenv("SPECIES_INFO_MIN_INTERVAL_SECONDS", "0.25")
-)
+SPECIES_INFO_MIN_INTERVAL_SECONDS = float(os.getenv("SPECIES_INFO_MIN_INTERVAL_SECONDS", "0.25"))
 
 # Cap on the description length (it is a teaser, not an article).
-SPECIES_INFO_DESCRIPTION_MAX_CHARS = int(
-    os.getenv("SPECIES_INFO_DESCRIPTION_MAX_CHARS", "600")
-)
+SPECIES_INFO_DESCRIPTION_MAX_CHARS = int(os.getenv("SPECIES_INFO_DESCRIPTION_MAX_CHARS", "600"))

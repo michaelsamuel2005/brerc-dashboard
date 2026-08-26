@@ -54,6 +54,19 @@ connector-binary = [
     "PyYAML==6.0.3",
 ]
 
+# Read-only public API runtime. Keep this separate from the publication gate:
+# importing or installing the safety boundary must not pull in a web framework
+# or database driver. Every direct third-party import under app/ is pinned so a
+# production rebuild cannot silently select a different runtime.
+api = [
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.46.0",
+    "psycopg[binary]==3.3.4",
+    "python-dotenv==1.0.1",
+    "pydantic==2.12.4",
+    "httpx==0.28.1",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
@@ -63,6 +76,8 @@ include = [
     "brerc_source.*",
     "brerc_loader",
     "brerc_loader.*",
+    "app",
+    "app.*",
 ]
 exclude = ["etl.tests", "etl.tests.*"]
 
@@ -114,7 +129,7 @@ ignore = [
 "brerc_loader/cli.py" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["brerc_loader", "brerc_source", "etl"]
+known-first-party = ["app", "brerc_loader", "brerc_source", "etl"]
 
 [tool.ruff.format]
 quote-style = "double"

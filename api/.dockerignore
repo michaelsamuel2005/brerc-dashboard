@@ -1,8 +1,8 @@
-# Keep secrets, local envs, and test/dev cruft OUT of the built image.
-.env
-.env.*
-.venv/
-__pycache__/
-*.pyc
-tests/
-.pytest_cache/
+# Allowlist the complete Docker build context. Only dependency metadata and
+# Python files belonging to the read-only app may reach the daemon.
+*
+!pyproject.toml
+!app/
+!app/**/
+!app/*.py
+!app/**/*.py
