@@ -29,7 +29,11 @@ from brerc_source.postgres import (
     FIXED_SESSION_SQL,
     _capture_document,
 )
-from connector_tests.test_postgres_connector import VIEW_COLUMNS, approved_policy
+from connector_tests.test_postgres_connector import (
+    CONNECTOR_DICTIONARY,
+    VIEW_COLUMNS,
+    approved_policy,
+)
 from etl.source_contract import BRERC_MAIN_DATA_DASH
 from etl.view_identity import ViewCaptureEvidence, ViewDefinitionApproval
 
@@ -205,6 +209,7 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
             source_contract=self.approved_contract,
             columns=VIEW_COLUMNS,
             policy=approved_policy(),
+            dictionary=CONNECTOR_DICTIONARY,
         )
         records, report = run
         self.assertEqual(report.rows_in, 3)

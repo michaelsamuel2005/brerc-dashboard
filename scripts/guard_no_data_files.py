@@ -93,7 +93,12 @@ FORBIDDEN_SUFFIXES: frozenset[str] = frozenset(
 #: Directory-wide exemptions are deliberately unsupported: an exempt fixture
 #: directory would also exempt a real client workbook dropped beside a fixture.
 #: Add only a reviewed, synthetic file's full repository-relative path.
-ALLOWED: dict[str, str] = {}
+ALLOWED: dict[str, str] = {
+    "db/test/e2e_sensitive_species.csv": (
+        "reviewed synthetic two-row taxonomy fixture; contains no occurrences, "
+        "locations, people or client extract"
+    ),
+}
 
 # Git tracks files inside a dataset directory, not the directory entry itself.
 FORBIDDEN_DATASET_DIR_SUFFIXES: frozenset[str] = frozenset({".gdb"})

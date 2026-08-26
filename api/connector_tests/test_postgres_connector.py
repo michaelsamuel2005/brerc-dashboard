@@ -40,6 +40,7 @@ from etl.pipeline import ColumnMap, ValidatedSourceRun
 from etl.policy import PublicationPolicy
 from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
 from etl.source_contract import BRERC_MAIN_DATA_DASH, SourceContract, SourceContractError
+from etl.species import SpeciesDictionary
 from etl.view_identity import (
     EXPECTED_CAPTURE_SESSION,
     ViewCaptureEvidence,
@@ -59,6 +60,28 @@ VIEW_COLUMNS = ColumnMap(
     sensitivity="sensitive",
 )
 PROJECTION = (*VIEW_COLUMNS.required(), *VIEW_COLUMNS.optional())
+CONNECTOR_DICTIONARY = SpeciesDictionary.from_rows(
+    [
+        {
+            "SPECIES_NO": "5088",
+            "SCIENTIFIC": "Anguis fragilis",
+            "COMMON_NAM": "Slow-worm",
+            "SENSITIVE": "No",
+        },
+        {
+            "SPECIES_NO": "SYNTH-1",
+            "SCIENTIFIC": "Synthetic species alpha",
+            "COMMON_NAM": "Synthetic alpha",
+            "SENSITIVE": "No",
+        },
+        {
+            "SPECIES_NO": "SYNTH-2",
+            "SCIENTIFIC": "Synthetic species beta",
+            "COMMON_NAM": "Synthetic beta",
+            "SENSITIVE": "Yes",
+        },
+    ]
+)
 
 
 class TestConnector:
@@ -80,6 +103,7 @@ class TestConnector:
                 return method(**kwargs)
 
     def extract_initial(self, **kwargs):
+        kwargs.setdefault("dictionary", CONNECTOR_DICTIONARY)
         return self._call(self.connector.extract_initial, **kwargs)
 
     def preflight(self, **kwargs):
@@ -105,6 +129,7 @@ def approved_policy() -> PublicationPolicy:
         verification_publication_mode="unavailable",
         sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
         sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
+        species_dictionary_sha256=CONNECTOR_DICTIONARY.digest(),
         ordinary_resolution_metres=100,
         default_sensitive_metres=10_000,
         row_sensitive_resolution_metres=1_000,

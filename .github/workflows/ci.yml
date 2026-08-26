@@ -26,8 +26,100 @@ name: CI
 on:
   push:
   pull_request:
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # REPOSITORY SAFETY — no client extracts, credentials or controlled evidence
+  # ---------------------------------------------------------------------------
+  data-guard:
+    name: No client data, credentials or controlled evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Test the tracked-file guard
+        run: python -m unittest scripts.test_guard_no_data_files
+      - name: Reject tracked client data and source secrets
+        run: python scripts/guard_no_data_files.py --repo-root .
+
+  # ---------------------------------------------------------------------------
+  # TRUSTED SOURCE — unit tests and a real PostgreSQL 16/TLS boundary test
+  # ---------------------------------------------------------------------------
+  connector-tests:
+    name: Trusted source connector (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the pinned connector adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Run trusted connector tests
+        run: >-
+          python -m unittest discover --start-directory connector_tests
+          --top-level-directory . --pattern "test_*.py"
+      - name: Confirm the publication core stayed standard-library-only
+        run: python scripts/guard_stdlib_only.py
+
+  source-postgres-integration:
+    name: PostgreSQL 16 TLS source integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
+        env:
+          POSTGRES_DB: brerc_connector
+          POSTGRES_PASSWORD: synthetic-admin-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_connector"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the pinned connector adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Provision synthetic TLS source and read-only roles
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          bash connector_tests/setup_postgres16_tls.sh \
+            "${POSTGRES_CONTAINER}" \
+            connector_tests/postgres16_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgres16-tls"
+      - name: Run real Psycopg/PostgreSQL integration
+        run: python -m unittest connector_tests.test_postgres16_integration
+
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary
   # ---------------------------------------------------------------------------

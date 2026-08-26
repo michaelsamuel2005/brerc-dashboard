@@ -17,6 +17,21 @@ non‑sensitive data** to the front‑end over HTTPS.
 - Database queries (parameterised — never build SQL by pasting in user input).
 - The logic that strips or generalises sensitive data before it is served.
 
+The versioned publication-safety boundary is implemented in `api/etl`. The
+trusted PostgreSQL source connector captures the approved view identity and
+streams rows from the same locked, read-only snapshot. Its deployment and
+operation are documented in
+[`docs/POSTGRES_SOURCE_CONNECTOR.md`](../docs/POSTGRES_SOURCE_CONNECTOR.md).
+It is fully exercised with synthetic PostgreSQL 16/TLS fixtures; a real BRERC
+acceptance run remains a controlled production activity.
+
+Run the source-connector checks from this directory:
+
+```bash
+python -m pip install ".[connector-binary]"
+python -m unittest discover -s connector_tests -t . -p 'test_*.py'
+```
+
 ## What does **not** go here
 
 - ❌ Front‑end / UI code — that lives in `../web`.
@@ -64,4 +79,10 @@ it there and drop the suffix.
 ## Helpful links
 
 - 🗂️ [Project structure](../docs/PROJECT_STRUCTURE.md) — what every folder is for.
+- 🔐 [BRERC source-view contract](../docs/SOURCE_CONTRACT.md) — the reviewed
+  source schema, safety mapping and incremental-load blockers.
+- 🔏 [Live view approval](../docs/VIEW_DEFINITION_APPROVAL.md) — the secure
+  capture, digest and named approval procedure.
+- 🔌 [Trusted PostgreSQL connector](../docs/POSTGRES_SOURCE_CONNECTOR.md) —
+  least-privilege deployment, safe operation and scale limitations.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).
