@@ -254,7 +254,15 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
                 """
             ).fetchone()
             self.assertEqual(role, (False, False, False, False, False, False))
-            with self.assertRaises(self.psycopg.errors.ReadOnlySqlTransaction):
+            # Either exception proves the role cannot write. With no explicit
+            # transaction PostgreSQL may reject the role's missing UPDATE grant
+            # before it evaluates transaction read-only state.
+            with self.assertRaises(
+                (
+                    self.psycopg.errors.InsufficientPrivilege,
+                    self.psycopg.errors.ReadOnlySqlTransaction,
+                )
+            ):
                 connection.execute("UPDATE dashboard.main_data_dash SET common_name = 'must fail'")
 
     def test_column_only_role_cannot_satisfy_the_trusted_capture(self):
@@ -272,7 +280,12 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
                 ORDER BY ordinal_position
                 """
             ).fetchall()
-            self.assertEqual(tuple(row[0] for row in visible), self.service_config.projection)
+            # information_schema returns catalogue order while projection uses
+            # pipeline mapping order; security depends on exact membership.
+            self.assertEqual(
+                sorted(row[0] for row in visible),
+                sorted(self.service_config.projection),
+            )
 
             connection.execute(BEGIN_SQL)
             with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):

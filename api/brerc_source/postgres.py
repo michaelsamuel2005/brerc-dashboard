@@ -57,10 +57,16 @@ BEGIN_SQL = "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
 # These are the exact settings in the approved view-definition digest profile.
 # They remain literals rather than deployment configuration: a caller may not
 # change how PostgreSQL renders the definition being compared with approval.
+#
+# quote_all_identifiers is pinned OFF, and the value is load-bearing rather than
+# arbitrary. information_schema.columns.data_type is rendered with
+# format_type(), which honours this GUC. With the setting ON, PostgreSQL quotes
+# types such as date and text, so the observed 39-column schema no longer matches
+# the reviewed contract. OFF also keeps the captured form aligned with psql.
 FIXED_SESSION_SQL: tuple[str, ...] = (
     "SET LOCAL search_path = pg_catalog",
     "SET LOCAL client_encoding = 'UTF8'",
-    "SET LOCAL quote_all_identifiers = on",
+    "SET LOCAL quote_all_identifiers = off",
     "SET LOCAL standard_conforming_strings = on",
     "SET LOCAL DateStyle = 'ISO, YMD'",
     "SET LOCAL IntervalStyle = 'postgres'",
