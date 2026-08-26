@@ -33,7 +33,8 @@ destination:
 
 # Public API's read-only connection (api/app/db.py). Deliberately its own
 # block, separate from 'destination' above: the API must connect with a
-# read-only-granted role (brerc_api_ro), never the ETL's write credentials.
+# login inheriting only the reviewed `brerc_api` group role, never the ETL's
+# write credentials.
 # Sharing 'destination' here would mean the "read-only" API silently starts
 # writing on any host where safety.yaml wins over DATABASE_URL.
 # Production requires PostgreSQL certificate and hostname verification. Point
