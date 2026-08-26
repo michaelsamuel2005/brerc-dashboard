@@ -1143,8 +1143,11 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             [
                 {
                     "species_id": "SYNTH-E2E-1",
-                    "cell_id": "ST5872",
-                    "precision_metres": 1_000,
+                    # The controlled dictionary marks this taxon sensitive, so
+                    # its approved 10 km taxon floor is stronger than the
+                    # source row flag's 1 km floor.
+                    "cell_id": "ST57",
+                    "precision_metres": 10_000,
                     "record_count": 1,
                     "srid": 27700,
                 },
@@ -1221,9 +1224,9 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "disposition": "eligible",
                     "withheld_reason": None,
                     "species_id": "SYNTH-E2E-1",
-                    "record_grid_ref": "ST5872",
-                    "record_precision_metres": 1_000,
-                    "cell_id": "ST5872",
+                    "record_grid_ref": "ST57",
+                    "record_precision_metres": 10_000,
+                    "cell_id": "ST57",
                     "place": None,
                     "abundance": None,
                     "record_type": None,
