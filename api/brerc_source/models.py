@@ -67,6 +67,24 @@ class SourcePreflightReport:
     release_ready: bool
 
 
+@dataclass(frozen=True)
+class SafeSourceSnapshotEvidence:
+    """Non-reversible evidence for one completely consumed source snapshot."""
+
+    captured_at_utc: str
+    contract_version: str
+    contract_sha256: str
+    policy_version: str
+    policy_approval_digest: str
+    observed_definition_sha256: str
+    observed_identity_sha256: str
+    result_columns: tuple[str, ...]
+    rows_seen: int
+    records_eligible_before_suppression: int
+    withheld_by_reason: tuple[tuple[str, int], ...]
+    sensitivity_buckets: tuple[tuple[str, int], ...]
+
+
 def cursor_column_names(description: object) -> tuple[str, ...]:
     """Return a DB-API cursor header without accepting an ambiguous item."""
     if not isinstance(description, Sequence) or isinstance(description, str | bytes):

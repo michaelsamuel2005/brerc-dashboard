@@ -18,6 +18,7 @@ import importlib
 import re
 import time
 from collections.abc import Iterator, Mapping, Sequence
+from types import TracebackType
 
 from etl.pipeline import ColumnMap, ValidatedSourceRun, run_pipeline_for_source
 from etl.policy import InvalidPolicy, PolicyNotApproved, PublicationPolicy
@@ -29,6 +30,13 @@ from etl.source_contract import (
     SourceMetadata,
 )
 from etl.species import SpeciesDictionary
+from etl.streaming import (
+    MIN_RECONCILIATION_SECRET_BYTES,
+    SafeDisposition,
+    StreamingTransformError,
+    StreamingTransformSession,
+    begin_streaming_transform,
+)
 from etl.view_identity import EXPECTED_CAPTURE_SESSION, ViewCaptureEvidence, ViewIdentityError
 
 from .config import SourceConnectorConfig
@@ -47,6 +55,7 @@ from .models import (
     CancellationToken,
     PostgreSQLConnection,
     PostgreSQLCursor,
+    SafeSourceSnapshotEvidence,
     SourcePreflightReport,
     cursor_column_names,
     mapping_row,
@@ -330,6 +339,244 @@ def _capture_document(row: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _metadata_from_evidence(evidence: ViewCaptureEvidence) -> SourceMetadata:
+    return SourceMetadata(
+        schema=evidence.observation.schema,
+        name=evidence.observation.name,
+        object_type="view",
+        columns=tuple(
+            SourceColumn(
+                column.name,
+                column.data_type,
+                column.character_maximum_length,
+                column.numeric_precision,
+                column.numeric_scale,
+            )
+            for column in evidence.contract_columns
+        ),
+        observed_view=evidence.observation,
+        observed_catalog_columns_sha256=evidence.catalog_columns_sha256,
+    )
+
+
+class _SafeInitialSnapshot:
+    """Private context/iterator yielding only already-generalised row batches."""
+
+    def __init__(
+        self,
+        connector: TrustedPostgreSQLSourceConnector,
+        *,
+        source_contract: SourceContract,
+        columns: ColumnMap,
+        policy: PublicationPolicy,
+        reconciliation_secret: bytes,
+        dictionary: SpeciesDictionary | None,
+        cancellation: CancellationToken | None,
+        absolute_deadline: float | None,
+    ) -> None:
+        self._connector = connector
+        self._source_contract = source_contract
+        self._columns = columns
+        self._policy = policy
+        self._secret = reconciliation_secret
+        self._dictionary = dictionary
+        self._cancellation = cancellation
+        self._absolute_deadline = absolute_deadline
+        self._connection: PostgreSQLConnection | None = None
+        self._control_cursor: PostgreSQLCursor | None = None
+        self._row_cursor: PostgreSQLCursor | None = None
+        self._transform: StreamingTransformSession | None = None
+        self._evidence: ViewCaptureEvidence | None = None
+        self._header: tuple[str, ...] | None = None
+        self._deadline = 0.0
+        self._exhausted = False
+        self._snapshot_evidence: SafeSourceSnapshotEvidence | None = None
+
+    def __enter__(self) -> _SafeInitialSnapshot:
+        connection: PostgreSQLConnection | None = None
+        try:
+            own_deadline = self._connector._deadline()
+            self._deadline = (
+                own_deadline
+                if self._absolute_deadline is None
+                else min(own_deadline, self._absolute_deadline)
+            )
+            self._connector._check_interrupt(self._cancellation, None, self._deadline)
+            connection = self._connector._open_connection()
+            self._connection = connection
+            self._connector._check_interrupt(self._cancellation, connection, self._deadline)
+            control = connection.cursor()
+            self._control_cursor = control
+            _execute(control, BEGIN_SQL)
+            for statement in FIXED_SESSION_SQL:
+                _execute(control, statement)
+            runtime = self._connector._config.runtime
+            remaining_ms = max(1, int((self._deadline - time.monotonic()) * 1_000))
+            statement_timeout_ms = min(runtime.statement_timeout_ms, remaining_ms)
+            lock_timeout_ms = min(runtime.lock_timeout_ms, remaining_ms)
+            _execute(control, f"SET LOCAL statement_timeout = '{statement_timeout_ms}ms'")
+            _execute(control, f"SET LOCAL lock_timeout = '{lock_timeout_ms}ms'")
+            _execute(
+                control,
+                "SET LOCAL idle_in_transaction_session_timeout = "
+                f"'{runtime.idle_in_transaction_session_timeout_ms}ms'",
+            )
+            qualified_view = (
+                f"{_quoted_identifier(self._source_contract.schema)}."
+                f"{_quoted_identifier(self._source_contract.name)}"
+            )
+            _execute(control, f"LOCK TABLE {qualified_view} IN ACCESS SHARE MODE")
+            self._connector._check_interrupt(self._cancellation, connection, self._deadline)
+            session = self._connector._read_session(control)
+            self._connector._validate_session(session)
+            evidence = self._connector._capture_view(control, self._source_contract)
+            metadata = _metadata_from_evidence(evidence)
+            self._source_contract.validate_initial(metadata)
+            projection = (*self._columns.required(), *self._columns.optional())
+            row_cursor = connection.cursor(name="brerc_safe_source_rows")
+            self._row_cursor = row_cursor
+            _execute(
+                row_cursor,
+                self._connector._row_query(
+                    self._source_contract,
+                    projection,
+                    qualified_view,
+                ),
+            )
+            try:
+                header = cursor_column_names(row_cursor.description)
+            except ValueError:
+                raise SourceProtocolError() from None
+            self._source_contract.validate_result_header(header, projection)
+            self._transform = begin_streaming_transform(
+                columns=self._columns,
+                source_contract=self._source_contract,
+                source_metadata=metadata,
+                source_result_columns=header,
+                policy=self._policy,
+                reconciliation_secret=self._secret,
+                dictionary=self._dictionary,
+            )
+            self._evidence = evidence
+            self._header = header
+            return self
+        except TrustedSourceConnectorError as exc:
+            failure: BaseException = exc
+        except (SourceContractError, ViewIdentityError, StreamingTransformError):
+            failure = SourceProtocolError()
+        except (KeyboardInterrupt, SystemExit) as exc:
+            if connection is not None:
+                self._connector._cancel_without_raising(connection)
+            failure = exc
+        except Exception:
+            failure = SourceDatabaseFailed()
+        self._cleanup()
+        raise _sanitise_exception(failure)
+
+    def __iter__(self) -> _SafeInitialSnapshot:
+        return self
+
+    def __next__(self) -> tuple[SafeDisposition, ...]:
+        if self._exhausted:
+            raise StopIteration
+        connection = self._connection
+        cursor = self._row_cursor
+        transform = self._transform
+        header = self._header
+        evidence = self._evidence
+        if None in (connection, cursor, transform, header, evidence):
+            raise _sanitise_exception(SourceProtocolError())
+        try:
+            self._connector._check_interrupt(self._cancellation, connection, self._deadline)
+            batch = cursor.fetchmany(self._connector._config.runtime.batch_size)
+            self._connector._check_interrupt(self._cancellation, connection, self._deadline)
+            if len(batch) > self._connector._config.runtime.batch_size:
+                raise SourceProtocolError()
+            if not batch:
+                report = transform.finish()
+                if not report.reconciles():
+                    raise SourceProtocolError()
+                approval_digest = self._policy.approval_digest
+                if approval_digest is None:
+                    raise SourceProtocolError()
+                self._snapshot_evidence = SafeSourceSnapshotEvidence(
+                    captured_at_utc=evidence.captured_at_utc,
+                    contract_version=self._source_contract.version,
+                    contract_sha256=self._source_contract.digest(),
+                    policy_version=self._policy.version,
+                    policy_approval_digest=approval_digest,
+                    observed_definition_sha256=evidence.observation.definition_sha256,
+                    observed_identity_sha256=evidence.identity_sha256,
+                    result_columns=header,
+                    rows_seen=report.rows_in,
+                    records_eligible_before_suppression=report.records_public,
+                    withheld_by_reason=tuple(sorted(report.withheld.items())),
+                    sensitivity_buckets=transform.sensitivity_buckets,
+                )
+                self._exhausted = True
+                raise StopIteration
+            mapped: list[dict[str, object]] = []
+            for raw in batch:
+                try:
+                    row = mapping_row(raw, header)
+                except ValueError:
+                    raise SourceProtocolError() from None
+                if tuple(row) != header:
+                    raise SourceProtocolError()
+                mapped.append(row)
+            result = transform.transform_batch(mapped)
+            self._connector._check_interrupt(self._cancellation, connection, self._deadline)
+            return result
+        except StopIteration:
+            raise
+        except TrustedSourceConnectorError as exc:
+            failure = exc
+        except (SourceContractError, ViewIdentityError, StreamingTransformError):
+            failure = SourceProtocolError()
+        except (KeyboardInterrupt, SystemExit) as exc:
+            self._connector._cancel_without_raising(connection)
+            failure = exc
+        except Exception:
+            failure = SourceDatabaseFailed()
+        raise _sanitise_exception(failure)
+
+    @property
+    def evidence(self) -> SafeSourceSnapshotEvidence:
+        if not self._exhausted or self._snapshot_evidence is None:
+            raise SourceProtocolError()
+        return self._snapshot_evidence
+
+    def _cleanup(self) -> bool:
+        failed = False
+        for cursor in (self._row_cursor, self._control_cursor):
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    failed = True
+        if self._connection is not None:
+            try:
+                self._connection.rollback()
+            except Exception:
+                failed = True
+            try:
+                self._connection.close()
+            except Exception:
+                failed = True
+        return failed
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        cleanup_failed = self._cleanup()
+        if cleanup_failed:
+            raise _sanitise_exception(SourceCleanupFailed())
+        return False
+
+
 class TrustedPostgreSQLSourceConnector:
     """Extract one initial-load candidate from an approved PostgreSQL view."""
 
@@ -348,6 +595,53 @@ class TrustedPostgreSQLSourceConnector:
     ) -> TrustedPostgreSQLSourceConnector:
         """Construct from the sole accepted, contract-bound config object."""
         return cls(config)
+
+    def _open_safe_initial_snapshot(
+        self,
+        *,
+        source_contract: SourceContract,
+        columns: ColumnMap,
+        policy: PublicationPolicy,
+        reconciliation_secret: bytes,
+        dictionary: SpeciesDictionary | None = None,
+        cancellation: CancellationToken | None = None,
+        absolute_deadline: float | None = None,
+    ) -> _SafeInitialSnapshot:
+        """Build the private bounded-memory source stream used by the loader.
+
+        The returned context yields only :class:`SafeDisposition` batches. Raw
+        rows, headers, catalogue data and source identifiers remain inside this
+        module and the database transaction is rolled back on every exit path.
+        """
+        self._validate_config(source_contract, columns)
+        source_contract.require_mode(LoadMode.INITIAL)
+        policy.validate()
+        policy.assert_approved()
+        source_contract.assert_release_ready()
+        source_contract.validate_safety_mapping(columns, policy)
+        projection = (*columns.required(), *columns.optional())
+        source_contract.validate_result_header(projection, projection)
+        if (
+            not isinstance(reconciliation_secret, bytes)
+            or len(reconciliation_secret) < MIN_RECONCILIATION_SECRET_BYTES
+        ):
+            raise SourceConfigurationError()
+        if absolute_deadline is not None and (
+            isinstance(absolute_deadline, bool)
+            or not isinstance(absolute_deadline, int | float)
+            or absolute_deadline <= time.monotonic()
+        ):
+            raise SourceConfigurationError()
+        return _SafeInitialSnapshot(
+            self,
+            source_contract=source_contract,
+            columns=columns,
+            policy=policy,
+            reconciliation_secret=bytes(reconciliation_secret),
+            dictionary=dictionary,
+            cancellation=cancellation,
+            absolute_deadline=None if absolute_deadline is None else float(absolute_deadline),
+        )
 
     def extract_initial(
         self,
