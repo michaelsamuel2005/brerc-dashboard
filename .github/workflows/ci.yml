@@ -124,6 +124,51 @@ jobs:
       - name: Run the ETL and safety-gate tests
         run: python -m pytest etl/tests -q
 
+      # Transactional-outbox delivery is a separate security boundary from the
+      # loader. Keep its config/redaction/provider tests visible as their own
+      # required step; a green ETL suite alone does not prove notifications.
+      - name: Run the notification-worker tests
+        run: python -m pytest notifier_tests -q
+
+      # Syntax-only: `--no-interpolate` deliberately avoids asking CI for real
+      # recipient, database, CA or provider-secret paths. Production receipt is
+      # retained human evidence, never a GitHub Actions secret-dependent test.
+      - name: Validate the private notifier deployment overlay
+        run: docker compose -f ../deploy/notifier.compose.yaml config --no-interpolate --quiet
+
+      - name: Enforce controlled notifier deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if env -i PATH="$PATH" HOME="$HOME" \
+            docker compose -f ../deploy/notifier.compose.yaml config --quiet \
+            >/dev/null 2>&1; then
+            echo "Notifier overlay unexpectedly accepted missing controlled inputs" >&2
+            exit 1
+          fi
+
+          notifier_ci_inputs="$(mktemp -d)"
+          trap 'rm -rf -- "$notifier_ci_inputs"' EXIT
+          for input in config service passfile ca smtp-user smtp-password; do
+            : > "$notifier_ci_inputs/$input"
+          done
+
+          NOTIFIER_CONFIG_FILE="$notifier_ci_inputs/config" \
+          NOTIFIER_PG_SERVICE_FILE="$notifier_ci_inputs/service" \
+          NOTIFIER_PG_PASSFILE="$notifier_ci_inputs/passfile" \
+          NOTIFIER_PG_CA_FILE="$notifier_ci_inputs/ca" \
+          NOTIFIER_SMTP_USERNAME_FILE="$notifier_ci_inputs/smtp-user" \
+          NOTIFIER_SMTP_PASSWORD_FILE="$notifier_ci_inputs/smtp-password" \
+          BRERC_NOTIFIER_IMAGE="registry.invalid/brerc/notifier" \
+          BRERC_NOTIFIER_IMAGE_DIGEST="sha256:0000000000000000000000000000000000000000000000000000000000000000" \
+          BRERC_NOTIFIER_DATABASE_NETWORK="brerc-notifier-database-ci" \
+          BRERC_NOTIFIER_CONTROL_NETWORK="brerc-notifier-control-ci" \
+            docker compose -f ../deploy/notifier.compose.yaml config --quiet \
+            >/dev/null
+
+      - name: Build the least-privilege notification-worker image
+        run: docker build --file Dockerfile.notifier --tag brerc-notifier:ci .
+
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build
   # ---------------------------------------------------------------------------
