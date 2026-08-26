@@ -105,11 +105,13 @@ test("the production build uses the protected live release, never browser mocks"
     `/api/summary?species=${SENSITIVE_SPECIES_ID}`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2024`,
+    `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2023`,
     `/api/records?species=${SENSITIVE_SPECIES_ID}`,
     `/api/records?species=${SENSITIVE_SPECIES_ID}&year=2024`,
     `/api/summary?species=${ORDINARY_SPECIES_ID}`,
     `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}`,
     `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2023`,
+    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2024`,
     `/api/records?species=${ORDINARY_SPECIES_ID}`,
     `/api/records?species=${ORDINARY_SPECIES_ID}&year=2023`,
   ];
@@ -150,6 +152,15 @@ test("the production build uses the protected live release, never browser mocks"
     [SENSITIVE_NAME, ORDINARY_NAME].sort(),
   );
 
+  const searchedSpecies = bodyFor<SpeciesListResponse>(
+    probes,
+    "/api/species?q=Synthetic%20ordinary&sort=name-asc&page=1&pageSize=24",
+  );
+  expect(searchedSpecies).toMatchObject({
+    total: 1,
+    items: [{ speciesId: ORDINARY_SPECIES_ID, commonName: ORDINARY_NAME }],
+  });
+
   const sensitiveCells = bodyFor<CellDistributionResponse>(
     probes,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2024`,
@@ -164,6 +175,12 @@ test("the production build uses the protected live release, never browser mocks"
   expect(ordinaryCells.cells).toEqual([
     { cellId: "ST5972", precisionMetres: 1_000, recordCount: 1 },
   ]);
+  for (const path of [
+    `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2023`,
+    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2024`,
+  ]) {
+    expect(bodyFor<CellDistributionResponse>(probes, path).cells).toEqual([]);
+  }
 
   for (const path of [
     `/api/records?species=${SENSITIVE_SPECIES_ID}&year=2024`,

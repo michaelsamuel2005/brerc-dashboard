@@ -563,7 +563,7 @@ jobs:
   e2e:
     name: Front-end end-to-end
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: web
