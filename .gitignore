@@ -105,6 +105,7 @@ data/*
 
 # Local database / ETL configuration
 config/safety.yaml
+/api/loader.configuration.yaml
 
 # BRERC live-view attestation evidence contains internal catalogue identifiers
 # and SQL. Keep raw captures in controlled storage; only reviewed public
