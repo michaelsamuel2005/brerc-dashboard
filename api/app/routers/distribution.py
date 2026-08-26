@@ -1,79 +1,71 @@
-"""
-GET /api/distribution/cells — grid cells as GeoJSON (WGS84 / EPSG:4326).
+"""GET /api/distribution/cells — species-scoped aggregate map cells.
 
-NOW READS REAL DATA (B8) from the public_cells view. This is the non-tile,
-accessible-equivalent view of the map data (also useful for the WCAG data-table
-equivalent). The .mvt tiles themselves come from Martin (B7), not this endpoint.
-
-Cells are aggregated by cell (summing across years), optionally filtered to one
-species. Every cell carries precisionMetres so the front end never implies more
-accuracy than the (generalised) data actually has.
+No geometry crosses this boundary. The client derives a polygon from the
+validated cell identifier, so a precise polygon cannot be mislabeled with a
+coarser public grid reference. Unscoped requests return no cells.
 """
 
-import json
+from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
 from app import config
-from app.db import get_connection
-from app.models import (
-    GeoJSONFeatureCollection,
-    GeoJSONFeature,
-    CellProperties,
-)
+from app.db import assert_serving_relation, serving_connection
+from app.models import CellDistribution, GridCell
+from app.release import load_active_release
 
 router = APIRouter(prefix="/api", tags=["distribution"])
 
+_CELLS = assert_serving_relation("serve.public_distribution_cell")
 
-@router.get("/distribution/cells", response_model=GeoJSONFeatureCollection)
+_CELLS_SQL = f"""
+SELECT cell_id, precision_metres,
+       SUM(record_count) AS record_count,
+       SUM(verified_count) AS verified_count
+FROM {_CELLS}
+WHERE species_id = %s
+  AND (%s::integer IS NULL OR record_year = %s)
+GROUP BY cell_id, precision_metres
+ORDER BY cell_id, precision_metres
+LIMIT %s
+"""  # noqa: S608 - checked relation; every request value is bound
+
+
+@router.get(
+    "/distribution/cells",
+    response_model=CellDistribution,
+    response_model_exclude_unset=True,
+)
 def distribution_cells(
-    speciesId: str | None = Query(None),   # TEXT ids — see app/models.py
-) -> GeoJSONFeatureCollection:
-    # Optional species filter — fixed WHERE text, value passed as a parameter.
-    where_sql = ""
-    params: list = []
-    if speciesId is not None:
-        where_sql = "WHERE species_id = %s"
-        params.append(speciesId)
+    species: str | None = Query(None, max_length=120),
+    year: int | None = Query(None, ge=1500, le=2200),
+) -> CellDistribution:
+    with serving_connection() as connection:
+        release = load_active_release(connection)
+        if species is None:
+            return CellDistribution(
+                verificationAvailable=release.verification_available,
+                cells=[],
+            )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _CELLS_SQL,
+                [species, year, year, config.MAX_CELLS],
+            )
+            rows = cursor.fetchall()
 
-    # One feature per cell: sum the counts across years, and let PostGIS turn the
-    # cell polygon straight into a GeoJSON string with ST_AsGeoJSON.
-    #
-    # The LIMIT is a server-side cap (MAX_CELLS in app/config.py). Without it,
-    # asking for every species at once would build one enormous response — slow
-    # for the browser, and effectively a bulk download of the whole grid. The
-    # map itself doesn't rely on this endpoint for wide views; it uses Martin's
-    # vector tiles (B7), which only ever send the squares actually on screen.
-    sql = f"""
-        SELECT
-            cell_id,
-            MAX(precision_metres) AS precision_metres,
-            SUM(record_count)     AS record_count,
-            SUM(verified_count)   AS verified_count,
-            ST_AsGeoJSON(geom)    AS geojson
-        FROM public_cells
-        {where_sql}
-        GROUP BY cell_id, geom
-        ORDER BY cell_id
-        LIMIT %s;
-    """
+    cells: list[GridCell] = []
+    for row in rows:
+        fields: dict[str, object] = {
+            "cellId": row["cell_id"],
+            "precisionMetres": int(row["precision_metres"]),
+            "recordCount": int(row["record_count"]),
+        }
+        if release.verification_available:
+            fields["verifiedCount"] = int(row["verified_count"] or 0)
+        cells.append(GridCell(**fields))
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params + [config.MAX_CELLS])
-            rows = cur.fetchall()
-
-    features = [
-        GeoJSONFeature(
-            geometry=json.loads(row["geojson"]),  # GeoJSON string -> dict
-            properties=CellProperties(
-                cellId=row["cell_id"],
-                precisionMetres=row["precision_metres"],
-                recordCount=int(row["record_count"]),
-                verifiedCount=int(row["verified_count"]),
-            ),
-        )
-        for row in rows
-    ]
-
-    return GeoJSONFeatureCollection(features=features)
+    return CellDistribution(
+        verificationAvailable=release.verification_available,
+        cells=cells,
+    )

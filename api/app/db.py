@@ -1,30 +1,37 @@
-"""
-Read-only database connection management and security validation module for the API layer.
-Enforces strict read-only access, parameterised queries, statement timeouts,
-and validation against approved public B6 views (public_*).
+"""Fail-closed, read-only access to the published ``serve.*`` views.
+
+Credential resolution deliberately retains Ting Ting's ``api_readonly``
+boundary: the API never falls back to the ETL destination credentials and it
+has no postgres/postgres default. Query code then adds two independent guards:
+every session is transaction-read-only, and routers may name only the five
+public serving views owned by the atomic publication store.
 """
 
+from __future__ import annotations
+
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from functools import lru_cache
 from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
-from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
-# Load api/.env (if present) so credentials can live in a git-ignored file
+from app.config import DB_STATEMENT_TIMEOUT_MS
+
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
-    """Loads host-only YAML config when the ETL package is available.
+    """Load host-only YAML when the ETL package is present.
 
-    The production API image intentionally contains only ``app/``. Its
-    DATABASE_URL fallback must therefore remain usable without packaging the
-    write-capable ETL alongside the public service.
+    The API-only image need not package the ETL, so ``DATABASE_URL`` remains a
+    supported fallback. Missing configuration is not converted into a default
+    credential anywhere below.
     """
     try:
         from etl.load.loader import load_safety_config
@@ -40,47 +47,18 @@ def get_config() -> dict:
 
 
 def _get_api_readonly() -> dict:
-    """
-    Retrieves the API's own read-only connection block (api_readonly), kept
-    separate from safety.yaml's 'destination' block. 'destination' holds the
-    ETL's write-capable credentials — sharing it here would mean that on any
-    host where safety.yaml wins (the intended behaviour), this "read-only"
-    API silently starts connecting with write credentials instead. The
-    read-only-ness of this connection is enforced entirely by the database
-    role's own grants (see db/docker/99_set_ro_password.sh), so which
-    credentials land here matters.
-    """
+    """Return only the API credential block, never the ETL destination block."""
     return get_config().get("api_readonly", {})
 
 
-# Statement timeout guard: caps query execution at 10 seconds to prevent runaway queries
-STATEMENT_TIMEOUT_MS = 10_000  # 10s
-
-# Strict whitelist: API requests are restricted exclusively to approved public views.
-B6_PUBLIC_RELATIONS = {
-    "public_species",
-    "public_records",
-    "public_cells",
-    "public_provenance",
-}
-
-
 def _build_database_url() -> str:
-    """
-    Assembles the database connection string, preferring config/safety.yaml's
-    api_readonly block — the normal way to configure this, with explicit
-    host/database/user/password fields. DATABASE_URL is the fallback for
-    deployments (such as Docker/CI) that do not mount the YAML file.
+    """Resolve an explicit read-only credential or fail without guessing.
 
-    Deliberately reads api_readonly, not destination: destination holds the
-    ETL's write-capable credentials, and this connection must never end up
-    using them (see _get_api_readonly).
-
-    Fails closed: if neither supplies real credentials, raises instead of
-    silently connecting as postgres/postgres.
+    ``config/safety.yaml`` takes precedence when it supplies a complete
+    ``api_readonly`` block. ``DATABASE_URL`` is the deployment fallback. The
+    write-capable ``destination`` block is intentionally ignored.
     """
     api_readonly = _get_api_readonly()
-
     user = api_readonly.get("user")
     password = api_readonly.get("password")
 
@@ -92,27 +70,23 @@ def _build_database_url() -> str:
 
     if user and password:
         host = api_readonly.get("dbhostname")
-        dbname = api_readonly.get("dbname")
-
-        if not all((user, password, host, dbname)):
+        database = api_readonly.get("dbname")
+        if not all((host, database)):
             raise RuntimeError(
                 "The api_readonly block is incomplete. Set dbhostname, dbname, "
                 "user and password, or leave user/password empty to use DATABASE_URL."
             )
-
         return make_conninfo(
             user=user,
             password=password,
             host=host,
             port=api_readonly.get("port") or 5432,
-            dbname=dbname,
+            dbname=database,
         )
 
     explicit_url = os.getenv("DATABASE_URL")
-
     if explicit_url:
         return explicit_url
-
     raise RuntimeError(
         "No database credentials configured. Set api_readonly.user/"
         "api_readonly.password in config/safety.yaml, or use DATABASE_URL as "
@@ -122,53 +96,72 @@ def _build_database_url() -> str:
 
 @lru_cache(maxsize=1)
 def get_database_url() -> str:
-    """Cached wrapper to retrieve the assembled database connection URL."""
+    """Cache the already fail-closed credential resolution."""
     return _build_database_url()
 
 
+SERVING_RELATIONS = frozenset(
+    {
+        "serve.public_release",
+        "serve.public_species",
+        "serve.public_distribution_cell",
+        "serve.public_species_year",
+        "serve.public_record",
+    }
+)
+
+
+class ServingRelationError(RuntimeError):
+    """A query attempted to name a relation outside the public serving surface."""
+
+
+def assert_serving_relation(relation: str) -> str:
+    """Return an allow-listed serving view for use in a fixed SQL constant."""
+    if relation not in SERVING_RELATIONS:
+        raise ServingRelationError("relation is outside the public serving surface")
+    return relation
+
+
 def get_connection() -> psycopg.Connection:
+    """Open a bounded transaction-read-only API connection.
+
+    Kept as a compatibility entry point for the existing database safety tests;
+    public routers use :func:`serving_connection`, which additionally verifies
+    the live session before yielding it.
     """
-    Opens a read-only connection to the UI database with dictionary row factories
-    and a strict statement timeout configuration.
-    """
-    return psycopg.connect(
+    connection = psycopg.connect(
         get_database_url(),
         row_factory=dict_row,
-        options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+        autocommit=False,
+        options=(
+            f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS} -c default_transaction_read_only=on"
+        ),
     )
+    connection.read_only = True
+    return connection
 
 
-def _validate_public_relation(table_name: str) -> None:
-    """
-    Security check: ensures the requested relation is explicitly whitelisted
-    among approved public B6 views, preventing direct access to base tables.
-    """
-    if table_name not in B6_PUBLIC_RELATIONS:
-        raise ValueError(f"Unsupported public relation: {table_name}")
-
-
-def check_table_exists(connection, table_name: str) -> bool:
-    """Checks whether an approved public view exists in the database schema."""
-    _validate_public_relation(table_name)
-
-    with connection.cursor() as cur:
-        cur.execute(
-            "SELECT to_regclass(%s) IS NOT NULL AS exists;",
-            (table_name,),
-        )
-
-        return bool(cur.fetchone()["exists"])
-
-
-def check_table_has_rows(connection, table_name: str) -> bool:
-    """Checks whether an approved public view contains at least one row of data."""
-    _validate_public_relation(table_name)
-
-    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1) AS has_rows;").format(
-        sql.Identifier(table_name)
-    )
-
-    with connection.cursor() as cur:
-        cur.execute(query)
-
-        return bool(cur.fetchone()["has_rows"])
+@contextmanager
+def serving_connection() -> Iterator[psycopg.Connection]:
+    """Yield a verified read-only connection and always roll it back."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT current_setting('transaction_read_only') AS read_only, "
+                "pg_catalog.pg_has_role(current_user, 'pg_write_all_data', 'USAGE') "
+                "AS can_write_all"
+            )
+            session = cursor.fetchone()
+        if (
+            session is None
+            or session.get("read_only") != "on"
+            or session.get("can_write_all") is not False
+        ):
+            raise RuntimeError("publication database session is not read-only")
+        yield connection
+    finally:
+        with suppress(Exception):
+            connection.rollback()
+        with suppress(Exception):
+            connection.close()

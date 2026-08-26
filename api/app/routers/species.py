@@ -1,167 +1,223 @@
+"""GET /api/species and /api/species/{id} — the public species directory.
+
+Taxonomic groups remain nullable until a reviewed vocabulary is approved.
+Media are fallback-only: this API never invokes the legacy outbound species
+proxy and publishes no asset without an approved licence and attribution.
 """
-GET /api/species          — paginated species list (real data from public_species).
-GET /api/species/{id}     — one species' detail (real data from public_species).
 
-The list can be sorted (sort_by) and filtered to one group (group). Both are
-optional; leaving them out gives the old behaviour — most-recorded species first.
-The page size is capped on the server, so no caller can pull the whole list at
-once (see MAX_PAGE_SIZE in app/config.py).
-
-Both read ONLY from the public_species view (safe by construction). speciesId is
-the real SPECIES_NO, so a list item's speciesId works directly with /species/{id}
-(list and detail stay consistent).
-
-The image + description on the detail endpoint come from the cached species-info
-proxy in app/species_info.py (iNaturalist -> GBIF -> Wikipedia). That module owns
-the licence rules; this router just asks it for an answer and passes on whatever
-it gets. When no reusable licence + attribution can be confirmed, both fields are
-None — the front end should then show a named placeholder, never a broken image.
-"""
+from __future__ import annotations
 
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app import config, species_info
-from app.db import get_connection
-from app.models import SpeciesList, SpeciesListItem, SpeciesDetail
+from app import config
+from app.db import assert_serving_relation, serving_connection
+from app.models import (
+    SpeciesDetail,
+    SpeciesFacets,
+    SpeciesGroupFacet,
+    SpeciesListItem,
+    SpeciesListPage,
+    SpeciesStats,
+)
+from app.release import ActiveRelease, load_active_release
+from app.slugs import species_slug
 
 router = APIRouter(prefix="/api", tags=["species"])
 
+_SPECIES = assert_serving_relation("serve.public_species")
+_SPECIES_YEAR = assert_serving_relation("serve.public_species_year")
 
-# FOR THE MAINTAINER: this is a WHITELIST, and it is the only reason it is safe
-# to put a sort column into the SQL text.
-#
-# The rule in this codebase is that nothing a caller types ever reaches the SQL
-# string — values always travel as parameters (%s). A column name can't be a
-# parameter, so instead the caller sends a LABEL ("commonName") and we look up
-# the real column ourselves. Anything not in this dictionary never gets that
-# far: FastAPI rejects it with a 422 before this function runs.
-#
-# To offer another sort option, add a line here AND to SortBy just below. Never
-# build the ORDER BY from the caller's text.
-_SORT_COLUMNS = {
-    "commonName": "common_name",
-    "scientificName": "scientific_name",
+_FILTER_SQL = r"""
+WHERE (%s::text IS NULL OR taxon_group = %s)
+  AND (
+      %s::text IS NULL
+      OR scientific_name ILIKE %s ESCAPE '\'
+      OR common_name ILIKE %s ESCAPE '\'
+  )
+"""
+
+_LIST_PREFIX = f"""
+SELECT species_id, scientific_name, common_name, taxon_group,
+       total_records, first_year, last_year
+FROM {_SPECIES}
+{_FILTER_SQL}
+"""  # noqa: S608 - checked relation; request values are bound
+
+_LIST_SQL_BY_SORT = {
+    "name-asc": (
+        _LIST_PREFIX
+        + 'ORDER BY common_name ASC NULLS LAST, species_id COLLATE "C" ASC LIMIT %s OFFSET %s'
+    ),
+    "scientific-name-asc": (
+        _LIST_PREFIX + 'ORDER BY scientific_name ASC, species_id COLLATE "C" ASC LIMIT %s OFFSET %s'
+    ),
+    "records-desc": (
+        _LIST_PREFIX + 'ORDER BY total_records DESC, species_id COLLATE "C" ASC LIMIT %s OFFSET %s'
+    ),
+    "latest-record-desc": (
+        _LIST_PREFIX + 'ORDER BY last_year DESC, species_id COLLATE "C" ASC LIMIT %s OFFSET %s'
+    ),
 }
 
-# The two values /api/species?sort_by=... will accept. FastAPI turns anything
-# else into a 422 "Unprocessable Entity" automatically.
-SortBy = Literal["commonName", "scientificName"]
+_COUNT_SQL = f"SELECT COUNT(*) AS total FROM {_SPECIES} {_FILTER_SQL}"  # noqa: S608
+
+_AMBIGUOUS_SQL = f"""
+SELECT scientific_name
+FROM {_SPECIES}
+GROUP BY scientific_name
+HAVING COUNT(*) > 1
+"""  # noqa: S608
+
+_FACETS_SQL = f"""
+SELECT taxon_group AS value, COUNT(*) AS species_count
+FROM {_SPECIES}
+WHERE taxon_group IS NOT NULL
+GROUP BY taxon_group
+ORDER BY taxon_group
+"""  # noqa: S608
+
+_DETAIL_SQL = f"""
+SELECT species_id, scientific_name, common_name, taxon_group,
+       total_records, first_year, last_year
+FROM {_SPECIES}
+WHERE species_id = %s
+"""  # noqa: S608
+
+_VERIFIED_SQL = f"""
+SELECT COALESCE(SUM(verified_count), 0) AS verified_count
+FROM {_SPECIES_YEAR}
+WHERE species_id = %s
+"""  # noqa: S608
 
 
-@router.get("/species", response_model=SpeciesList)
+def _filter_parameters(q: str | None, group: str | None) -> list[object]:
+    group_value = group.strip() if group and group.strip() else None
+    pattern: str | None = None
+    if q and q.strip():
+        term = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{term}%"
+    return [group_value, group_value, pattern, pattern, pattern]
+
+
+def _item(row: dict, ambiguous: set[str]) -> SpeciesListItem:
+    record_count = int(row["total_records"])
+    has_records = record_count > 0
+    return SpeciesListItem(
+        speciesId=str(row["species_id"]),
+        slug=species_slug(
+            row["scientific_name"],
+            str(row["species_id"]),
+            ambiguous=row["scientific_name"] in ambiguous,
+        ),
+        scientificName=row["scientific_name"],
+        commonName=row["common_name"],
+        group=row["taxon_group"],
+        recordCount=record_count,
+        firstYear=int(row["first_year"]) if has_records else None,
+        lastYear=int(row["last_year"]) if has_records else None,
+        hasImage=False,
+    )
+
+
+@router.get("/species", response_model=SpeciesListPage)
 def list_species(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=config.MAX_PAGE_SIZE),
-    sort_by: SortBy | None = Query(
+    sort: Literal[
+        "name-asc",
+        "scientific-name-asc",
+        "records-desc",
+        "latest-record-desc",
+    ] = Query("name-asc"),
+    q: str | None = Query(None, max_length=120),
+    group: str | None = Query(None, max_length=120),
+    sort_by: Literal["commonName", "scientificName"] | None = Query(
         None,
-        description="Sort the list by 'commonName' or 'scientificName'. "
-                    "Omit to sort by how many records each species has.",
+        deprecated=True,
+        description="Deprecated compatibility alias; use sort.",
     ),
-    group: str | None = Query(
-        None,
-        description="Show only one species group, e.g. 'birds' or 'mammals'.",
-    ),
-) -> SpeciesList:
-    # Belt-and-braces: Query(le=...) already refuses a bigger page, but this
-    # guarantees the cap even if that validation is ever loosened by mistake.
-    pageSize = min(pageSize, config.MAX_PAGE_SIZE)
-    offset = (page - 1) * pageSize
+) -> SpeciesListPage:
+    if sort_by is not None:
+        legacy_sort = {
+            "commonName": "name-asc",
+            "scientificName": "scientific-name-asc",
+        }[sort_by]
+        if sort != "name-asc" and sort != legacy_sort:
+            raise HTTPException(status_code=422, detail="Conflicting sort parameters")
+        sort = legacy_sort
+    if sort not in _LIST_SQL_BY_SORT:
+        raise HTTPException(status_code=422, detail="Unsupported sort")
+    page_size = min(pageSize, config.MAX_PAGE_SIZE)
+    parameters = _filter_parameters(q, group)
 
-    # Optional group filter. The WHERE text is a fixed string; the group name
-    # the caller typed travels separately as a parameter, so it is data and can
-    # never be executed as SQL.
-    where_sql = ""
-    filter_params: list = []
-    if group is not None:
-        where_sql = "WHERE species_group = %s"
-        filter_params.append(group)
+    with serving_connection() as connection:
+        load_active_release(connection)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _LIST_SQL_BY_SORT[sort],
+                [*parameters, page_size, (page - 1) * page_size],
+            )
+            rows = cursor.fetchall()
+            cursor.execute(_COUNT_SQL, parameters)
+            total = int(cursor.fetchone()["total"])
+            cursor.execute(_AMBIGUOUS_SQL)
+            ambiguous = {row["scientific_name"] for row in cursor.fetchall()}
+            cursor.execute(_FACETS_SQL)
+            facet_rows = cursor.fetchall()
 
-    # Chosen from the whitelist above — never from the caller's raw text.
-    # Common names can be empty, so NULLS LAST keeps unnamed species at the
-    # bottom instead of the top. scientific_name is the tie-breaker so the
-    # order is stable and pagination doesn't repeat or skip rows.
-    if sort_by is None:
-        order_sql = "record_count DESC, scientific_name"
-    else:
-        order_sql = f"{_SORT_COLUMNS[sort_by]} ASC NULLS LAST, scientific_name"
-
-    rows_sql = f"""
-        SELECT species_id, scientific_name, common_name, species_group,
-               record_count, first_year, last_year, has_image
-        FROM public_species
-        {where_sql}
-        ORDER BY {order_sql}
-        LIMIT %s OFFSET %s;
-    """
-    count_sql = f"SELECT COUNT(*) AS total FROM public_species {where_sql};"
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(rows_sql, filter_params + [pageSize, offset])
-            rows = cur.fetchall()
-
-            cur.execute(count_sql, filter_params)
-            total = cur.fetchone()["total"]
-
-    # hasImage means "the detail endpoint can give you a picture". Two ways that
-    # can be true: the database says so (a curated image), or the proxy already
-    # has a licence-checked one cached. This is a CACHE-ONLY, batched lookup —
-    # rendering one page of results must never trigger twenty outbound calls, so
-    # a species the proxy hasn't fetched yet simply reports the database's value.
-    cached_images = species_info.names_with_cached_image(
-        [row["scientific_name"] for row in rows]
+    return SpeciesListPage(
+        items=[_item(row, ambiguous) for row in rows],
+        page=page,
+        pageSize=page_size,
+        total=total,
+        facets=SpeciesFacets(
+            groups=[
+                SpeciesGroupFacet(
+                    value=row["value"],
+                    label=row["value"],
+                    speciesCount=int(row["species_count"]),
+                )
+                for row in facet_rows
+            ]
+        ),
     )
-
-    items = [
-        SpeciesListItem(
-            speciesId=row["species_id"],
-            scientificName=row["scientific_name"],
-            commonName=row["common_name"],
-            group=row["species_group"],
-            recordCount=row["record_count"],
-            firstYear=row["first_year"],
-            lastYear=row["last_year"],
-            hasImage=row["has_image"] or row["scientific_name"] in cached_images,
-        )
-        for row in rows
-    ]
-    return SpeciesList(items=items, total=total, page=page, pageSize=pageSize)
 
 
 @router.get("/species/{species_id}", response_model=SpeciesDetail)
 def species_detail(species_id: str) -> SpeciesDetail:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT species_id, scientific_name, common_name, species_group,
-                       record_count, first_year, last_year, has_image
-                FROM public_species
-                WHERE species_id = %s
-                LIMIT 1;
-                """,
-                (species_id,),
-            )
-            row = cur.fetchone()
+    with serving_connection() as connection:
+        release: ActiveRelease = load_active_release(connection)
+        with connection.cursor() as cursor:
+            cursor.execute(_DETAIL_SQL, [species_id])
+            row = cursor.fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Species not found")
+            cursor.execute(_AMBIGUOUS_SQL)
+            ambiguous = {item["scientific_name"] for item in cursor.fetchall()}
+            verified_count = None
+            if release.verification_available:
+                cursor.execute(_VERIFIED_SQL, [species_id])
+                verified_count = int(cursor.fetchone()["verified_count"])
 
-    if row is None:
-        raise HTTPException(status_code=404, detail="Species not found")
-
-    # Cached, licence-checked, and guaranteed not to raise: if the proxy is off or
-    # the sources are unreachable, both fields come back None and this endpoint
-    # still returns 200 with honest stats.
-    info = species_info.get_species_info(row["scientific_name"])
-
+    record_count = int(row["total_records"])
+    has_records = record_count > 0
     return SpeciesDetail(
-        speciesId=row["species_id"],
+        speciesId=str(row["species_id"]),
+        slug=species_slug(
+            row["scientific_name"],
+            str(row["species_id"]),
+            ambiguous=row["scientific_name"] in ambiguous,
+        ),
         scientificName=row["scientific_name"],
         commonName=row["common_name"],
-        group=row["species_group"],
-        recordCount=row["record_count"],
-        firstYear=row["first_year"],
-        lastYear=row["last_year"],
-        image=info.image,
-        description=info.description,
+        group=row["taxon_group"],
+        imagePublication="fallback-only",
+        stats=SpeciesStats(
+            recordCount=record_count,
+            yearRange=(int(row["first_year"]), int(row["last_year"])) if has_records else None,
+            verificationAvailable=release.verification_available,
+            verifiedCount=verified_count,
+        ),
     )

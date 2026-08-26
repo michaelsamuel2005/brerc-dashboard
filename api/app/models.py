@@ -1,129 +1,245 @@
-"""
-Pydantic models = the exact SHAPE of each API response (the contract, §10).
+"""Strict public response models for the active publication release.
 
-These field names and types must match Michael's front-end Zod schemas EXACTLY.
-If a name here differs from what the front end expects, its validation fails and
-the app breaks — so treat these as the locked contract. When the real data is
-wired in (B8), it must be shaped into these same models.
-
-Every public response deliberately EXCLUDES: Recorder1, BLISS, Eastings,
-Northings, Comments, and any sensitivity marker. Those never leave the backend.
+Unknown keys are rejected. No model contains recorder identity, precise
+coordinates, eastings/northings, comments, raw sensitivity markers or source
+keys; the ``serve.*`` views do not expose them either.
 """
 
-from pydantic import BaseModel
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-# ---- /api/health -----------------------------------------------------------
-class Health(BaseModel):
-    status: str
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Health(StrictModel):
+    status: Literal["ok"]
     version: str
 
 
-# ---- /api/summary ----------------------------------------------------------
-class YearCount(BaseModel):
-    year: int
-    count: int
+class PublicationFields(StrictModel):
+    abundance: bool
+    place: bool
+    recordType: bool
+    verification: bool
 
 
-class TopGroup(BaseModel):
-    group: str
-    count: int
+class RecordPublication(StrictModel):
+    mode: Literal["aggregates-only", "individual-records"]
+    fields: PublicationFields
 
 
-class Summary(BaseModel):
-    totalRecords: int
-    totalSpecies: int
-    yearRange: list[int]  # [minYear, maxYear]
+class RecordRow(StrictModel):
+    id: str = Field(min_length=1)
+    scientificName: str = Field(min_length=1)
+    commonName: str | None
+    gridRef: str = Field(min_length=1)
+    precisionMetres: Literal[100, 1000, 10000]
+    place: str | None
+    year: int = Field(ge=1500, le=2200)
+    source: str = Field(min_length=1)
+    abundance: str | None = None
+    recordType: str | None = None
+    verified: str | None = None
+
+
+class RecordPage(StrictModel):
+    publication: RecordPublication
+    items: list[RecordRow]
+    page: int = Field(gt=0)
+    pageSize: int = Field(gt=0)
+    total: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_publication_boundary(self) -> RecordPage:
+        if self.publication.mode == "aggregates-only" and (self.items or self.total):
+            raise ValueError("aggregate-only releases cannot contain record rows")
+        if len(self.items) > self.pageSize or len(self.items) > self.total:
+            raise ValueError("record page counts do not reconcile")
+        return self
+
+
+class Attribution(StrictModel):
+    label: str = Field(min_length=1)
+    url: str = Field(pattern=r"^https://")
+    licence: str = Field(min_length=1)
+
+
+class SensitivityPolicy(StrictModel):
+    generalisationTiersMetres: list[Literal[100, 1000, 10000]]
+    appliesToProtectedTaxa: Literal[True] = True
+    note: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_tiers(self) -> SensitivityPolicy:
+        if self.generalisationTiersMetres != sorted(set(self.generalisationTiersMetres)):
+            raise ValueError("generalisation tiers must be sorted and unique")
+        return self
+
+
+class Provenance(StrictModel):
+    lastUpdated: str
+    recordTotal: int = Field(ge=0)
+    sources: list[str]
+    coverageCaveats: list[str]
+    sensitivityPolicy: SensitivityPolicy
+    attributions: list[Attribution]
+
+
+class GridCell(StrictModel):
+    cellId: str = Field(min_length=1)
+    precisionMetres: Literal[100, 1000, 10000]
+    recordCount: int = Field(gt=0)
+    verifiedCount: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_verified_count(self) -> GridCell:
+        if self.verifiedCount is not None and self.verifiedCount > self.recordCount:
+            raise ValueError("verified count exceeds record count")
+        return self
+
+
+class CellDistribution(StrictModel):
+    verificationAvailable: bool
+    cells: list[GridCell]
+
+    @model_validator(mode="after")
+    def validate_verification_capability(self) -> CellDistribution:
+        for cell in self.cells:
+            present = "verifiedCount" in cell.model_fields_set
+            if present != self.verificationAvailable:
+                raise ValueError("cell verification fields disagree with release capability")
+        return self
+
+
+class YearCount(StrictModel):
+    year: int = Field(ge=1500, le=2200)
+    count: int = Field(gt=0)
+
+
+class TopGroup(StrictModel):
+    group: str = Field(min_length=1)
+    count: int = Field(gt=0)
+
+
+class YearRange(StrictModel):
+    min: int = Field(ge=1500, le=2200)
+    max: int = Field(ge=1500, le=2200)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> YearRange:
+        if self.min > self.max:
+            raise ValueError("year range is reversed")
+        return self
+
+
+class Summary(StrictModel):
+    totalRecords: int = Field(ge=0)
+    totalSpecies: int = Field(ge=0)
+    yearRange: YearRange | None
     recordsByYear: list[YearCount]
     topGroups: list[TopGroup]
-    coverageCaveat: str
+    coverageCaveat: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_totals(self) -> Summary:
+        if (self.totalRecords == 0) != (self.yearRange is None):
+            raise ValueError("summary year range does not match total")
+        if sum(bucket.count for bucket in self.recordsByYear) != self.totalRecords:
+            raise ValueError("summary year buckets do not reconcile")
+        years = [bucket.year for bucket in self.recordsByYear]
+        if years != sorted(set(years)):
+            raise ValueError("summary years must be sorted and unique")
+        if self.yearRange is not None and (
+            not years or self.yearRange.min != years[0] or self.yearRange.max != years[-1]
+        ):
+            raise ValueError("summary range does not match year buckets")
+        return self
 
 
-# ---- /api/species and /api/species/{id} ------------------------------------
-# NOTE ON IDs: speciesId and recordId are STRINGS, not numbers.
-# Real BRERC SPECIES_NO / unique_No values are not always numeric (e.g.
-# "NBNSYS0000008319"), which is why species_id and record_id are TEXT in the
-# database. Typed as int, Pydantic quietly accepts numeric-looking ids and then
-# raises a ValidationError — a 500 — on the first genuinely non-numeric one.
-# Michael's Zod schema also expects a string, so this is the shape all three
-# sides of the project agree on.
-class SpeciesListItem(BaseModel):
-    speciesId: str
-    scientificName: str
+class SpeciesGroupFacet(StrictModel):
+    value: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    speciesCount: int = Field(gt=0)
+
+
+class SpeciesListItem(StrictModel):
+    speciesId: str = Field(min_length=1)
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    scientificName: str = Field(min_length=1)
     commonName: str | None
-    group: str
-    recordCount: int
-    firstYear: int
-    lastYear: int
-    hasImage: bool
+    group: str | None
+    recordCount: int = Field(ge=0)
+    firstYear: int | None = Field(default=None, ge=1500, le=2200)
+    lastYear: int | None = Field(default=None, ge=1500, le=2200)
+    hasImage: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_years(self) -> SpeciesListItem:
+        years_present = self.firstYear is not None and self.lastYear is not None
+        if (self.recordCount == 0) == years_present:
+            raise ValueError("species year range does not match record count")
+        if years_present and self.firstYear > self.lastYear:
+            raise ValueError("species year range is reversed")
+        return self
 
 
-class SpeciesList(BaseModel):
+class SpeciesFacets(StrictModel):
+    groups: list[SpeciesGroupFacet]
+
+
+class SpeciesListPage(StrictModel):
     items: list[SpeciesListItem]
-    total: int
-    page: int
-    pageSize: int
+    page: int = Field(gt=0)
+    pageSize: int = Field(gt=0)
+    total: int = Field(ge=0)
+    facets: SpeciesFacets
 
 
-class SpeciesImage(BaseModel):
+class SpeciesImage(StrictModel):
+    """Legacy proxy cache value; never returned by the public API routers.
+
+    ``species_info.py`` remains import-compatible for its existing isolated
+    licence-gate tests, but ``app.main`` deliberately does not import or call
+    that outbound proxy. Approved public media has a separate, richer browser
+    contract and is not activated by this compatibility model.
+    """
+
     url: str
     licence: str
     attribution: str
 
 
-class SpeciesDetail(BaseModel):
-    speciesId: str          # TEXT — see the note above SpeciesListItem
-    scientificName: str
+class SpeciesStats(StrictModel):
+    recordCount: int = Field(ge=0)
+    yearRange: tuple[int, int] | None
+    verificationAvailable: bool
+    verifiedCount: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_stats(self) -> SpeciesStats:
+        if (self.verifiedCount is not None) != self.verificationAvailable:
+            raise ValueError("verified count disagrees with release capability")
+        if self.verifiedCount is not None and self.verifiedCount > self.recordCount:
+            raise ValueError("verified count exceeds record count")
+        if (self.recordCount == 0) != (self.yearRange is None):
+            raise ValueError("species stats range does not match record count")
+        if self.yearRange is not None:
+            first, last = self.yearRange
+            if not 1500 <= first <= last <= 2200:
+                raise ValueError("species stats range is invalid")
+        return self
+
+
+class SpeciesDetail(StrictModel):
+    speciesId: str = Field(min_length=1)
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    scientificName: str = Field(min_length=1)
     commonName: str | None
-    group: str
-    recordCount: int
-    firstYear: int
-    lastYear: int
-    image: SpeciesImage | None  # None when no licensed image (fail-closed)
-    description: str | None
-
-
-# ---- /api/distribution/cells (GeoJSON) -------------------------------------
-class CellProperties(BaseModel):
-    cellId: str
-    precisionMetres: int
-    recordCount: int
-    verifiedCount: int
-
-
-class GeoJSONFeature(BaseModel):
-    type: str = "Feature"
-    geometry: dict  # GeoJSON Polygon (WGS84 / EPSG:4326)
-    properties: CellProperties
-
-
-class GeoJSONFeatureCollection(BaseModel):
-    type: str = "FeatureCollection"
-    features: list[GeoJSONFeature]
-
-
-# ---- /api/records ----------------------------------------------------------
-class RecordItem(BaseModel):
-    recordId: str           # TEXT — see the note above SpeciesListItem
-    scientificName: str
-    commonName: str | None
-    year: int
-    gridRef: str  # precision = precisionMetres (generalised)
-    precisionMetres: int
-    place: str | None  # COARSE locality only — never precise
-    verified: bool
-
-
-class RecordList(BaseModel):
-    items: list[RecordItem]
-    total: int
-    page: int
-    pageSize: int
-
-
-# ---- /api/meta/provenance --------------------------------------------------
-class Provenance(BaseModel):
-    sources: list[str]
-    caveats: list[str]
-    lastUpdated: str  # ISO date
-    sensitivityPolicySummary: str
+    group: str | None
+    imagePublication: Literal["fallback-only"]
+    stats: SpeciesStats

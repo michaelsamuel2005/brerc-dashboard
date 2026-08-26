@@ -31,12 +31,25 @@ _origins_env = os.getenv("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = (
     [origin.strip() for origin in _origins_env.split(",") if origin.strip()]
     if IS_PROD
-    else ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
+    else [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
 )
 
 # Safety valve: the maximum time (milliseconds) any single SQL query may run
 # before PostgreSQL cancels it, so a heavy/runaway query can't hang the API.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
+
+# Published alongside the release. The actual tiers are measured from the
+# serving views; this note explains their meaning without asserting a tier.
+SENSITIVITY_POLICY_NOTE = os.getenv(
+    "SENSITIVITY_POLICY_NOTE",
+    "Locations of protected species are generalised before publication. "
+    "Precise coordinates are never released.",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -123,11 +136,7 @@ SPECIES_INFO_CACHE_PATH = os.getenv(
 )
 
 # Minimum gap between outbound calls, so we stay a polite API client.
-SPECIES_INFO_MIN_INTERVAL_SECONDS = float(
-    os.getenv("SPECIES_INFO_MIN_INTERVAL_SECONDS", "0.25")
-)
+SPECIES_INFO_MIN_INTERVAL_SECONDS = float(os.getenv("SPECIES_INFO_MIN_INTERVAL_SECONDS", "0.25"))
 
 # Cap on the description length (it is a teaser, not an article).
-SPECIES_INFO_DESCRIPTION_MAX_CHARS = int(
-    os.getenv("SPECIES_INFO_DESCRIPTION_MAX_CHARS", "600")
-)
+SPECIES_INFO_DESCRIPTION_MAX_CHARS = int(os.getenv("SPECIES_INFO_DESCRIPTION_MAX_CHARS", "600"))
