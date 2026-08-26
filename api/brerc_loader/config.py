@@ -20,11 +20,12 @@ from uuid import UUID
 
 from .errors import LoaderConfigurationError
 
-LOADER_CONFIG_VERSION = "brerc-loader-v1"
+LOADER_CONFIG_VERSION = "brerc-loader-v2"
 BRERC_TARGET_APPLICATION_NAME = "brerc-dashboard-release-loader"
 MAX_CONFIG_BYTES = 128 * 1024
 MAX_ENV_VALUE_BYTES = 4096
 MAX_PUBLICATION_POLICY_BYTES = 1024 * 1024
+MAX_SPECIES_DICTIONARY_BYTES = 128 * 1024 * 1024
 MIN_RECONCILIATION_SECRET_BYTES = 32
 
 _ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]{1,127}\Z")
@@ -34,6 +35,7 @@ _ROOT_KEYS = frozenset(
     {
         "loader_config_version",
         "publication",
+        "species_dictionary",
         "source_config_path",
         "runtime",
         "target_connection",
@@ -78,6 +80,7 @@ _DIRECT_CONNECTION_KEYS = frozenset(
 )
 _RECONCILIATION_KEYS = frozenset({"secret_env"})
 _PUBLICATION_KEYS = frozenset({"policy_path", "expected_sha256", "public_id_secret_env"})
+_SPECIES_DICTIONARY_KEYS = frozenset({"csv_path", "expected_raw_sha256"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -170,6 +173,23 @@ def _publication_policy_artifact(path: Path, expected_sha256: str) -> bytes:
         raise _invalid()
     actual_sha256 = hashlib.sha256(artifact).hexdigest()
     if not hmac.compare_digest(actual_sha256, expected_sha256):
+        raise _invalid()
+    return artifact
+
+
+def _species_dictionary_artifact(path: Path, expected_raw_sha256: str) -> bytes:
+    """Read and bind one bounded species-dictionary snapshot."""
+    if not path.is_absolute() or path.suffix != ".csv":
+        raise _invalid()
+    try:
+        with path.open("rb") as handle:
+            artifact = handle.read(MAX_SPECIES_DICTIONARY_BYTES + 1)
+    except OSError:
+        raise _invalid() from None
+    if not 1 <= len(artifact) <= MAX_SPECIES_DICTIONARY_BYTES:
+        raise _invalid()
+    actual_sha256 = hashlib.sha256(artifact).hexdigest()
+    if not hmac.compare_digest(actual_sha256, expected_raw_sha256):
         raise _invalid()
     return artifact
 
@@ -454,12 +474,47 @@ class PublicationConfig:
 
 
 @dataclass(frozen=True)
+class SpeciesDictionaryConfig:
+    """Exact raw species-dictionary bytes retained for semantic validation."""
+
+    csv_path: Path = field(repr=False)
+    expected_raw_sha256: str = field(repr=False)
+    _artifact: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.csv_path, Path)
+            or not self.csv_path.is_absolute()
+            or self.csv_path.suffix != ".csv"
+        ):
+            raise _invalid()
+        expected_digest = _sha256(self.expected_raw_sha256)
+        if (
+            not isinstance(self._artifact, bytes)
+            or not 1 <= len(self._artifact) <= MAX_SPECIES_DICTIONARY_BYTES
+            or not hmac.compare_digest(
+                hashlib.sha256(self._artifact).hexdigest(),
+                expected_digest,
+            )
+        ):
+            raise _invalid()
+
+    def artifact_bytes(self) -> bytes:
+        """Return the exact digest-checked CSV bytes for semantic parsing."""
+        return bytes(self._artifact)
+
+    def __repr__(self) -> str:
+        return "SpeciesDictionaryConfig(artifact=<redacted>)"
+
+
+@dataclass(frozen=True)
 class LoaderConfig:
     """One exact loader deployment configuration."""
 
     version: str
     source_config_path: Path = field(repr=False)
     publication: PublicationConfig
+    species_dictionary: SpeciesDictionaryConfig
     runtime: LoaderRuntimeConfig
     target_connection: TargetConnectionConfig
     reconciliation: ReconciliationConfig
@@ -473,6 +528,8 @@ class LoaderConfig:
         ):
             raise _invalid()
         if not isinstance(self.publication, PublicationConfig):
+            raise _invalid()
+        if not isinstance(self.species_dictionary, SpeciesDictionaryConfig):
             raise _invalid()
         if not isinstance(self.runtime, LoaderRuntimeConfig):
             raise _invalid()
@@ -496,10 +553,12 @@ class LoaderConfig:
         }
         if self.target_connection._service_file_path is not None:
             protected_paths.add(Path(self.target_connection._service_file_path))
-        if self.source_config_path in protected_paths or self.publication.policy_path in {
+        artifact_paths = {
             self.source_config_path,
-            *protected_paths,
-        }:
+            self.publication.policy_path,
+            self.species_dictionary.csv_path,
+        }
+        if len(artifact_paths) != 3 or artifact_paths & protected_paths:
             raise _invalid()
         if self.publication.public_id_secret_env == self.reconciliation.secret_env:
             raise _invalid()
@@ -515,7 +574,8 @@ class LoaderConfig:
             f"version={self.version!r}, batch_size={self.runtime.batch_size!r}, "
             f"target_mode={self.target_connection.mode!r}, "
             "source_config_path=<redacted>, target_identity=<redacted>, "
-            "publication_policy=<redacted>, reconciliation_secret=<redacted>)"
+            "publication_policy=<redacted>, species_dictionary=<redacted>, "
+            "reconciliation_secret=<redacted>)"
         )
 
 
@@ -650,6 +710,18 @@ def _parse_publication(
     )
 
 
+def _parse_species_dictionary(value: object) -> SpeciesDictionaryConfig:
+    raw = _strict_mapping(value, _SPECIES_DICTIONARY_KEYS)
+    csv_path = Path(_string(raw["csv_path"]))
+    expected_raw_sha256 = _sha256(raw["expected_raw_sha256"])
+    artifact = _species_dictionary_artifact(csv_path, expected_raw_sha256)
+    return SpeciesDictionaryConfig(
+        csv_path=csv_path,
+        expected_raw_sha256=expected_raw_sha256,
+        _artifact=artifact,
+    )
+
+
 def load_loader_config(
     path: str | Path,
     *,
@@ -691,10 +763,12 @@ def load_loader_config(
     target = _parse_target_connection(document["target_connection"], runtime, resolved_environ)
     reconciliation = _parse_reconciliation(document["reconciliation"], resolved_environ)
     publication = _parse_publication(document["publication"], resolved_environ)
+    species_dictionary = _parse_species_dictionary(document["species_dictionary"])
     return LoaderConfig(
         version=LOADER_CONFIG_VERSION,
         source_config_path=source_path,
         publication=publication,
+        species_dictionary=species_dictionary,
         runtime=runtime,
         target_connection=target,
         reconciliation=reconciliation,

@@ -8,10 +8,12 @@ loaded only after the requested load mode and configuration pass their gates.
 from .config import (
     BRERC_TARGET_APPLICATION_NAME,
     LOADER_CONFIG_VERSION,
+    MAX_SPECIES_DICTIONARY_BYTES,
     LoaderConfig,
     LoaderRuntimeConfig,
     PublicationConfig,
     ReconciliationConfig,
+    SpeciesDictionaryConfig,
     TargetConnectionConfig,
     load_loader_config,
 )
@@ -23,10 +25,12 @@ from .errors import (
     LoaderExecutionFailed,
 )
 from .models import LoaderRunReport, LoadMode, RunState
+from .species_dictionary import parse_species_dictionary_artifact
 
 __all__ = [
     "BRERC_TARGET_APPLICATION_NAME",
     "LOADER_CONFIG_VERSION",
+    "MAX_SPECIES_DICTIONARY_BYTES",
     "IncrementalSourceContractBlocked",
     "LoadMode",
     "LoaderConfig",
@@ -39,6 +43,8 @@ __all__ = [
     "PublicationConfig",
     "ReconciliationConfig",
     "RunState",
+    "SpeciesDictionaryConfig",
     "TargetConnectionConfig",
     "load_loader_config",
+    "parse_species_dictionary_artifact",
 ]

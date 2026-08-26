@@ -1,11 +1,19 @@
 # Credential-free loader deployment template. Copy this to a protected location.
 # Every *_env value is an environment-variable NAME, never a credential.
 
-loader_config_version: brerc-loader-v1
+loader_config_version: brerc-loader-v2
 
 # The existing trusted source connector owns the source schema, projection and
 # read-only credentials. Keep its real configuration outside Git as well.
 source_config_path: /etc/brerc/source.configuration.yaml
+
+# Immutable BRERC species-dictionary export. The loader snapshots at most
+# 128 MiB and verifies the SHA-256 of the exact CSV bytes before opening either
+# database. It then derives the separate semantic digest that must match the
+# approved publication policy. Do not put the client dictionary in Git.
+species_dictionary:
+  csv_path: /etc/brerc/species-dictionary.approved.csv
+  expected_raw_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
 
 # Immutable, BRERC-approved policy evidence. The loader hashes the exact bytes
 # before any database module is imported. The coordinator alone parses the JSON

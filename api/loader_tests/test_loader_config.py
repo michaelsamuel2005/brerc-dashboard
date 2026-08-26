@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -17,12 +18,16 @@ from brerc_loader.config import (
     BRERC_TARGET_APPLICATION_NAME,
     MAX_CONFIG_BYTES,
     MAX_PUBLICATION_POLICY_BYTES,
+    MAX_SPECIES_DICTIONARY_BYTES,
     LoaderConfigurationError,
     load_loader_config,
 )
 
 API_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = API_ROOT / "loader.configuration.example.yaml"
+DICTIONARY_ARTIFACT = (
+    b"SPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE,EXTRA\nSYNTH-1,Synthetic alpha,Alpha,No,ignored\n"
+)
 
 ENVIRONMENT = {
     "BRERC_TARGET_SERVICE": "brerc-ui-writer",
@@ -72,6 +77,7 @@ class ConfigCase(unittest.TestCase):
         *,
         environ: dict[str, str] | None = None,
         policy_artifact: bytes = b'{"policy":"synthetic-test-only"}\n',
+        dictionary_artifact: bytes = DICTIONARY_ARTIFACT,
     ):
         with tempfile.TemporaryDirectory() as temporary_directory:
             document = copy.deepcopy(document)
@@ -83,6 +89,16 @@ class ConfigCase(unittest.TestCase):
                     publication["policy_path"] = str(artifact_path)
                 if publication.get("expected_sha256") == "0" * 64:
                     publication["expected_sha256"] = hashlib.sha256(policy_artifact).hexdigest()
+            if isinstance(document, dict) and isinstance(document.get("species_dictionary"), dict):
+                dictionary = document["species_dictionary"]
+                dictionary_path = Path(temporary_directory, "approved-species.csv")
+                dictionary_path.write_bytes(dictionary_artifact)
+                if dictionary.get("csv_path") == "/etc/brerc/species-dictionary.approved.csv":
+                    dictionary["csv_path"] = str(dictionary_path)
+                if dictionary.get("expected_raw_sha256") == "0" * 64:
+                    dictionary["expected_raw_sha256"] = hashlib.sha256(
+                        dictionary_artifact
+                    ).hexdigest()
             path = Path(temporary_directory, "loader.yaml")
             path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
             return load_loader_config(
@@ -96,17 +112,28 @@ class ConfigCase(unittest.TestCase):
         *,
         environ: dict[str, str] | None = None,
         policy_artifact: bytes = b'{"policy":"synthetic-test-only"}\n',
+        dictionary_artifact: bytes = DICTIONARY_ARTIFACT,
     ):
         with tempfile.TemporaryDirectory() as temporary_directory:
             artifact_path = Path(temporary_directory, "approved-policy.json")
             artifact_path.write_bytes(policy_artifact)
+            dictionary_path = Path(temporary_directory, "approved-species.csv")
+            dictionary_path.write_bytes(dictionary_artifact)
             text = text.replace(
                 "/etc/brerc/publication-policy.approved.json",
                 str(artifact_path),
             )
             text = text.replace(
-                "0" * 64,
-                hashlib.sha256(policy_artifact).hexdigest(),
+                'expected_sha256: "' + "0" * 64 + '"',
+                'expected_sha256: "' + hashlib.sha256(policy_artifact).hexdigest() + '"',
+            )
+            text = text.replace(
+                "/etc/brerc/species-dictionary.approved.csv",
+                str(dictionary_path),
+            )
+            text = text.replace(
+                'expected_raw_sha256: "' + "0" * 64 + '"',
+                'expected_raw_sha256: "' + hashlib.sha256(dictionary_artifact).hexdigest() + '"',
             )
             text = text.replace("REPLACE_WITH_APPROVED_INITIAL_MINIMUM", "1")
             text = text.replace("REPLACE_WITH_APPROVED_INITIAL_MAXIMUM", "10000000")
@@ -143,7 +170,7 @@ class TestValidConfiguration(ConfigCase):
             "REPLACE_WITH_TARGET_ENVIRONMENT_UUID",
         )
         config = self.load_document(template_document())
-        self.assertEqual(config.version, "brerc-loader-v1")
+        self.assertEqual(config.version, "brerc-loader-v2")
         self.assertEqual(config.runtime.batch_size, 5000)
         self.assertEqual(config.runtime.initial_min_source_rows, 1)
         self.assertEqual(config.runtime.initial_max_source_rows, 10_000_000)
@@ -166,6 +193,11 @@ class TestValidConfiguration(ConfigCase):
             config.publication.artifact_bytes(),
             b'{"policy":"synthetic-test-only"}\n',
         )
+        self.assertEqual(config.species_dictionary.artifact_bytes(), DICTIONARY_ARTIFACT)
+        self.assertEqual(
+            config.species_dictionary.expected_raw_sha256,
+            hashlib.sha256(DICTIONARY_ARTIFACT).hexdigest(),
+        )
 
         rendered = " ".join(
             (
@@ -174,6 +206,7 @@ class TestValidConfiguration(ConfigCase):
                 repr(config.target_connection),
                 repr(config.reconciliation),
                 repr(config.publication),
+                repr(config.species_dictionary),
             )
         )
         for secret_or_infrastructure_value in ENVIRONMENT.values():
@@ -182,6 +215,8 @@ class TestValidConfiguration(ConfigCase):
         self.assertNotIn("REPLACE_WITH_UI_DATABASE_NAME", rendered)
         self.assertNotIn("REPLACE_WITH_LOADER_WRITE_ROLE", rendered)
         self.assertNotIn("11111111-1111-4111-8111-111111111111", rendered)
+        self.assertNotIn("species-dictionary.approved.csv", rendered)
+        self.assertNotIn(hashlib.sha256(DICTIONARY_ARTIFACT).hexdigest(), rendered)
 
     def test_connection_parameters_are_a_fresh_copy(self) -> None:
         config = self.load_document(template_document())
@@ -289,6 +324,7 @@ class TestExactContractAndSecrets(ConfigCase):
             (("target_connection", "dsn"), "postgresql://private"),
             (("reconciliation", "secret"), "must-not-be-accepted"),
             (("publication", "public_id_secret"), "must-not-be-accepted"),
+            (("species_dictionary", "raw_sha256"), "f" * 64),
         ):
             document = template_document()
             target = document
@@ -364,6 +400,36 @@ class TestExactContractAndSecrets(ConfigCase):
             document = template_document()
             document["publication"]["policy_path"] = policy_path
             with self.subTest(policy_path=policy_path):
+                self.assert_rejected(document)
+
+    def test_dictionary_artifact_is_absolute_bounded_and_exactly_raw_digest_bound(self) -> None:
+        exact = (
+            b"\xef\xbb\xbfSPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE\r\n"
+            b"SYNTH-1,Synthetic alpha,Alpha,No\r\n"
+        )
+        config = self.load_document(template_document(), dictionary_artifact=exact)
+        self.assertEqual(config.species_dictionary.artifact_bytes(), exact)
+        self.assertEqual(
+            config.species_dictionary.expected_raw_sha256,
+            hashlib.sha256(exact).hexdigest(),
+        )
+        self.assertEqual(MAX_SPECIES_DICTIONARY_BYTES, 128 * 1024 * 1024)
+
+        wrong_digest = template_document()
+        wrong_digest["species_dictionary"]["expected_raw_sha256"] = "f" * 64
+        self.assert_rejected(wrong_digest)
+        with self.assertRaises(LoaderConfigurationError):
+            self.load_document(template_document(), dictionary_artifact=b"")
+        with (
+            mock.patch("brerc_loader.config.MAX_SPECIES_DICTIONARY_BYTES", 4),
+            self.assertRaises(LoaderConfigurationError),
+        ):
+            self.load_document(template_document(), dictionary_artifact=b"12345")
+
+        for csv_path in ("relative-species.csv", "/private/species.txt"):
+            document = template_document()
+            document["species_dictionary"]["csv_path"] = csv_path
+            with self.subTest(csv_path=csv_path):
                 self.assert_rejected(document)
 
     def test_initial_activation_bounds_are_positive_ordered_and_bounded(self) -> None:
@@ -466,6 +532,15 @@ class TestExactContractAndSecrets(ConfigCase):
             dataclasses.replace(config.publication, _artifact=b"changed")
         with self.assertRaises(LoaderConfigurationError):
             dataclasses.replace(config.publication, _public_id_secret=b"short")
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(config.species_dictionary, _artifact=b"changed")
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(config.species_dictionary, csv_path=Path("relative.csv"))
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(
+                config,
+                source_config_path=config.species_dictionary.csv_path,
+            )
         with self.assertRaises(LoaderConfigurationError):
             dataclasses.replace(
                 config,
