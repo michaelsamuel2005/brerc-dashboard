@@ -189,6 +189,28 @@ class TestScaleRunnerContract(unittest.TestCase):
         self.assertEqual(counts["publicRecords"], 0)
         self.assertEqual(counts["distributionCells"], 102)
 
+    def test_scale_species_dictionary_is_complete_and_deterministic(self) -> None:
+        first = self.runner._scale_species_dictionary()
+        second = self.runner._scale_species_dictionary()
+        artifact = self.runner.SCALE_SPECIES_DICTIONARY_ARTIFACT
+        self.assertEqual(len(first), 104)
+        self.assertEqual(first.digest(), second.digest())
+        self.assertEqual(
+            first.lookup("Synthetic sensitive species").species_no,
+            "SYNTH-SCALE-SENS",
+        )
+        self.assertTrue(first.lookup("Synthetic sensitive species").sensitive)
+        self.assertEqual(
+            first.lookup("Synthetic bulk species 00").species_no,
+            "SYNTH-SCALE-000",
+        )
+        self.assertEqual(
+            self.runner.hashlib.sha256(artifact).hexdigest(),
+            self.runner.hashlib.sha256(
+                self.runner._scale_species_dictionary_artifact()
+            ).hexdigest(),
+        )
+
     def test_budget_comparison_uses_unrounded_measurements(self) -> None:
         with self.assertRaises(self.runner.ScaleAcceptanceError):
             self.runner._require_budget(1.0004, 1.0)
@@ -211,6 +233,7 @@ class TestScaleRunnerContract(unittest.TestCase):
             "target_database_peak_bytes",
             "minimum_free_disk_bytes",
             "manifestDigests",
+            "species_dictionary_artifact_sha256",
         ):
             self.assertIn(evidence, text)
         self.assertNotIn('"candidateInvisibleBeforeActivation": True', text)
@@ -234,8 +257,8 @@ class TestScaleWorkflowAndRunbook(unittest.TestCase):
         self.assertIn("if-no-files-found: error", text)
         for mutable in ("actions/checkout@v", "actions/setup-python@v", "upload-artifact@v"):
             self.assertNotIn(mutable, text)
-        self.assertIn("actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955", text)
-        self.assertIn("actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065", text)
+        self.assertIn("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", text)
+        self.assertIn("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97", text)
         self.assertIn("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", text)
         self.assertIn(self._source_image(), text)
         self.assertIn(self._target_image(), text)

@@ -422,7 +422,8 @@ CREATE TABLE loader_control.release_manifest (
     min_records_per_cell integer NOT NULL,
     etl_version text NOT NULL,
     compatibility_sha256 text NOT NULL,
-    species_dictionary_sha256 text,
+    species_dictionary_sha256 text NOT NULL,
+    species_dictionary_artifact_sha256 text NOT NULL,
     sensitivity_snapshot_sha256 text NOT NULL,
     source_row_count bigint NOT NULL,
     source_inventory_count bigint NOT NULL,
@@ -475,8 +476,8 @@ CREATE TABLE loader_control.release_manifest (
         AND publication_policy_sha256 ~ '^[0-9a-f]{64}$'
         AND policy_approval_sha256 ~ '^[0-9a-f]{64}$'
         AND compatibility_sha256 ~ '^[0-9a-f]{64}$'
-        AND (species_dictionary_sha256 IS NULL
-            OR species_dictionary_sha256 ~ '^[0-9a-f]{64}$')
+        AND species_dictionary_sha256 ~ '^[0-9a-f]{64}$'
+        AND species_dictionary_artifact_sha256 ~ '^[0-9a-f]{64}$'
         AND sensitivity_snapshot_sha256 ~ '^[0-9a-f]{64}$'
         AND source_result_sha256 ~ '^[0-9a-f]{64}$'
         AND candidate_sha256 ~ '^[0-9a-f]{64}$'

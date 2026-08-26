@@ -36,8 +36,10 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from brerc_loader import postgres as loader_coordinator  # noqa: E402
+from brerc_loader.config import SpeciesDictionaryConfig  # noqa: E402
 from brerc_loader.errors import LoaderCandidateInvalid, LoaderError  # noqa: E402
 from brerc_loader.postgres import _PostgreSQLTargetStore  # noqa: E402
+from brerc_loader.species_dictionary import parse_species_dictionary_artifact  # noqa: E402
 from loader_tests.test_postgis16_destination_integration import (  # noqa: E402
     TestPostGIS16DestinationIntegration,
     _loader_config,
@@ -72,6 +74,42 @@ SCALE_FIXTURE = REPO_ROOT / "api/loader_tests/postgres16_scale_source_fixture.sq
 MIGRATION = REPO_ROOT / "db/migrations/0001_publication_store.sql"
 ROLES_SQL = REPO_ROOT / "db/roles.sql"
 WORKFLOW = REPO_ROOT / ".github/workflows/loader-scale-acceptance.yml"
+
+
+def _scale_species_dictionary_artifact() -> bytes:
+    rows = [
+        "SPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE",
+        "SYNTH-SCALE-SPARSE,Synthetic sparse species,Synthetic sparse,No",
+        "SYNTH-SCALE-UNLIC,Synthetic unlicensed species,Synthetic unlicensed,No",
+        "SYNTH-SCALE-SENS,Synthetic sensitive species,Synthetic sensitive,Yes",
+        ("SYNTH-SCALE-ORDINARY,Synthetic ordinary control species,Synthetic ordinary control,No"),
+    ]
+    rows.extend(
+        f"SYNTH-SCALE-{number:03d},Synthetic bulk species {number:02d},"
+        f"Synthetic bulk {number:02d},No"
+        for number in range(100)
+    )
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+SCALE_SPECIES_DICTIONARY_ARTIFACT = _scale_species_dictionary_artifact()
+
+
+def _scale_species_dictionary():
+    return parse_species_dictionary_artifact(SCALE_SPECIES_DICTIONARY_ARTIFACT)
+
+
+def _scale_policy(*, dictionary: Any, allowed_licence_values: frozenset[str]) -> Any:
+    policy = _policy(threshold=3, allowed_licence_values=allowed_licence_values)
+    policy = dataclasses.replace(
+        policy,
+        species_dictionary_sha256=dictionary.digest(),
+        approval_digest=None,
+    )
+    policy = dataclasses.replace(policy, approval_digest=policy._expected_approval_digest())
+    policy.validate()
+    policy.assert_approved()
+    return policy
 
 
 class ScaleAcceptanceError(RuntimeError):
@@ -459,6 +497,11 @@ def _scale_configs(base: Any, policy: Any, remaining_seconds: float) -> tuple[An
     loader = _loader_config(policy)
     loader = dataclasses.replace(
         loader,
+        species_dictionary=SpeciesDictionaryConfig(
+            csv_path=Path("/synthetic/scale-species-dictionary.csv"),
+            expected_raw_sha256=hashlib.sha256(SCALE_SPECIES_DICTIONARY_ARTIFACT).hexdigest(),
+            _artifact=SCALE_SPECIES_DICTIONARY_ARTIFACT,
+        ),
         runtime=dataclasses.replace(
             loader.runtime,
             batch_size=BATCH_SIZE,
@@ -488,6 +531,7 @@ def _run_loader(
     absolute_deadline: float,
     measurements: PhaseMeasurements,
     retain_cleanup_debt: bool,
+    dictionary: Any,
 ) -> Any:
     loader_config, source_config = _scale_configs(
         base,
@@ -509,6 +553,10 @@ def _run_loader(
             source_contract=base.e2e_source_contract,
             columns=source_config.column_map,
             policy=policy,
+            dictionary=dictionary,
+            species_dictionary_artifact_sha256=(
+                loader_config.species_dictionary.expected_raw_sha256
+            ),
         )
 
 
@@ -792,11 +840,12 @@ def _success_oracle(connection: Any, report: Any) -> dict[str, Any]:
     }
 
 
-def _manifest_digests(connection: Any, release_id: object) -> dict[str, str | None]:
+def _manifest_digests(connection: Any, release_id: object) -> dict[str, str]:
     row = connection.execute(
         "SELECT source_contract_sha256, observed_view_definition_sha256, "
         "observed_view_identity_sha256, projection_sha256, publication_policy_sha256, "
         "policy_approval_sha256, compatibility_sha256, species_dictionary_sha256, "
+        "species_dictionary_artifact_sha256, "
         "sensitivity_snapshot_sha256, source_result_sha256, candidate_sha256, "
         "database_sha256 FROM loader_control.release_manifest WHERE release_id = %s",
         (release_id,),
@@ -813,14 +862,13 @@ def _manifest_digests(connection: Any, release_id: object) -> dict[str, str | No
         "sensitivity_snapshot_sha256",
         "source_contract_sha256",
         "source_result_sha256",
+        "species_dictionary_artifact_sha256",
         "species_dictionary_sha256",
     }:
         raise ScaleAcceptanceError
-    result: dict[str, str | None] = {}
+    result: dict[str, str] = {}
     for key, value in row.items():
-        if value is None and key == "species_dictionary_sha256":
-            result[key] = None
-        elif (
+        if (
             not isinstance(value, str)
             or len(value) != 64
             or any(character not in "0123456789abcdef" for character in value)
@@ -888,8 +936,15 @@ def run(evidence_path: Path, budgets: Budgets) -> dict[str, Any]:
     workload_deadline = workload_started + budgets.total_seconds
     failure_measurements = PhaseMeasurements()
     success_measurements = PhaseMeasurements()
-    failure_policy = _policy(threshold=3, allowed_licence_values=frozenset({"z"}))
-    success_policy = _policy(threshold=3, allowed_licence_values=frozenset({"y"}))
+    dictionary = _scale_species_dictionary()
+    failure_policy = _scale_policy(
+        dictionary=dictionary,
+        allowed_licence_values=frozenset({"z"}),
+    )
+    success_policy = _scale_policy(
+        dictionary=dictionary,
+        allowed_licence_values=frozenset({"y"}),
+    )
     with _sample_resources(integration, evidence_path, target_before) as resource_measurements:
         failure_started = time.monotonic()
         try:
@@ -899,6 +954,7 @@ def run(evidence_path: Path, budgets: Budgets) -> dict[str, Any]:
                 absolute_deadline=workload_deadline,
                 measurements=failure_measurements,
                 retain_cleanup_debt=True,
+                dictionary=dictionary,
             )
         except LoaderCandidateInvalid:
             pass
@@ -919,6 +975,7 @@ def run(evidence_path: Path, budgets: Budgets) -> dict[str, Any]:
                 absolute_deadline=workload_deadline,
                 measurements=success_measurements,
                 retain_cleanup_debt=False,
+                dictionary=dictionary,
             )
             if not success_measurements.complete_observed.wait(timeout=10):
                 raise ScaleAcceptanceError

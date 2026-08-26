@@ -20,10 +20,12 @@ from uuid import UUID, uuid4
 
 from brerc_loader import postgres as loader_coordinator
 from brerc_loader.config import (
+    LOADER_CONFIG_VERSION,
     LoaderConfig,
     LoaderRuntimeConfig,
     PublicationConfig,
     ReconciliationConfig,
+    SpeciesDictionaryConfig,
     TargetConnectionConfig,
 )
 from brerc_loader.errors import (
@@ -38,6 +40,7 @@ from brerc_loader.postgres import (
     _CandidateHandle,
     _PostgreSQLTargetStore,
 )
+from brerc_loader.species_dictionary import parse_species_dictionary_artifact
 from brerc_source.config import (
     BRERC_SOURCE_APPLICATION_NAME,
     ConnectionConfig,
@@ -102,6 +105,24 @@ ROLE_GROUPS = {
     "monitor": "brerc_monitor",
 }
 
+_SPECIES_DICTIONARY_ARTIFACT = (
+    b"SPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE\n"
+    b"5088,Anguis fragilis,Slow-worm,No\n"
+    b"SYNTH-1,Synthetic species alpha,Synthetic alpha,No\n"
+    b"SYNTH-2,Synthetic species beta,Synthetic beta,Yes\n"
+    b"SYNTH-E2E-1,Synthetic species safety,Synthetic safety species,Yes\n"
+    b"SYNTH-E2E-2,Synthetic species ordinary,Synthetic ordinary species,No\n"
+    b"SYNTH-E2E-3,Synthetic species unlicensed,Synthetic unlicensed species,No\n"
+)
+
+
+def _species_dictionary():
+    return parse_species_dictionary_artifact(_SPECIES_DICTIONARY_ARTIFACT)
+
+
+def _species_dictionary_artifact_sha256() -> str:
+    return hashlib.sha256(_SPECIES_DICTIONARY_ARTIFACT).hexdigest()
+
 
 def _policy(
     *,
@@ -109,10 +130,9 @@ def _policy(
     allowed_licence_values: frozenset[str] | None = None,
 ):
     policy = approved_policy()
-    if threshold == 1 and allowed_licence_values is None:
-        return policy
     policy = dataclasses.replace(
         policy,
+        species_dictionary_sha256=_species_dictionary().digest(),
         suppression_mode=("minimum-count" if threshold > 1 else policy.suppression_mode),
         min_records_per_cell=threshold,
         licensing_mode=(
@@ -160,7 +180,7 @@ def _loader_config(policy: object) -> LoaderConfig:
         raise AssertionError("synthetic policy lost its public-id key")
     service_file = os.environ["PGSERVICEFILE"]
     return LoaderConfig(
-        version="brerc-loader-v1",
+        version=LOADER_CONFIG_VERSION,
         source_config_path=Path("/synthetic/source.configuration.yaml"),
         publication=PublicationConfig(
             policy_path=Path("/synthetic/publication-policy.json"),
@@ -168,6 +188,11 @@ def _loader_config(policy: object) -> LoaderConfig:
             public_id_secret_env="SYNTHETIC_PUBLIC_ID_SECRET",  # noqa: S106 - env name
             _artifact=artifact,
             _public_id_secret=public_secret.encode("utf-8"),
+        ),
+        species_dictionary=SpeciesDictionaryConfig(
+            csv_path=Path("/synthetic/species-dictionary.csv"),
+            expected_raw_sha256=_species_dictionary_artifact_sha256(),
+            _artifact=_SPECIES_DICTIONARY_ARTIFACT,
         ),
         runtime=runtime,
         target_connection=TargetConnectionConfig(
@@ -266,6 +291,7 @@ def _evidence(policy: object, rows: tuple[SafeDisposition, ...]) -> SafeSourceSn
         contract_sha256=contract.digest(),
         policy_version=policy.version,
         policy_approval_digest=policy.approval_digest,
+        observed_species_dictionary_sha256=_species_dictionary().digest(),
         observed_definition_sha256=approval.definition_sha256,
         observed_identity_sha256=approval.identity_sha256,
         result_columns=PROJECTION,
@@ -503,6 +529,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             source_contract=contract,
             projection=PROJECTION,
             policy_artifact_sha256=_loader_config(policy).publication.expected_sha256,
+            species_dictionary_artifact_sha256=(
+                _loader_config(policy).species_dictionary.expected_raw_sha256
+            ),
+            species_dictionary_sha256=_species_dictionary().digest(),
         )
         return store, handle, summary
 
@@ -734,6 +764,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     publication_policy_version, publication_policy_sha256,
                     policy_approval_sha256, suppression_mode, min_records_per_cell,
                     etl_version, compatibility_sha256, species_dictionary_sha256,
+                    species_dictionary_artifact_sha256,
                     sensitivity_snapshot_sha256, source_row_count,
                     source_inventory_count, delta_row_count,
                     eligible_pre_suppression_count, transform_withheld_count,
@@ -750,6 +781,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     publication_policy_version, publication_policy_sha256,
                     policy_approval_sha256, suppression_mode, min_records_per_cell,
                     etl_version, compatibility_sha256, species_dictionary_sha256,
+                    species_dictionary_artifact_sha256,
                     sensitivity_snapshot_sha256, source_row_count,
                     source_inventory_count, 0,
                     eligible_pre_suppression_count, transform_withheld_count,
@@ -1071,6 +1103,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             source_contract=self.e2e_source_contract,
             columns=VIEW_COLUMNS,
             policy=policy,
+            dictionary=_species_dictionary(),
+            species_dictionary_artifact_sha256=_species_dictionary_artifact_sha256(),
         )
         self.assertTrue(report.activated)
         self.assertEqual(report.source_rows, 3)
@@ -1148,7 +1182,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                        eligible_pre_suppression_count, transform_withheld_count,
                        suppression_withheld_count, published_basis_count,
                        species_count, cell_count, species_year_count,
-                       public_record_count
+                       public_record_count, species_dictionary_sha256,
+                       species_dictionary_artifact_sha256
                 FROM loader_control.release_manifest
                 WHERE release_id = %s
                 """,
@@ -1235,6 +1270,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "cell_count": 2,
                 "species_year_count": 2,
                 "public_record_count": 0,
+                "species_dictionary_sha256": _species_dictionary().digest(),
+                "species_dictionary_artifact_sha256": (_species_dictionary_artifact_sha256()),
             },
         )
         self.assertEqual(
@@ -1279,6 +1316,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     source_contract=self.e2e_source_contract,
                     columns=VIEW_COLUMNS,
                     policy=policy,
+                    dictionary=_species_dictionary(),
+                    species_dictionary_artifact_sha256=(_species_dictionary_artifact_sha256()),
                 )
         finally:
             with self._source_admin_connection() as source_admin:
@@ -1492,7 +1531,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "projection_version, projection_sha256, publication_policy_version, "
                 "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
                 "min_records_per_cell, etl_version, compatibility_sha256, "
-                "species_dictionary_sha256, sensitivity_snapshot_sha256, source_row_count, "
+                "species_dictionary_sha256, species_dictionary_artifact_sha256, "
+                "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "
                 "transform_withheld_count, suppression_withheld_count, "
                 "published_basis_count, species_count, cell_count, species_year_count, "
@@ -1505,7 +1545,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "projection_version, projection_sha256, publication_policy_version, "
                 "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
                 "min_records_per_cell, etl_version, compatibility_sha256, "
-                "species_dictionary_sha256, sensitivity_snapshot_sha256, source_row_count, "
+                "species_dictionary_sha256, species_dictionary_artifact_sha256, "
+                "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "
                 "transform_withheld_count, suppression_withheld_count, "
                 "published_basis_count, species_count, cell_count, species_year_count, "
@@ -2381,6 +2422,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 source_contract=contract,
                 projection=PROJECTION,
                 policy_artifact_sha256=_loader_config(policy).publication.expected_sha256,
+                species_dictionary_artifact_sha256=(
+                    _loader_config(policy).species_dictionary.expected_raw_sha256
+                ),
+                species_dictionary_sha256=_species_dictionary().digest(),
             )
         store.fail(handle, "LOADER_CANDIDATE_INVALID")
         with self._connection("api") as connection:
@@ -2388,6 +2433,104 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "SELECT count(*) AS n FROM serve.public_release"
             ).fetchone()["n"]
         self.assertEqual(visible, 0)
+
+    def test_forged_dictionary_evidence_is_rejected_before_finalization_mutates_state(
+        self,
+    ) -> None:
+        policy = _policy()
+        store, active, _, _ = self._activate_rows(
+            (_disposition(25),),
+            policy=policy,
+        )
+
+        # Initial loading correctly refuses to open a second candidate once a
+        # release is active. This test deliberately installs only the two
+        # pre-finalization control rows through the lock-owning loader session
+        # so it can isolate the evidence boundary while a prior public release
+        # remains visible. No manifest or publication payload is pre-installed.
+        candidate = _CandidateHandle(
+            job_id=uuid4(),
+            release_id=uuid4(),
+            base_release_id=None,
+        )
+        store._cursor.execute(
+            "INSERT INTO loader_control.etl_job "
+            "(job_id, source_id, load_mode, base_release_id, started_at, heartbeat_at) "
+            "VALUES (%s, %s, 'initial', NULL, "
+            "transaction_timestamp(), transaction_timestamp())",
+            (candidate.job_id, SOURCE_ID),
+        )
+        store._cursor.execute(
+            "UPDATE loader_control.etl_job SET status = 'extracting' "
+            "WHERE job_id = %s AND status = 'queued'",
+            (candidate.job_id,),
+        )
+        store._cursor.execute(
+            "INSERT INTO loader_control.release "
+            "(release_id, source_id, job_id, base_release_id, load_mode) "
+            "VALUES (%s, %s, %s, NULL, 'initial')",
+            (candidate.release_id, SOURCE_ID, candidate.job_id),
+        )
+        rows = (_disposition(26),)
+        store.stage_batch(candidate, rows)
+        forged = dataclasses.replace(
+            _evidence(policy, rows),
+            observed_species_dictionary_sha256="f" * 64,
+        )
+        self.assertNotEqual(
+            forged.observed_species_dictionary_sha256,
+            _species_dictionary().digest(),
+        )
+
+        with self.assertRaises(LoaderCandidateInvalid):
+            store.finalize(
+                candidate,
+                evidence=forged,
+                policy=policy,
+                source_contract=approved_contract(),
+                projection=PROJECTION,
+                policy_artifact_sha256=(_loader_config(policy).publication.expected_sha256),
+                species_dictionary_artifact_sha256=(_species_dictionary_artifact_sha256()),
+                species_dictionary_sha256=_species_dictionary().digest(),
+            )
+
+        with self._connection("loader") as connection:
+            untouched = connection.execute(
+                "SELECT j.status AS job_status, r.status AS release_status, "
+                "(SELECT count(*) FROM loader_control.release_manifest "
+                "WHERE release_id = r.release_id) AS manifest_rows, "
+                "(SELECT count(*) FROM publication.public_release "
+                "WHERE release_id = r.release_id) AS public_release_rows, "
+                "(SELECT count(*) FROM publication.public_species "
+                "WHERE release_id = r.release_id) AS species_rows, "
+                "(SELECT count(*) FROM publication.public_distribution_cell "
+                "WHERE release_id = r.release_id) AS cell_rows "
+                "FROM loader_control.etl_job AS j "
+                "JOIN loader_control.release AS r ON r.job_id = j.job_id "
+                "WHERE j.job_id = %s",
+                (candidate.job_id,),
+            ).fetchone()
+        self.assertEqual(
+            untouched,
+            {
+                "job_status": "extracting",
+                "release_status": "candidate",
+                "manifest_rows": 0,
+                "public_release_rows": 0,
+                "species_rows": 0,
+                "cell_rows": 0,
+            },
+        )
+        with self._connection("api") as connection:
+            visible = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
+        self.assertEqual(visible, [{"release_id": active.release_id}])
+
+        store.fail(candidate, "LOADER_CANDIDATE_INVALID")
+        with self._connection("api") as connection:
+            visible_after_cleanup = connection.execute(
+                "SELECT release_id FROM serve.public_release"
+            ).fetchall()
+        self.assertEqual(visible_after_cleanup, [{"release_id": active.release_id}])
 
     def test_withheld_reason_evidence_must_match_database_counts_exactly(self) -> None:
         policy = _policy()
@@ -2442,6 +2585,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                         source_contract=contract,
                         projection=PROJECTION,
                         policy_artifact_sha256=(_loader_config(policy).publication.expected_sha256),
+                        species_dictionary_artifact_sha256=(
+                            _loader_config(policy).species_dictionary.expected_raw_sha256
+                        ),
+                        species_dictionary_sha256=_species_dictionary().digest(),
                     )
 
                 with self._connection("loader") as connection:

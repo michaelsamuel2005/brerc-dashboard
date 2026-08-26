@@ -156,6 +156,8 @@ class DestinationMigrationContract(unittest.TestCase):
             "observed_view_identity_sha256",
             "publication_policy_sha256",
             "policy_approval_sha256",
+            "species_dictionary_sha256 text NOT NULL",
+            "species_dictionary_artifact_sha256 text NOT NULL",
             "suppression_mode text NOT NULL",
             "min_records_per_cell integer NOT NULL",
             "compatibility_sha256",
@@ -167,6 +169,14 @@ class DestinationMigrationContract(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required, manifest)
+        self.assertIn(
+            "species_dictionary_sha256 ~ '^[0-9a-f]{64}$'",
+            manifest,
+        )
+        self.assertIn(
+            "species_dictionary_artifact_sha256 ~ '^[0-9a-f]{64}$'",
+            manifest,
+        )
         self.assertIn(
             "GRANT SELECT, INSERT ON loader_control.release_manifest TO brerc_loader",
             self.sql,
