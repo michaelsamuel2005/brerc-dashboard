@@ -18,10 +18,12 @@ from unittest import mock
 from uuid import UUID
 
 from brerc_loader.config import (
+    LOADER_CONFIG_VERSION,
     LoaderConfig,
     LoaderRuntimeConfig,
     PublicationConfig,
     ReconciliationConfig,
+    SpeciesDictionaryConfig,
     TargetConnectionConfig,
 )
 from brerc_loader.errors import (
@@ -29,17 +31,22 @@ from brerc_loader.errors import (
     LoaderAlreadyRunning,
     LoaderCandidateInvalid,
     LoaderExecutionFailed,
+    LoaderPolicyInvalid,
     LoaderReleaseBlocked,
     LoaderSourceCountRejected,
 )
 from brerc_loader.models import LoadMode
 from brerc_source.models import SafeSourceSnapshotEvidence
 from connector_tests.test_postgres_connector import (
+    CONNECTOR_DICTIONARY,
+    FakeConnection,
     approved_contract,
     approved_policy,
     connector_config,
+    source_row,
 )
 from etl.contract import PublicRecord
+from etl.species import SpeciesDictionary
 from etl.streaming import SafeDisposition
 
 SOURCE_ID = "dashboard.main_data_dash"
@@ -53,6 +60,13 @@ RAW_SENTINELS = (
     "recorder full name",
     "sensitive=yes",
 )
+SPECIES_DICTIONARY_ARTIFACT = (
+    b"SPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE\n"
+    b"5088,Anguis fragilis,Slow-worm,No\n"
+    b"SYNTH-1,Synthetic species alpha,Synthetic alpha,No\n"
+    b"SYNTH-2,Synthetic species beta,Synthetic beta,Yes\n"
+)
+SPECIES_DICTIONARY_ARTIFACT_SHA256 = hashlib.sha256(SPECIES_DICTIONARY_ARTIFACT).hexdigest()
 
 
 def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
@@ -71,7 +85,7 @@ def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
     )
     artifact = b'{"synthetic":"coordinator-test"}\n'
     return LoaderConfig(
-        version="brerc-loader-v1",
+        version=LOADER_CONFIG_VERSION,
         source_config_path=Path("/controlled/source.yaml"),
         publication=PublicationConfig(
             policy_path=Path("/controlled/publication-policy.json"),
@@ -79,6 +93,11 @@ def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
             public_id_secret_env="BRERC_PUBLIC_ID_TEST_SECRET",  # noqa: S106 - env name
             _artifact=artifact,
             _public_id_secret=b"public-id-test-secret-material-32bytes",
+        ),
+        species_dictionary=SpeciesDictionaryConfig(
+            csv_path=Path("/controlled/species-dictionary.csv"),
+            expected_raw_sha256=SPECIES_DICTIONARY_ARTIFACT_SHA256,
+            _artifact=SPECIES_DICTIONARY_ARTIFACT,
         ),
         runtime=runtime,
         target_connection=TargetConnectionConfig(
@@ -210,6 +229,7 @@ def evidence(
         contract_sha256="a" * 64,
         policy_version="connector-test-policy",
         policy_approval_digest="b" * 64,
+        observed_species_dictionary_sha256=CONNECTOR_DICTIONARY.digest(),
         observed_definition_sha256="c" * 64,
         observed_identity_sha256="d" * 64,
         result_columns=("unique_no", "species_no"),
@@ -322,6 +342,7 @@ class FakeTargetStore:
         self.failed_codes: list[str] = []
         self.cancelled = 0
         self.finalize_seen_count: int | None = None
+        self.finalize_kwargs: dict[str, object] | None = None
         self.published_after_suppression: list[SafeDisposition] = []
         self.open_candidate = False
 
@@ -366,10 +387,11 @@ class FakeTargetStore:
         *,
         evidence: object,
         policy: object,
-        **_kwargs: object,
+        **kwargs: object,
     ):
         self.calls.append("finalize")
         self.assert_private(evidence)
+        self.finalize_kwargs = kwargs
         self.finalize_seen_count = len(self.staged)
         counts: dict[tuple[object, ...], int] = {}
         for item in self.staged:
@@ -477,6 +499,9 @@ class CoordinatorCase(unittest.TestCase):
         target: FakeTargetStore | None = None,
         fail_after_batches: int | None = None,
         source_batch_size: int | None = None,
+        dictionary: SpeciesDictionary | None = CONNECTOR_DICTIONARY,
+        species_dictionary_artifact_sha256: str = SPECIES_DICTIONARY_ARTIFACT_SHA256,
+        observed_dictionary_sha256: str | None = None,
     ):
         contract = approved_contract()
         source_config = connector_config(contract)
@@ -489,6 +514,11 @@ class CoordinatorCase(unittest.TestCase):
                 ),
             )
         snapshot = FakeSafeSnapshot(batches, fail_after_batches=fail_after_batches)
+        if observed_dictionary_sha256 is not None:
+            snapshot._evidence = dataclasses.replace(
+                snapshot._evidence,
+                observed_species_dictionary_sha256=observed_dictionary_sha256,
+            )
         source = FakeSourceConnector(snapshot)
         if target is None:
             target = FakeTargetStore(self.coordinator)
@@ -513,6 +543,8 @@ class CoordinatorCase(unittest.TestCase):
                 source_contract=contract,
                 columns=source_config.column_map,
                 policy=approved_policy() if policy is None else policy,
+                dictionary=dictionary,
+                species_dictionary_artifact_sha256=(species_dictionary_artifact_sha256),
             )
         return report, source, snapshot, target
 
@@ -556,6 +588,101 @@ class TestPreSocketGates(CoordinatorCase):
         source_config_loader.assert_not_called()
         source_factory.assert_not_called()
         target_factory.assert_not_called()
+
+    def test_dictionary_binding_failures_stop_before_both_adapter_factories(self) -> None:
+        contract = approved_contract()
+        source_config = connector_config(contract)
+        mismatched = SpeciesDictionary.from_rows(
+            [
+                {
+                    "SPECIES_NO": "OTHER-1",
+                    "SCIENTIFIC": "Different species",
+                    "COMMON_NAM": "Different",
+                    "SENSITIVE": "No",
+                }
+            ]
+        )
+        cases = (
+            ("missing", None, SPECIES_DICTIONARY_ARTIFACT_SHA256),
+            ("semantic-mismatch", mismatched, SPECIES_DICTIONARY_ARTIFACT_SHA256),
+            ("invalid-raw-digest", CONNECTOR_DICTIONARY, "f" * 63),
+        )
+        for name, dictionary, raw_digest in cases:
+            with self.subTest(name=name):
+                source_factory = mock.Mock(side_effect=AssertionError("source socket opened"))
+                target_factory = mock.Mock(side_effect=AssertionError("target socket opened"))
+                with (
+                    mock.patch.object(
+                        self.coordinator,
+                        "_source_connector_factory",
+                        source_factory,
+                    ),
+                    mock.patch.object(
+                        self.coordinator,
+                        "_target_store_factory",
+                        target_factory,
+                    ),
+                    self.assertRaises(LoaderPolicyInvalid),
+                ):
+                    self.coordinator._run_initial_with_inputs(
+                        loader_config(),
+                        source_config=source_config,
+                        source_contract=contract,
+                        columns=source_config.column_map,
+                        policy=approved_policy(),
+                        dictionary=dictionary,
+                        species_dictionary_artifact_sha256=raw_digest,
+                    )
+                source_factory.assert_not_called()
+                target_factory.assert_not_called()
+
+    def test_run_load_semantic_dictionary_mismatch_stops_before_source_config_and_sockets(
+        self,
+    ) -> None:
+        changed_artifact = (
+            b"SPECIES_NO,SCIENTIFIC,COMMON_NAM,SENSITIVE\nOTHER-1,Different species,Different,No\n"
+        )
+        config = approved_artifact_config()
+        config = dataclasses.replace(
+            config,
+            species_dictionary=SpeciesDictionaryConfig(
+                csv_path=Path("/controlled/changed-species-dictionary.csv"),
+                expected_raw_sha256=hashlib.sha256(changed_artifact).hexdigest(),
+                _artifact=changed_artifact,
+            ),
+        )
+        source_config_loader = mock.Mock(side_effect=AssertionError("source config was read"))
+        source_factory = mock.Mock(side_effect=AssertionError("source socket opened"))
+        target_factory = mock.Mock(side_effect=AssertionError("target socket opened"))
+        with (
+            mock.patch.object(
+                self.coordinator,
+                "load_source_config",
+                source_config_loader,
+            ),
+            mock.patch.object(self.coordinator, "_source_connector_factory", source_factory),
+            mock.patch.object(self.coordinator, "_target_store_factory", target_factory),
+            self.assertRaises(LoaderPolicyInvalid),
+        ):
+            self.coordinator.run_load(config, LoadMode.INITIAL)
+        source_config_loader.assert_not_called()
+        source_factory.assert_not_called()
+        target_factory.assert_not_called()
+
+    def test_run_load_parses_the_snapshotted_dictionary_bytes_before_release_gate(self) -> None:
+        parser = mock.Mock(
+            wraps=self.coordinator.parse_species_dictionary_artifact,
+        )
+        with (
+            mock.patch.object(
+                self.coordinator,
+                "parse_species_dictionary_artifact",
+                parser,
+            ),
+            self.assertRaises(LoaderReleaseBlocked),
+        ):
+            self.coordinator.run_load(approved_artifact_config(), LoadMode.INITIAL)
+        parser.assert_called_once_with(SPECIES_DICTIONARY_ARTIFACT)
 
     def test_lock_contention_stops_before_the_source_snapshot_opens(self) -> None:
         target = FakeTargetStore(
@@ -758,6 +885,103 @@ class TestCompatibilityIdentity(CoordinatorCase):
 
 
 class TestBoundedSafeStaging(CoordinatorCase):
+    def test_public_entry_withholds_unlisted_ambiguous_and_id_name_mismatch_rows(
+        self,
+    ) -> None:
+        dictionary_artifact = (
+            SPECIES_DICTIONARY_ARTIFACT
+            + b"AMB-1,Ambiguous species,Ambiguous one,No\n"
+            + b"AMB-2,Ambiguous species,Ambiguous two,Yes\n"
+        )
+        dictionary = self.coordinator.parse_species_dictionary_artifact(dictionary_artifact)
+        policy = dataclasses.replace(
+            approved_policy(),
+            species_dictionary_sha256=dictionary.digest(),
+            approval_digest=None,
+        )
+        policy = dataclasses.replace(
+            policy,
+            approval_digest=policy._expected_approval_digest(),
+        )
+        policy.validate()
+        policy.assert_approved()
+        policy_artifact = json.dumps(
+            policy.approval_artifact(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+        config = dataclasses.replace(
+            loader_config(maximum=3),
+            publication=PublicationConfig(
+                policy_path=Path("/controlled/public-entry-policy.json"),
+                expected_sha256=hashlib.sha256(policy_artifact).hexdigest(),
+                public_id_secret_env="BRERC_PUBLIC_ID_TEST_SECRET",  # noqa: S106
+                _artifact=policy_artifact,
+                _public_id_secret=policy.public_id_salt.encode("utf-8"),
+            ),
+            species_dictionary=SpeciesDictionaryConfig(
+                csv_path=Path("/controlled/public-entry-species-dictionary.csv"),
+                expected_raw_sha256=hashlib.sha256(dictionary_artifact).hexdigest(),
+                _artifact=dictionary_artifact,
+            ),
+        )
+        contract = approved_contract()
+        source_config = connector_config(contract)
+        connection = FakeConnection(
+            row_batches=[
+                [
+                    source_row("1.00")
+                    | {
+                        "species_no": "UNLISTED-1",
+                        "scientific_name": "Unlisted species",
+                    },
+                    source_row("2.00")
+                    | {
+                        "species_no": "5088",
+                        "scientific_name": "Synthetic species alpha",
+                    },
+                    source_row("3.00")
+                    | {
+                        "species_no": "AMB-1",
+                        "scientific_name": "Ambiguous species",
+                    },
+                ],
+                [],
+            ]
+        )
+        target = FakeTargetStore(self.coordinator)
+        with (
+            mock.patch.object(self.coordinator, "BRERC_MAIN_DATA_DASH", contract),
+            mock.patch.object(
+                self.coordinator,
+                "load_source_config",
+                return_value=source_config,
+            ),
+            mock.patch.object(
+                self.coordinator,
+                "_target_store_factory",
+                return_value=target,
+            ),
+            mock.patch(
+                "brerc_source.postgres._default_connection_factory",
+                return_value=connection,
+            ),
+            self.assertRaises(LoaderCandidateInvalid),
+        ):
+            self.coordinator.run_load(config, LoadMode.INITIAL)
+
+        self.assertEqual(
+            [item.withheld_reason for item in target.staged],
+            [
+                "species-not-permitted",
+                "species-identity-mismatch",
+                "ambiguous-species-name",
+            ],
+        )
+        self.assertTrue(all(item.record is None for item in target.staged))
+        self.assertFalse(target.activated)
+
     def test_safe_batches_are_staged_without_raw_values_and_then_activated(self) -> None:
         batches = [
             tuple(disposition(number) for number in range(1, 4)),
@@ -781,6 +1005,7 @@ class TestBoundedSafeStaging(CoordinatorCase):
             ],
         )
         self.assertTrue(source.open_calls)
+        self.assertIs(source.open_calls[0]["dictionary"], CONNECTOR_DICTIONARY)
         self.assertTrue(snapshot.entered)
         self.assertTrue(snapshot.exhausted)
         self.assertTrue(snapshot.closed)
@@ -788,6 +1013,14 @@ class TestBoundedSafeStaging(CoordinatorCase):
         self.assertTrue(target.activated)
         self.assertEqual(str(target.active_release), report.release_id)
         self.assertTrue(report.activated)
+        self.assertEqual(
+            target.finalize_kwargs["species_dictionary_artifact_sha256"],
+            SPECIES_DICTIONARY_ARTIFACT_SHA256,
+        )
+        self.assertEqual(
+            target.finalize_kwargs["species_dictionary_sha256"],
+            CONNECTOR_DICTIONARY.digest(),
+        )
 
         target.assert_private(target.staged)
         rendered = repr(target.staged)
@@ -830,6 +1063,21 @@ class TestBoundedSafeStaging(CoordinatorCase):
 
 
 class TestFailureAtomicity(CoordinatorCase):
+    def test_observed_dictionary_digest_mismatch_refuses_finalization_and_activation(
+        self,
+    ) -> None:
+        target = FakeTargetStore(self.coordinator)
+        with self.assertRaises(LoaderCandidateInvalid):
+            self.run_initial(
+                [(disposition(1),)],
+                target=target,
+                observed_dictionary_sha256="f" * 64,
+            )
+        self.assertNotIn("finalize", target.calls)
+        self.assertNotIn("activate", target.calls)
+        self.assertEqual(target.failed_codes, ["LOADER_CANDIDATE_INVALID"])
+        self.assertTrue(target.closed)
+
     def test_confirmed_failure_survives_later_close_error(self) -> None:
         target = FakeTargetStore(
             self.coordinator,

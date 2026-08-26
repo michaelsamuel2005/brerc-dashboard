@@ -14,6 +14,7 @@ with a reviewed synthetic contract; this is not authority to publish live data.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib
 import json
 import time
@@ -41,7 +42,7 @@ from etl.source_contract import (
     LoadMode as SourceLoadMode,
 )
 from etl.species import SpeciesDictionary
-from etl.streaming import SafeDisposition
+from etl.streaming import SafeDisposition, validate_streaming_policy_inputs
 
 from .config import LoaderConfig
 from .digest import (
@@ -68,6 +69,7 @@ from .errors import (
 )
 from .models import LoaderRunReport, LoadMode, RunState
 from .policy_artifact import parse_publication_policy_artifact
+from .species_dictionary import parse_species_dictionary_artifact
 
 LOADER_VERSION = "brerc-postgres-loader-v1"
 PROJECTION_VERSION = "brerc-main-data-dash-safe-projection-v1"
@@ -267,6 +269,8 @@ class _TargetStore(Protocol):
         source_contract: SourceContract,
         projection: tuple[str, ...],
         policy_artifact_sha256: str,
+        species_dictionary_artifact_sha256: str,
+        species_dictionary_sha256: str,
     ) -> _CandidateSummary: ...
 
     def activate(
@@ -361,6 +365,14 @@ def _canonical_json_sha256(document: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _compatibility_sha256(
     *,
     source_contract_version: str,
@@ -421,6 +433,17 @@ def run_load(config: LoaderConfig, mode: LoadMode) -> LoaderRunReport:
     except LoaderPolicyInvalid as exc:
         raise _sanitise(exc) from None
     try:
+        dictionary = parse_species_dictionary_artifact(config.species_dictionary.artifact_bytes())
+    except (LoaderConfigurationError, LoaderPolicyInvalid) as exc:
+        raise _sanitise(exc) from None
+    dictionary_sha256 = dictionary.digest()
+    if (
+        not _is_sha256(dictionary_sha256)
+        or not _is_sha256(policy.species_dictionary_sha256)
+        or not hmac.compare_digest(dictionary_sha256, policy.species_dictionary_sha256)
+    ):
+        raise _sanitise(LoaderPolicyInvalid())
+    try:
         BRERC_MAIN_DATA_DASH.require_mode(SourceLoadMode.INITIAL)
         policy.validate()
         policy.assert_approved()
@@ -442,6 +465,8 @@ def run_load(config: LoaderConfig, mode: LoadMode) -> LoaderRunReport:
         source_contract=BRERC_MAIN_DATA_DASH,
         columns=source_config.column_map,
         policy=policy,
+        dictionary=dictionary,
+        species_dictionary_artifact_sha256=(config.species_dictionary.expected_raw_sha256),
     )
 
 
@@ -453,9 +478,21 @@ def _run_initial_with_inputs(
     columns: ColumnMap,
     policy: PublicationPolicy,
     dictionary: SpeciesDictionary | None = None,
+    species_dictionary_artifact_sha256: str | None = None,
 ) -> LoaderRunReport:
     """Private synthetic-testable orchestration; production inputs stay fixed."""
+    if not isinstance(policy, PublicationPolicy):
+        raise _sanitise(LoaderPolicyInvalid())
+    dictionary_sha256 = dictionary.digest() if isinstance(dictionary, SpeciesDictionary) else None
+    if (
+        not _is_sha256(dictionary_sha256)
+        or not _is_sha256(policy.species_dictionary_sha256)
+        or not hmac.compare_digest(dictionary_sha256, policy.species_dictionary_sha256)
+        or not _is_sha256(species_dictionary_artifact_sha256)
+    ):
+        raise _sanitise(LoaderPolicyInvalid())
     try:
+        validate_streaming_policy_inputs(policy=policy, dictionary=dictionary)
         source_contract.require_mode(SourceLoadMode.INITIAL)
         policy.validate()
         policy.assert_approved()
@@ -525,6 +562,11 @@ def _run_initial_with_inputs(
         maximum = config.runtime.initial_max_source_rows
         if staged_rows != evidence.rows_seen or not minimum <= evidence.rows_seen <= maximum:
             raise LoaderSourceCountRejected()
+        if not _is_sha256(evidence.observed_species_dictionary_sha256) or not hmac.compare_digest(
+            evidence.observed_species_dictionary_sha256,
+            dictionary_sha256,
+        ):
+            raise LoaderCandidateInvalid()
         summary = target.finalize(
             handle,
             evidence=evidence,
@@ -532,6 +574,8 @@ def _run_initial_with_inputs(
             source_contract=source_contract,
             projection=projection,
             policy_artifact_sha256=config.publication.expected_sha256,
+            species_dictionary_artifact_sha256=(species_dictionary_artifact_sha256),
+            species_dictionary_sha256=dictionary_sha256,
         )
         _check_deadline(deadline, target)
         if summary.source_rows != evidence.rows_seen:
@@ -1099,6 +1143,8 @@ class _PostgreSQLTargetStore:
         source_contract: SourceContract,
         projection: tuple[str, ...],
         policy_artifact_sha256: str,
+        species_dictionary_artifact_sha256: str,
+        species_dictionary_sha256: str,
     ) -> _CandidateSummary:
         return self._finalize_candidate(
             handle,
@@ -1107,6 +1153,8 @@ class _PostgreSQLTargetStore:
             source_contract=source_contract,
             projection=projection,
             policy_artifact_sha256=policy_artifact_sha256,
+            species_dictionary_artifact_sha256=(species_dictionary_artifact_sha256),
+            species_dictionary_sha256=species_dictionary_sha256,
         )
 
     def activate(
@@ -1328,6 +1376,8 @@ class _PostgreSQLTargetStore:
         source_contract: SourceContract,
         projection: tuple[str, ...],
         policy_artifact_sha256: str,
+        species_dictionary_artifact_sha256: str,
+        species_dictionary_sha256: str,
     ) -> _CandidateSummary:
         if (
             not isinstance(handle, _CandidateHandle)
@@ -1336,6 +1386,8 @@ class _PostgreSQLTargetStore:
             or not isinstance(source_contract, SourceContract)
             or not isinstance(projection, tuple)
             or not isinstance(policy_artifact_sha256, str)
+            or not isinstance(species_dictionary_artifact_sha256, str)
+            or not isinstance(species_dictionary_sha256, str)
             or handle.base_release_id is not None
         ):
             raise LoaderCandidateInvalid()
@@ -1345,6 +1397,8 @@ class _PostgreSQLTargetStore:
             source_contract=source_contract,
             projection=projection,
             policy_artifact_sha256=policy_artifact_sha256,
+            species_dictionary_artifact_sha256=(species_dictionary_artifact_sha256),
+            species_dictionary_sha256=species_dictionary_sha256,
         )
         projection_sha256 = _canonical_json_sha256(
             {"version": PROJECTION_VERSION, "columns": list(projection)}
@@ -1362,7 +1416,7 @@ class _PostgreSQLTargetStore:
             publication_policy_version=policy.version,
             publication_policy_sha256=policy_artifact_sha256,
             policy_approval_sha256=approval_sha256,
-            species_dictionary_sha256=policy.species_dictionary_sha256,
+            species_dictionary_sha256=evidence.observed_species_dictionary_sha256,
             sensitivity_snapshot_sha256=sensitivity_sha256,
             reconciliation_key_sha256=hashlib.sha256(
                 self._config.reconciliation.secret_bytes()
@@ -1456,7 +1510,8 @@ class _PostgreSQLTargetStore:
                 "projection_version, projection_sha256, publication_policy_version, "
                 "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
                 "min_records_per_cell, etl_version, compatibility_sha256, "
-                "species_dictionary_sha256, sensitivity_snapshot_sha256, source_row_count, "
+                "species_dictionary_artifact_sha256, species_dictionary_sha256, "
+                "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "
                 "transform_withheld_count, suppression_withheld_count, "
                 "published_basis_count, species_count, cell_count, species_year_count, "
@@ -1464,7 +1519,7 @@ class _PostgreSQLTargetStore:
                 ") VALUES ("
                 "%s, %s, NULL, NULL, NULL, NULL, %s, %s, %s, %s, %s, %s, %s, %s, "
                 "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-                "%s, %s, %s, %s, %s"
+                "%s, %s, %s, %s, %s, %s"
                 ")",
                 (
                     handle.release_id,
@@ -1482,7 +1537,8 @@ class _PostgreSQLTargetStore:
                     policy.min_records_per_cell,
                     LOADER_VERSION,
                     compatibility_sha256,
-                    policy.species_dictionary_sha256,
+                    species_dictionary_artifact_sha256,
+                    evidence.observed_species_dictionary_sha256,
                     sensitivity_sha256,
                     evidence.rows_seen,
                     counts["source_inventory_count"],
@@ -1563,6 +1619,8 @@ class _PostgreSQLTargetStore:
         source_contract: SourceContract,
         projection: tuple[str, ...],
         policy_artifact_sha256: str,
+        species_dictionary_artifact_sha256: str,
+        species_dictionary_sha256: str,
     ) -> datetime:
         withheld = evidence.withheld_by_reason
         sensitivity_buckets = evidence.sensitivity_buckets
@@ -1628,15 +1686,25 @@ class _PostgreSQLTargetStore:
             evidence.contract_sha256,
             evidence.observed_definition_sha256,
             evidence.observed_identity_sha256,
+            evidence.observed_species_dictionary_sha256,
             policy_artifact_sha256,
             policy.approval_digest,
+            policy.species_dictionary_sha256,
+            species_dictionary_artifact_sha256,
+            species_dictionary_sha256,
             policy.sensitive_snapshot_sha256,
         )
-        if any(
-            not isinstance(value, str)
-            or len(value) != 64
-            or any(character not in "0123456789abcdef" for character in value)
-            for value in digests
+        if any(not _is_sha256(value) for value in digests):
+            raise LoaderCandidateInvalid()
+        if not (
+            hmac.compare_digest(
+                evidence.observed_species_dictionary_sha256,
+                species_dictionary_sha256,
+            )
+            and hmac.compare_digest(
+                evidence.observed_species_dictionary_sha256,
+                policy.species_dictionary_sha256,
+            )
         ):
             raise LoaderCandidateInvalid()
         return snapshot_at.astimezone(timezone.utc)
