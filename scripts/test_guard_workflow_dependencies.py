@@ -34,6 +34,26 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
             }.issubset(dependencies)
         )
 
+    def test_ci_manifest_covers_every_browser_gate_entry_point(self) -> None:
+        dependencies = set(WORKFLOW_DEPENDENCIES[".github/workflows/ci.yml"])
+        self.assertTrue(
+            {
+                "web/e2e",
+                "web/e2e/live_integration.spec.ts",
+                "web/e2e/serialization.pw.test.ts",
+                "web/package-lock.json",
+                "web/package.json",
+                "web/playwright.config.ts",
+                "web/playwright.live.config.ts",
+                "web/playwright.serialization.config.ts",
+                "web/scripts/guard-bundle.mjs",
+                "web/scripts/guard-forbidden.mjs",
+                "web/tsconfig.a11y.json",
+                "web/tsconfig.json",
+                "web/vite.config.ts",
+            }.issubset(dependencies)
+        )
+
     def test_missing_dependency_and_unregistered_workflow_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
