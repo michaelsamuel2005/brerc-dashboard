@@ -10,7 +10,15 @@ import { usePrefersReducedMotion } from "../../lib/hooks/usePrefersReducedMotion
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
 import { Legend } from "./Legend";
 import { MapInstructions } from "./MapInstructions";
-import { INITIAL_VIEW, MAP_STYLE, MAX_ZOOM, MIN_ZOOM, cellsFillLayer, cellsLineLayer } from "./mapConfig";
+import {
+  INITIAL_VIEW,
+  MAP_STYLE,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  cellsFillLayer,
+  cellsLineCasingLayer,
+  cellsLineLayer,
+} from "./mapConfig";
 import { installA11yTestAdapter, removeA11yTestAdapter } from "./a11yTestAdapter";
 
 interface Props {
@@ -230,6 +238,7 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
           ) : null}
           <Source id="cells" type="geojson" data={fc}>
             <Layer {...cellsFillLayer} />
+            <Layer {...cellsLineCasingLayer} />
             <Layer {...cellsLineLayer} />
             <Layer id="cells-highlight-casing" type="line" filter={highlightFilter} paint={{ "line-color": "#ffffff", "line-width": 6, "line-opacity": 0.95 }} />
             <Layer id="cells-highlight" type="line" filter={highlightFilter} paint={{ "line-color": "#0b3b23", "line-width": 2.5 }} />

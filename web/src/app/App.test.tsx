@@ -71,6 +71,8 @@ describe("App — P3 slice (integration, against MSW mock)", () => {
       // Every destination is a real published species id, not a literal in our source.
       expect(link).toHaveAttribute("href", expect.stringMatching(/^\/species\/[^/]+\/[a-z0-9-]+$/));
     }
+    expect(screen.getByRole("link", { name: "BRERC home" })).toBeInTheDocument();
+    expect(screen.queryByText(/prototype/i)).not.toBeInTheDocument();
   });
 
   it("shows the published totals on the overview, from the API", async () => {

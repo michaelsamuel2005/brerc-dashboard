@@ -144,8 +144,8 @@ export function App() {
       <SkipLink />
       <header className="app-header">
         <div className="row">
-          <Link className="brand" href="/" aria-label="BRERC prototype home">
-            BRERC <span className="tag">Prototype</span>
+          <Link className="brand" href="/" aria-label="BRERC home">
+            BRERC
           </Link>
           <PrimaryNavigation pathname={pathname} />
           <div className="header-tools">

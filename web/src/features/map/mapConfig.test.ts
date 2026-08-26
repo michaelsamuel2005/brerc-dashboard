@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   CELL_BOUNDARY_COLOURS,
+  CELL_BOUNDARY_DARK,
+  CELL_BOUNDARY_LIGHT,
   CELL_BREAKS,
   CELL_COLOURS,
+  CELL_FILL_OPACITY,
   LEGEND_BANDS,
   MAX_ZOOM,
   MIN_ZOOM,
   cellsFillLayer,
+  cellsLineCasingLayer,
   cellsLineLayer,
 } from "./mapConfig";
 
@@ -49,8 +53,8 @@ function over(
   ] as const;
 }
 
-/** Representative light-basemap tones the fills are drawn over. */
-const BASEMAP_TONES = ["#f8f4f0", "#cfe3ee", "#e6e1dc"] as const;
+/** Representative light and dark cartographic tones the fills can cross. */
+const BASEMAP_TONES = ["#000000", "#1f2933", "#6b7280", "#f8f4f0", "#cfe3ee", "#e6e1dc", "#ffffff"] as const;
 
 describe("mapConfig", () => {
   it("caps zoom at the product-supported basemap detail", () => {
@@ -68,24 +72,34 @@ describe("mapConfig", () => {
     for (const band of LEGEND_BANDS) expect(band.label).toMatch(/record/);
   });
 
-  it("keeps every cell boundary at 3:1 against its own fill (WCAG 1.4.11)", () => {
+  it("keeps the map cells highly translucent while retaining explicit boundaries", () => {
+    const fillPaint = cellsFillLayer.paint as Record<string, unknown>;
+    expect(fillPaint["fill-opacity"]).toBe(CELL_FILL_OPACITY);
+    expect(CELL_FILL_OPACITY).toBeGreaterThanOrEqual(0.2);
+    expect(CELL_FILL_OPACITY).toBeLessThanOrEqual(0.3);
+  });
+
+  it("keeps a two-tone cell edge at 3:1 across light and dark basemap tones (WCAG 1.4.11)", () => {
     // These cells are clickable, so the boundary is what identifies each one as
-    // a distinct object. A single boundary colour cannot clear 3:1 across a
-    // sequential ramp, which is why the boundary steps to white on the darkest
-    // band — the previous dark-on-dark line measured 1.08:1 and was effectively
-    // invisible on exactly the cells with the most records.
+    // a distinct object. The boundary must clear 3:1 after each translucent
+    // band is composited onto every representative basemap tone.
     const fillPaint = cellsFillLayer.paint as Record<string, unknown>;
     const fillOpacity = fillPaint["fill-opacity"] as number;
     const linePaint = cellsLineLayer.paint as Record<string, unknown>;
+    const casingPaint = cellsLineCasingLayer.paint as Record<string, unknown>;
     expect(linePaint["line-opacity"]).toBe(1);
+    expect(linePaint["line-color"]).toBeDefined();
+    expect(casingPaint["line-color"]).toBe(CELL_BOUNDARY_LIGHT);
+    expect(casingPaint["line-width"]).toBeGreaterThan(linePaint["line-width"] as number);
 
     for (const tone of BASEMAP_TONES) {
       CELL_COLOURS.forEach((fill, index) => {
         const rendered = over(rgb(fill), fillOpacity, rgb(tone));
-        const boundary = rgb(CELL_BOUNDARY_COLOURS[index]!);
+        const darkEdge = rgb(CELL_BOUNDARY_DARK);
+        const lightEdge = rgb(CELL_BOUNDARY_LIGHT);
         expect(
-          contrast(boundary, rendered),
-          `band ${index} boundary over ${tone}`,
+          Math.max(contrast(darkEdge, rendered), contrast(lightEdge, rendered)),
+          `band ${index} two-tone edge over ${tone}`,
         ).toBeGreaterThanOrEqual(3);
       });
     }

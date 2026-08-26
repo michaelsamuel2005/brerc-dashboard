@@ -53,6 +53,7 @@ export const MAP_STYLE: StyleSpecification = A11Y_TEST_MODE
 // CELL_BOUNDARY_COLOURS for the WCAG 1.4.11 contrast that constrains them.
 export const CELL_COLOURS: readonly [string, string, string, string] = ["#e3eef8", "#a8cee4", "#6bafd6", "#08306b"];
 export const CELL_BREAKS: readonly [number, number, number] = [6, 21, 51]; // bands 1–5, 6–20, 21–50, 51+
+export const CELL_FILL_OPACITY = 0.24;
 
 const cellColourExpression: ExpressionSpecification = [
   "step",
@@ -70,32 +71,27 @@ const cellColourExpression: ExpressionSpecification = [
 export const cellsFillLayer: LayerProps = {
   id: "cells-fill",
   type: "fill",
-  // 0.88 rather than a lighter wash: the basemap still reads through, but the
-  // fill is close enough to its nominal colour that the measured contrast below
-  // holds. A thinner fill drifts toward the basemap and the boundary contrast
-  // collapses with it.
-  paint: { "fill-color": cellColourExpression, "fill-opacity": 0.88 },
+  // Keep the basemap clearly visible through the data. Cell identity is carried by
+  // the separately measured, fully opaque boundary rather than an opaque colour block.
+  paint: { "fill-color": cellColourExpression, "fill-opacity": CELL_FILL_OPACITY },
 };
 
 // WCAG 1.4.11 requires 3:1 for the graphics needed to understand content, and
 // these cells are also clickable, so the boundary is what identifies each one.
 //
-// A SINGLE boundary colour cannot satisfy that across a sequential ramp: the
-// same line cannot contrast with both the lightest and the darkest band. The
-// previous dark-on-dark line measured 1.08:1 against the darkest fill — a
-// boundary that was, in practice, invisible exactly where cells matter most.
-//
-// So the boundary switches to white on the darkest band. Measured against the
-// composited fill over pale land, water and road basemap tones, the worst case
-// is 5.01:1. The measurement lives in mapConfig.test.ts so a future palette
-// change cannot quietly drop below the threshold.
+// At the previous near-opaque fill, the dark boundary measured 1.08:1 against
+// the darkest band and was effectively invisible. Highly translucent cells can
+// cross both pale and dark cartographic marks, so a white casing sits beneath a
+// dark inner line: at least one edge remains visible on every background tone.
+// The measurement lives in mapConfig.test.ts so a future opacity or palette
+// change cannot quietly regress it.
 export const CELL_BOUNDARY_DARK = "#0b3d66";
 export const CELL_BOUNDARY_LIGHT = "#ffffff";
 export const CELL_BOUNDARY_COLOURS: readonly [string, string, string, string] = [
   CELL_BOUNDARY_DARK,
   CELL_BOUNDARY_DARK,
   CELL_BOUNDARY_DARK,
-  CELL_BOUNDARY_LIGHT,
+  CELL_BOUNDARY_DARK,
 ];
 
 const cellBoundaryExpression: ExpressionSpecification = [
@@ -115,7 +111,17 @@ export const cellsLineLayer: LayerProps = {
   type: "line",
   // Fully opaque: the previous 0.55 diluted the line into the fill beneath it,
   // which is part of why the old boundary failed its contrast requirement.
-  paint: { "line-color": cellBoundaryExpression, "line-width": 0.8, "line-opacity": 1 },
+  paint: { "line-color": cellBoundaryExpression, "line-width": 1.1, "line-opacity": 1 },
+};
+
+export const cellsLineCasingLayer: LayerProps = {
+  id: "cells-line-casing",
+  type: "line",
+  paint: {
+    "line-color": CELL_BOUNDARY_LIGHT,
+    "line-width": 3.1,
+    "line-opacity": 0.96,
+  },
 };
 
 export const LEGEND_BANDS: readonly { colour: string; label: string }[] = [
