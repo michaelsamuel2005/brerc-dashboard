@@ -1,0 +1,137 @@
+# Focused production overlay for the transactional notification worker.
+#
+# This file is intentionally not runnable by itself. It extends the reviewed
+# production compose file which will land with the publication-store/deployment
+# ports. Never combine it with the repository-root development compose or put
+# real paths/addresses/passwords into source control.
+#
+# Required controlled host files (all outside the repository):
+#   NOTIFIER_CONFIG_FILE
+#   NOTIFIER_PG_SERVICE_FILE
+#   NOTIFIER_PG_PASSFILE
+#   NOTIFIER_PG_CA_FILE
+#   NOTIFIER_SMTP_USERNAME_FILE
+#   NOTIFIER_SMTP_PASSWORD_FILE
+#   BRERC_NOTIFIER_IMAGE
+#   BRERC_NOTIFIER_IMAGE_DIGEST
+#   BRERC_NOTIFIER_DATABASE_NETWORK
+#   BRERC_NOTIFIER_CONTROL_NETWORK
+
+services:
+  notifier:
+    # Production always pulls/runs an immutable digest. CI builds the
+    # Dockerfile separately; this overlay must never rebuild on the host.
+    image: ${BRERC_NOTIFIER_IMAGE:?set the approved notifier repository}@${BRERC_NOTIFIER_IMAGE_DIGEST:?set the approved sha256 digest}
+    # Dockerfile.notifier already supplies the fixed module entrypoint and
+    # `run --config /run/secrets/notifier-config` command. Do not repeat the
+    # entrypoint here: Compose appends `command` to an image ENTRYPOINT.
+    environment:
+      # These variables contain paths or a non-secret libpq service alias. The
+      # credentials themselves are mounted read-only below.
+      BRERC_NOTIFIER_PGSERVICE: brerc-notifier
+      PGSERVICEFILE: /run/secrets/notifier-pg-service
+      BRERC_NOTIFIER_PGPASSFILE: /run/secrets/notifier-pg-passfile
+      BRERC_NOTIFIER_SSLROOTCERT: /run/secrets/notifier-pg-ca
+      BRERC_NOTIFIER_SMTP_USERNAME_FILE: /run/secrets/notifier-smtp-username
+      BRERC_NOTIFIER_SMTP_PASSWORD_FILE: /run/secrets/notifier-smtp-password
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    secrets:
+      - source: notifier_config
+        target: notifier-config
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+      - source: notifier_pg_service
+        target: notifier-pg-service
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+      - source: notifier_pg_passfile
+        target: notifier-pg-passfile
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+      - source: notifier_pg_ca
+        target: notifier-pg-ca
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+      - source: notifier_smtp_username
+        target: notifier-smtp-username
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+      - source: notifier_smtp_password
+        target: notifier-smtp-password
+        uid: "65532"
+        gid: "65532"
+        mode: 0400
+    # `expose` documents the private container-network endpoint. Containers
+    # explicitly joined to either private network can reach it. There is no host
+    # `ports` mapping and Caddy must not proxy /live, /ready or /metrics.
+    expose:
+      - "9108"
+    networks:
+      - notifier_database
+      - notifier_control
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /run/brerc-notifier:rw,noexec,nosuid,nodev,size=1m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    pids_limit: 100
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      # Readiness, not just process existence: urllib exits non-zero for the
+      # worker's 503 response or when the private endpoint cannot be reached.
+      test:
+        - CMD
+        - python
+        - -c
+        - |-
+          import urllib.request
+          try:
+              response = urllib.request.urlopen("http://127.0.0.1:9108/ready", timeout=3)
+              raise SystemExit(0 if response.status == 200 else 1)
+          except Exception:
+              raise SystemExit(1) from None
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+secrets:
+  notifier_config:
+    file: ${NOTIFIER_CONFIG_FILE:?set NOTIFIER_CONFIG_FILE to a controlled absolute path}
+  notifier_pg_service:
+    file: ${NOTIFIER_PG_SERVICE_FILE:?set NOTIFIER_PG_SERVICE_FILE to a controlled absolute path}
+  notifier_pg_passfile:
+    file: ${NOTIFIER_PG_PASSFILE:?set NOTIFIER_PG_PASSFILE to a controlled absolute path}
+  notifier_pg_ca:
+    file: ${NOTIFIER_PG_CA_FILE:?set NOTIFIER_PG_CA_FILE to the approved database CA file}
+  notifier_smtp_username:
+    file: ${NOTIFIER_SMTP_USERNAME_FILE:?set NOTIFIER_SMTP_USERNAME_FILE to a controlled absolute path}
+  notifier_smtp_password:
+    file: ${NOTIFIER_SMTP_PASSWORD_FILE:?set NOTIFIER_SMTP_PASSWORD_FILE to a controlled absolute path}
+
+networks:
+  # The production database service joins only this private external network.
+  notifier_database:
+    external: true
+    name: ${BRERC_NOTIFIER_DATABASE_NETWORK:?set the private database network name}
+  # The authorised metrics collector joins this network. Host/firewall egress
+  # must restrict the notifier to the one approved SMTP/webhook endpoint.
+  notifier_control:
+    external: true
+    name: ${BRERC_NOTIFIER_CONTROL_NETWORK:?set the notifier control network name}

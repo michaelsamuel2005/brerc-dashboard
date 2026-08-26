@@ -1,0 +1,4 @@
+# Minimal notification-worker runtime. It does not install FastAPI, pandas,
+# pyproj or any ETL/source dependency.
+psycopg[binary]==3.3.4
+PyYAML==6.0.3
