@@ -17,7 +17,10 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
             {
                 "api/app",
                 "api/app_tests",
+                "api/brerc_loader",
+                "api/brerc_source",
                 "api/package_tests",
+                "api/etl/streaming.py",
                 "api/loader_tests/test_postgis16_destination_integration.py",
                 "api/loader_tests/setup_postgis16_destination.sh",
                 "api/loader_tests/setup_postgres16_e2e_source.sh",
@@ -31,6 +34,27 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/tests/test_b8_query_params.py",
                 "api/tests/test_b8_species_info.py",
                 "api/tests/test_smoke.py",
+                "api/tests/test_streaming.py",
+            }.issubset(dependencies)
+        )
+
+    def test_ci_manifest_covers_every_browser_gate_entry_point(self) -> None:
+        dependencies = set(WORKFLOW_DEPENDENCIES[".github/workflows/ci.yml"])
+        self.assertTrue(
+            {
+                "web/e2e",
+                "web/e2e/live_integration.spec.ts",
+                "web/e2e/serialization.pw.test.ts",
+                "web/package-lock.json",
+                "web/package.json",
+                "web/playwright.config.ts",
+                "web/playwright.live.config.ts",
+                "web/playwright.serialization.config.ts",
+                "web/scripts/guard-bundle.mjs",
+                "web/scripts/guard-forbidden.mjs",
+                "web/tsconfig.a11y.json",
+                "web/tsconfig.json",
+                "web/vite.config.ts",
             }.issubset(dependencies)
         )
 

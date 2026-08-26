@@ -24,7 +24,7 @@ export function AttributedImage({ image, name }: { image?: SpeciesImage; name: s
     <figure className="attr-fig">
       <img src={image.url} alt={image.alt} width={640} height={427} loading="lazy" onError={() => setFailed(true)} />
       <figcaption className="attr-cap">
-        © {image.author} ·{" "}
+        {image.attributionText} ·{" "}
         <a href={image.licenceUrl} target="_blank" rel="noreferrer noopener">
           {image.licence}
         </a>{" "}

@@ -216,7 +216,7 @@ jobs:
   postgis-loader-integration:
     name: PostgreSQL 16/PostGIS atomic loader integration
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       sourcepg:
         image: >-
@@ -313,6 +313,112 @@ jobs:
               )
           PY
           python -m pytest app_tests -q
+      # Run the browser against the exact two-record release left active above.
+      # The preview proxy keeps browser requests same-origin while Uvicorn still
+      # connects as the restricted brerc_api role over verify-full TLS.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install the live browser test runtime
+        working-directory: web
+        run: npm ci
+      - name: Install Chromium for the live publication acceptance
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Build the mocks-disabled production web application
+        working-directory: web
+        run: |
+          npm run build
+          npm run guard:bundle
+      - name: Run the mocks-disabled browser acceptance
+        working-directory: web
+        env:
+          APP_ENV: prod
+          DATABASE_URL: >-
+            postgresql://brerc_api_test:synthetic-api-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          BRERC_LOCAL_API: http://127.0.0.1:8000
+          LIVE_BASE_URL: http://127.0.0.1:4173
+        run: |
+          set -euo pipefail
+
+          diagnostics="${RUNNER_TEMP}/brerc-live-diagnostics"
+          mkdir -p "${diagnostics}"
+          api_pid=""
+          preview_pid=""
+
+          cleanup() {
+            set +e
+            for pid in "${preview_pid}" "${api_pid}"; do
+              if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+                kill "${pid}"
+              fi
+            done
+            [[ -n "${preview_pid}" ]] && wait "${preview_pid}" 2>/dev/null
+            [[ -n "${api_pid}" ]] && wait "${api_pid}" 2>/dev/null
+          }
+          trap cleanup EXIT
+
+          wait_for_url() {
+            local label="$1"
+            local url="$2"
+            local pid="$3"
+            local log_file="$4"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error "${url}" >/dev/null; then
+                return 0
+              fi
+              if ! kill -0 "${pid}" 2>/dev/null; then
+                echo "${label} exited before it became ready" >&2
+                tail -n 100 "${log_file}" >&2 || true
+                return 1
+              fi
+              sleep 1
+            done
+            echo "${label} did not become ready within 60 seconds" >&2
+            tail -n 100 "${log_file}" >&2 || true
+            return 1
+          }
+
+          (
+            cd "${GITHUB_WORKSPACE}/api"
+            exec python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+          ) >"${diagnostics}/uvicorn.log" 2>&1 &
+          api_pid=$!
+          wait_for_url \
+            "Uvicorn" \
+            "http://127.0.0.1:8000/api/summary" \
+            "${api_pid}" \
+            "${diagnostics}/uvicorn.log"
+
+          (
+            cd "${GITHUB_WORKSPACE}/web"
+            exec npm run preview -- --host 127.0.0.1 --port 4173
+          ) >"${diagnostics}/vite-preview.log" 2>&1 &
+          preview_pid=$!
+          wait_for_url \
+            "Vite preview" \
+            "http://127.0.0.1:4173/" \
+            "${preview_pid}" \
+            "${diagnostics}/vite-preview.log"
+          wait_for_url \
+            "Vite API proxy" \
+            "http://127.0.0.1:4173/api/summary" \
+            "${preview_pid}" \
+            "${diagnostics}/vite-preview.log"
+
+          npx --no-install playwright test --config playwright.live.config.ts
+      - name: Upload live publication browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-publication-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/brerc-live-diagnostics
+            web/test-results
+          if-no-files-found: warn
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary
@@ -449,6 +555,7 @@ jobs:
       - run: npm run guard
       - run: npm run test:run
       - run: npm run build
+      - run: npm run guard:bundle
 
   # ---------------------------------------------------------------------------
   # FRONT END — end-to-end + accessibility (WCAG 2.2 AA is a legal requirement)
@@ -456,6 +563,7 @@ jobs:
   e2e:
     name: Front-end end-to-end
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: web
@@ -469,5 +577,19 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
+      - name: Install Chromium, Firefox and WebKit
+        run: npm run e2e:install
+      - name: Check browser contract serialization
+        run: npm run e2e:serialization
+      - name: Run the complete multi-project browser suite
+        run: xvfb-run --auto-servernum npm run e2e
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            web/test-results
+            web/playwright-report
+          if-no-files-found: warn
+          retention-days: 14

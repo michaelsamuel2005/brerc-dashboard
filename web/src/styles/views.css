@@ -1,0 +1,216 @@
+/* Layout for the pages added after the mid-review prototype: the overview, explore,
+   records, about, settings and the two policy statements. Tokens only — no literal
+   colours, so both themes and the contrast test in tokens.contrast.test.ts cover this
+   file for free. */
+
+/* ---------- shell ---------- */
+.iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  border: 1px solid var(--control-line); border-radius: 10px;
+  background: var(--panel); color: var(--ink);
+  font: inherit; font-size: 1.05rem; cursor: pointer;
+}
+.iconbtn:hover { background: var(--panel-2); }
+.header-tools { display: flex; align-items: center; gap: .4rem; margin-left: auto; }
+.menubtn { display: none; }
+
+/* The drawer is the small-screen equivalent of the header nav. It is a real dialog:
+   focus moves into it, Escape closes it, and the trigger gets focus back. */
+.drawer {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; justify-items: end;
+}
+.drawer-backdrop { position: absolute; inset: 0; background: rgba(10, 20, 16, .55); border: 0; }
+.drawer[hidden] { display: none; }
+.drawer .sheet {
+  position: relative; z-index: 1;
+  width: min(20rem, 86vw); height: 100%;
+  background: var(--paper); border-left: 1px solid var(--line);
+  padding: 1rem; overflow: auto;
+  display: flex; flex-direction: column; gap: .3rem;
+}
+.drawer .sheet h2 { font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-family: var(--sans); margin-bottom: .4rem; }
+.drawer .sheet a {
+  display: flex; align-items: center; min-height: 44px;
+  padding: .4rem .6rem; border-radius: 9px;
+  color: var(--body); font-weight: 650; text-decoration: none;
+}
+.drawer .sheet a[aria-current="page"] { background: var(--paper-2); color: var(--green-dd); }
+.drawer .sheet .btn-ghost { margin-top: .6rem; }
+
+@media (max-width: 780px) {
+  .app-nav { display: none; }
+  .menubtn { display: inline-flex; }
+}
+
+/* ---------- overview ---------- */
+.hero {
+  background: linear-gradient(135deg, var(--hero-a), var(--hero-b));
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: clamp(1.4rem, 4vw, 2.6rem);
+  color: var(--hero-fg);
+}
+.hero .hero-places { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--hero-fg-muted); }
+.hero h1 { color: var(--hero-fg); font-size: clamp(1.9rem, 5vw, 3rem); margin: .5rem 0 .6rem; max-width: 18ch; }
+.hero p { color: var(--hero-fg-muted); max-width: 44rem; margin: 0 0 1.1rem; }
+.hero strong { color: var(--hero-fg); }
+.herosearch { display: flex; gap: .5rem; flex-wrap: wrap; max-width: 34rem; }
+.herosearch input {
+  flex: 1 1 14rem; min-height: 44px; min-width: 0;
+  border: 1px solid var(--hero-btn-bg); border-radius: 10px;
+  padding: .55rem .8rem; font: inherit;
+  background: var(--panel); color: var(--body);
+}
+.herosearch .btn { background: var(--hero-btn-bg); color: var(--hero-btn-fg); border-color: var(--hero-btn-bg); }
+
+.provenance-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.1rem;
+  margin: .9rem 0 var(--sp-3); font-size: .82rem; color: var(--muted);
+}
+.provenance-strip .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+.provenance-strip strong { color: var(--ink); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; margin-bottom: var(--sp-3); }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem 1.1rem; }
+.kpi .v { font-family: var(--display); font-weight: 700; font-size: clamp(1.5rem, 3.4vw, 2rem); color: var(--ink); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kpi .k { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: .35rem; }
+.kpi .n { font-size: .78rem; color: var(--green-d); margin-top: .2rem; }
+
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); align-items: start; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
+.section-head h2 { font-size: 1.3rem; }
+.section-head .aside { font-size: .8rem; color: var(--muted); }
+
+.featured { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; padding: 0; margin: 0; list-style: none; }
+.feature-card { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.feature-card .band { height: 5.5rem; background: linear-gradient(135deg, var(--paper-2), var(--panel-2)); border-bottom: 1px solid var(--line); }
+.feature-card .body { padding: .85rem 1rem 1rem; display: flex; flex-direction: column; gap: .2rem; flex: 1; }
+.feature-card h3 { font-size: 1.05rem; }
+.feature-card .sci { font-style: italic; color: var(--muted); font-size: .82rem; }
+.feature-card .facts { margin: .5rem 0 .7rem; font-size: .84rem; color: var(--body); font-variant-numeric: tabular-nums; }
+.feature-card a { margin-top: auto; }
+
+@media (max-width: 980px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .featured { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .kpis, .featured { grid-template-columns: 1fr; }
+}
+
+/* ---------- about / statements ---------- */
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: var(--sp-3); }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.2rem; }
+.note h3 { font-size: 1.05rem; margin-bottom: .35rem; }
+.note p { margin: 0; font-size: .92rem; }
+.note .ic { width: 26px; height: 26px; color: var(--green-d); margin-bottom: .5rem; display: block; }
+@media (max-width: 880px) { .notes { grid-template-columns: 1fr; } }
+
+.prose { max-width: 44rem; }
+.prose h2 { font-size: 1.25rem; margin: var(--sp-3) 0 .4rem; }
+.prose h3 { font-size: 1.02rem; margin: var(--sp-2) 0 .3rem; }
+.prose p, .prose li { font-size: .95rem; }
+.prose ul, .prose ol { padding-left: 1.2rem; }
+.prose li { margin: .3rem 0; }
+.prose .updated { color: var(--muted); font-size: .84rem; }
+
+/* ---------- records ---------- */
+.filter-bar {
+  display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1.4fr) minmax(11rem, 1fr) auto;
+  align-items: end; gap: .9rem; padding: 1rem; margin-bottom: var(--sp-2);
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+@media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .filter-bar { grid-template-columns: 1fr; } }
+.result-count { margin: .1rem 0 .7rem; color: var(--muted); font-size: .88rem; }
+table.data th, table.data td { padding: var(--row-pad) .85rem; }
+
+/* ---------- explore ---------- */
+.explore-layout { display: grid; grid-template-columns: minmax(0, 1fr) 20rem; gap: var(--sp-2); align-items: start; }
+@media (max-width: 980px) { .explore-layout { grid-template-columns: 1fr; } }
+.explore-layout .map-card { height:min(82vh,760px); min-height:640px; }
+@media (max-width:980px) {
+  .explore-layout .map-card { height:min(74vh,680px); min-height:540px; }
+}
+@media (max-width:560px) {
+  .explore-layout .map-card { height:68vh; min-height:480px; }
+}
+.side-panel { display: flex; flex-direction: column; gap: var(--sp-2); }
+.splist { display: flex; flex-direction: column; gap: .25rem; max-height: 20rem; overflow: auto; padding: .35rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.splist button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .05rem;
+  min-height: 44px; width: 100%; padding: .45rem .6rem;
+  border: 1px solid transparent; border-radius: 9px;
+  background: none; color: var(--body); font: inherit; text-align: left; cursor: pointer;
+}
+.splist button:hover { background: var(--panel-2); }
+.splist button[aria-pressed="true"] { background: var(--paper-2); border-color: var(--green-d); color: var(--green-dd); font-weight: 700; }
+.splist .sci { font-style: italic; font-size: .78rem; color: var(--muted); font-weight: 400; }
+
+/* ---------- settings ---------- */
+.settings-group { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.1rem 1.2rem; margin-bottom: var(--sp-2); }
+.settings-group h2 { font-size: 1.1rem; }
+.settings-group p { font-size: .9rem; color: var(--muted); margin: .25rem 0 .8rem; }
+.choices { display: flex; flex-wrap: wrap; gap: .5rem; }
+.choices button {
+  min-height: 44px; padding: .5rem .9rem;
+  border: 1px solid var(--control-line); border-radius: 10px;
+  background: var(--panel); color: var(--body); font: inherit; font-weight: 600; cursor: pointer;
+}
+.choices button:hover { background: var(--panel-2); }
+.choices button[aria-pressed="true"] {
+  background: var(--btn-bg); color: var(--btn-fg); border-color: var(--btn-bg);
+}
+
+/* ---------- shared ---------- */
+.unavailable {
+  border: 1px dashed var(--control-line); border-radius: 12px;
+  padding: 1rem 1.1rem; background: var(--panel-2); color: var(--body); font-size: .9rem;
+}
+.unavailable strong { color: var(--ink); }
+
+/* ---------- charts ----------
+   Recharts writes colours as SVG presentation attributes, which cannot resolve var().
+   A CSS `fill`/`stroke` rule outranks a presentation attribute, so these are what
+   actually paint — and because they are tokens, the chart follows the theme. */
+.chart-plot .bar-default { fill: var(--chart); }
+.chart-plot .bar-selected { fill: var(--chart-2); }
+.chart-plot .chart-grid line { stroke: var(--line); }
+.chart-plot .chart-axis .recharts-cartesian-axis-tick-value { fill: var(--muted); }
+.chart-plot .recharts-cartesian-axis-line,
+.chart-plot .recharts-cartesian-axis-tick-line { stroke: var(--line); }
+.chart-plot .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: var(--panel) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--body) !important;
+}
+
+/* Horizontal "records by group" bars on the overview. The row is the graphical object
+   carrying the value, so its fill is a measured token, and every row states its number
+   in text as well — colour is never the only way to read it (WCAG 1.4.1). */
+.hbars { display: grid; gap: .45rem; margin: 0; }
+.hbar-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: center; gap: .6rem; font-size: .86rem; }
+.hbar-track { height: .8rem; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+.hbar-fill { height: 100%; background: var(--chart); }
+.hbar-value { font-variant-numeric: tabular-nums; color: var(--body); white-space: nowrap; }
+@media (max-width: 520px) { .hbar-row { grid-template-columns: 6rem minmax(0, 1fr); } .hbar-value { grid-column: 1 / -1; } }
+
+/* Overview effort chart. Fixed height with a non-uniform viewBox scale: the bars only
+   need to show shape, and the table below carries the numbers. */
+.year-bars { display: block; width: 100%; height: 160px; }
+.year-bars .bar-default { fill: var(--chart); }
+
+/* ---------- species picker ----------
+   Replaces the <select> that silently held the first 100 of 15,000-16,000 species. */
+.species-picker { display: flex; flex-direction: column; gap: .1rem; }
+.species-picker .result-count { margin: .4rem 0 .5rem; }
+.species-picker .splist { max-height: 22rem; }
+
+/* Grid-square summary: picker beside the table, stacking under it on narrow screens. */
+.records-layout { display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: var(--sp-2); align-items: start; }
+@media (max-width: 900px) { .records-layout { grid-template-columns: 1fr; } }
+.records-picker .panel-body h2 { font-size: 1.05rem; margin-bottom: .5rem; }
+.filter-bar--narrow { grid-template-columns: minmax(12rem, 1.6fr) minmax(11rem, 1fr); }
+@media (max-width: 600px) { .filter-bar--narrow { grid-template-columns: 1fr; } }

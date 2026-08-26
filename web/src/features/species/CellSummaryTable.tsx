@@ -2,50 +2,92 @@ import { toAsyncState, useDistributionCells } from "../../lib/api";
 import { precisionLabel } from "../../lib/geo/gridref";
 import { EmptyState, ErrorState, LoadingState } from "../../components/states/States";
 
-// The map's ACCESSIBLE EQUIVALENT (R5): the SAME CellCollection the map draws, rendered
-// as a table — grid square, resolution, record count, verified count. Keyboard and
-// screen-reader users obtain exactly what map users see. Scoped to one species.
-export function CellSummaryTable({ speciesId }: { speciesId: string }) {
-  const query = useDistributionCells({ species: speciesId });
-  const state = toAsyncState(query, (d) => d.features.length === 0);
+interface Props {
+  speciesId: string;
+  year?: number | null;
+  selectedCellId?: string | null;
+  onSelectCell?: (cellId: string | null) => void;
+}
 
-  const total = state.status === "ready" ? state.data.features.reduce((n, f) => n + f.properties.recordCount, 0) : 0;
+// The map's ACCESSIBLE EQUIVALENT (R5) AND its keyboard control surface (R2): the SAME
+// cells the map draws, as a table. Each row's grid-square button highlights that square on
+// the map (and updates the selected-cell card); the selected row is visually marked. No
+// auto-scroll — the persistent card carries the readout, so selecting never moves the page.
+export function CellSummaryTable({ speciesId, year = null, selectedCellId = null, onSelectCell }: Props) {
+  const query = useDistributionCells({ species: speciesId, year: year ?? undefined });
+  const state = toAsyncState(query, (d) => d.cells.length === 0);
+  const total = state.status === "ready" ? state.data.cells.reduce((n, c) => n + c.recordCount, 0) : 0;
 
   return (
     <section className="table-section" aria-labelledby="cells-heading">
       <h2 id="cells-heading">Distribution by grid square</h2>
       <p className="map-note">
         The same information the map shows above, as a table — one row per grid square
-        {state.status === "ready" ? ` (${state.data.features.length} squares, ${total.toLocaleString("en-GB")} records)` : ""}.
+        {state.status === "ready" ? ` (${state.data.cells.length} squares, ${total.toLocaleString("en-GB")} records)` : ""}.
+        {year === null ? " Select a square to highlight it on the map." : ` Filtered to ${year}. Select a square to highlight it on the map.`}
+        {state.status === "ready" && !state.data.verificationAvailable
+          ? " Verification information is not available from the source data."
+          : ""}
       </p>
       {state.status === "loading" ? (
         <div className="state"><LoadingState label="the distribution" /></div>
       ) : state.status === "error" ? (
         <ErrorState message={state.error.message} onRetry={() => void query.refetch()} />
       ) : state.status === "empty" ? (
-        <EmptyState message="No mapped records for this species yet." />
+        <EmptyState message={year === null ? "No mapped records for this species yet." : `No records mapped for ${year}.`} />
       ) : (
         <div className="tablewrap">
-          <div className="tscroll" tabIndex={0} role="group" aria-label="Distribution by grid square, scrollable">
+          <div
+            className="tscroll"
+            tabIndex={0}
+            role="group"
+            aria-label="Distribution by grid square, scrollable"
+            data-a11y-non-pointer-target
+          >
             <table className="data">
-              <caption>Every grid square shown on the map, with its record counts. Squares are 1 km; no exact locations.</caption>
+              <caption>
+                Every grid square shown on the map, with its record counts. Each row states its
+                capture resolution; no exact locations.
+                {!state.data.verificationAvailable
+                  ? " Verification information is unavailable and is not shown."
+                  : ""}
+              </caption>
               <thead>
                 <tr>
                   <th scope="col">Grid square</th>
-                  <th scope="col">Resolution</th>
+                  <th scope="col">Capture resolution</th>
                   <th scope="col" className="num">Records</th>
-                  <th scope="col" className="num">Verified</th>
+                  {state.data.verificationAvailable ? (
+                    <th scope="col" className="num">Verified</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
-                {state.data.features.map((f) => (
-                  <tr key={f.properties.cellId}>
-                    <td>{f.properties.cellId}</td>
-                    <td>{precisionLabel(f.properties.precisionMetres)}</td>
-                    <td className="num">{f.properties.recordCount.toLocaleString("en-GB")}</td>
-                    <td className="num">{f.properties.verifiedCount?.toLocaleString("en-GB") ?? "—"}</td>
-                  </tr>
-                ))}
+                {state.data.cells.map((c) => {
+                  const sel = c.cellId === selectedCellId;
+                  return (
+                    <tr key={c.cellId} className={sel ? "selected" : undefined}>
+                      <td>
+                        <button
+                          type="button"
+                          className="cell-select"
+                          aria-pressed={sel}
+                          data-a11y-pointer-target={`grid-cell-${c.cellId}`}
+                          data-a11y-same-action={`grid-cell-${c.cellId}`}
+                          onClick={() => onSelectCell?.(sel ? null : c.cellId)}
+                        >
+                          {c.cellId}
+                          <span className="visually-hidden"> — {sel ? "highlighted on the map; activate to clear" : "highlight on the map"}</span>
+                        </button>
+                      </td>
+                      <td>{precisionLabel(c.precisionMetres)}</td>
+                      <td className="num">{c.recordCount.toLocaleString("en-GB")}</td>
+                      {state.data.verificationAvailable ? (
+                        <td className="num">{c.verifiedCount?.toLocaleString("en-GB")}</td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
