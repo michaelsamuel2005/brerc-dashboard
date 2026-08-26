@@ -2,9 +2,10 @@
 
 Credential resolution deliberately retains Ting Ting's ``api_readonly``
 boundary: the API never falls back to the ETL destination credentials and it
-has no postgres/postgres default. Query code then adds two independent guards:
-every session is transaction-read-only, and routers may name only the five
-public serving views owned by the atomic publication store.
+has no postgres/postgres default. Production connections require verified TLS;
+every live session must use only the dedicated API group role and be
+transaction-read-only; routers may name only the five public serving views
+owned by the atomic publication store.
 """
 
 from __future__ import annotations
@@ -17,10 +18,10 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
-from app.config import DB_STATEMENT_TIMEOUT_MS
+from app import config
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -51,6 +52,19 @@ def _get_api_readonly() -> dict:
     return get_config().get("api_readonly", {})
 
 
+def _validate_production_tls(conninfo: str) -> str:
+    """Require certificate and hostname verification for production PostgreSQL."""
+    if not config.IS_PROD:
+        return conninfo
+
+    parameters = conninfo_to_dict(conninfo)
+    if parameters.get("sslmode") != "verify-full" or not parameters.get("sslrootcert"):
+        raise RuntimeError(
+            "Production database TLS requires sslmode=verify-full and an explicit sslrootcert."
+        )
+    return conninfo
+
+
 def _build_database_url() -> str:
     """Resolve an explicit read-only credential or fail without guessing.
 
@@ -76,17 +90,20 @@ def _build_database_url() -> str:
                 "The api_readonly block is incomplete. Set dbhostname, dbname, "
                 "user and password, or leave user/password empty to use DATABASE_URL."
             )
-        return make_conninfo(
+        conninfo = make_conninfo(
             user=user,
             password=password,
             host=host,
             port=api_readonly.get("port") or 5432,
             dbname=database,
+            sslmode=api_readonly.get("sslmode"),
+            sslrootcert=api_readonly.get("sslrootcert"),
         )
+        return _validate_production_tls(conninfo)
 
     explicit_url = os.getenv("DATABASE_URL")
     if explicit_url:
-        return explicit_url
+        return _validate_production_tls(explicit_url)
     raise RuntimeError(
         "No database credentials configured. Set api_readonly.user/"
         "api_readonly.password in config/safety.yaml, or use DATABASE_URL as "
@@ -134,7 +151,8 @@ def get_connection() -> psycopg.Connection:
         row_factory=dict_row,
         autocommit=False,
         options=(
-            f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS} -c default_transaction_read_only=on"
+            f"-c statement_timeout={config.DB_STATEMENT_TIMEOUT_MS} "
+            "-c default_transaction_read_only=on"
         ),
     )
     connection.read_only = True
@@ -149,16 +167,26 @@ def serving_connection() -> Iterator[psycopg.Connection]:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT current_setting('transaction_read_only') AS read_only, "
+                "pg_catalog.pg_has_role(current_user, 'brerc_api', 'USAGE') AS is_api, "
+                "pg_catalog.pg_has_role(current_user, 'brerc_loader', 'USAGE') AS is_loader, "
+                "pg_catalog.pg_has_role(current_user, 'brerc_martin', 'USAGE') AS is_martin, "
+                "pg_catalog.pg_has_role(current_user, 'brerc_monitor', 'USAGE') AS is_monitor, "
                 "pg_catalog.pg_has_role(current_user, 'pg_write_all_data', 'USAGE') "
                 "AS can_write_all"
             )
             session = cursor.fetchone()
+        if session is None or session.get("read_only") != "on":
+            raise RuntimeError("publication database session is not read-only")
         if (
-            session is None
-            or session.get("read_only") != "on"
+            session.get("is_api") is not True
+            or session.get("is_loader") is not False
+            or session.get("is_martin") is not False
+            or session.get("is_monitor") is not False
             or session.get("can_write_all") is not False
         ):
-            raise RuntimeError("publication database session is not read-only")
+            raise RuntimeError(
+                "publication database session is not using the dedicated read-only API role"
+            )
         yield connection
     finally:
         with suppress(Exception):

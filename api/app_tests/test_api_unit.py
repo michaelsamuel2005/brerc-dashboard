@@ -8,6 +8,7 @@ every request value must travel separately as a bound parameter.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,6 +16,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from psycopg.conninfo import conninfo_to_dict
 from pydantic import ValidationError
 
 from app import db
@@ -111,6 +114,19 @@ def _patch_router(module, connection: ScriptedConnection, release: ActiveRelease
     )
 
 
+def _api_session(**overrides: object) -> dict[str, object]:
+    session: dict[str, object] = {
+        "read_only": "on",
+        "is_api": True,
+        "is_loader": False,
+        "is_martin": False,
+        "is_monitor": False,
+        "can_write_all": False,
+    }
+    session.update(overrides)
+    return session
+
+
 class TestDatabaseBoundary:
     def test_only_public_serving_views_are_allow_listed(self) -> None:
         for relation in db.SERVING_RELATIONS:
@@ -126,7 +142,7 @@ class TestDatabaseBoundary:
                 db.assert_serving_relation(relation)
 
     def test_serving_connection_verifies_and_closes_a_read_only_session(self) -> None:
-        connection = ScriptedConnection([{"read_only": "on", "can_write_all": False}])
+        connection = ScriptedConnection([_api_session()])
         with (
             patch.object(db, "get_connection", return_value=connection),
             db.serving_connection() as yielded,
@@ -138,13 +154,37 @@ class TestDatabaseBoundary:
         assert "transaction_read_only" in connection.transcript[0][0]
 
     def test_serving_connection_rejects_a_write_capable_role_before_yield(self) -> None:
-        connection = ScriptedConnection([{"read_only": "on", "can_write_all": True}])
+        connection = ScriptedConnection([_api_session(read_only="off")])
         with (
             patch.object(db, "get_connection", return_value=connection),
             pytest.raises(RuntimeError, match="not read-only"),
             db.serving_connection(),
         ):
             raise AssertionError("a writable connection was yielded")
+
+        assert connection.rollback_called
+        assert connection.close_called
+
+    @pytest.mark.parametrize(
+        ("overrides", "reason"),
+        [
+            ({"is_api": False}, "missing API membership"),
+            ({"is_loader": True}, "loader membership"),
+            ({"is_martin": True}, "Martin membership"),
+            ({"is_monitor": True}, "monitor membership"),
+            ({"can_write_all": True}, "write-all membership"),
+        ],
+    )
+    def test_serving_connection_rejects_every_non_api_or_overlapping_role(
+        self, overrides: dict[str, object], reason: str
+    ) -> None:
+        connection = ScriptedConnection([_api_session(**overrides)])
+        with (
+            patch.object(db, "get_connection", return_value=connection),
+            pytest.raises(RuntimeError, match="dedicated read-only API role"),
+            db.serving_connection(),
+        ):
+            raise AssertionError(f"a session with {reason} was yielded")
 
         assert connection.rollback_called
         assert connection.close_called
@@ -162,6 +202,92 @@ class TestDatabaseBoundary:
                 "user": "reader",
                 "password": "read-secret",
             }
+
+    @pytest.mark.parametrize(
+        "database_url",
+        [
+            "postgresql://reader:pw@db.example/brerc",
+            "postgresql://reader:pw@db.example/brerc?sslmode=prefer",
+            "postgresql://reader:pw@db.example/brerc?sslmode=require",
+            "postgresql://reader:pw@db.example/brerc?sslmode=verify-full",
+        ],
+    )
+    def test_production_environment_url_requires_verified_tls(self, database_url: str) -> None:
+        with (
+            patch.object(db.config, "IS_PROD", True),
+            patch.object(db, "_get_api_readonly", return_value={}),
+            patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=True),
+            pytest.raises(RuntimeError, match="sslmode=verify-full.*sslrootcert"),
+        ):
+            db._build_database_url()
+
+    def test_production_environment_url_accepts_verified_tls(self) -> None:
+        database_url = (
+            "postgresql://reader:pw@db.example/brerc?"
+            "sslmode=verify-full&sslrootcert=%2Frun%2Fsecrets%2Fdatabase-ca.pem"
+        )
+        with (
+            patch.object(db.config, "IS_PROD", True),
+            patch.object(db, "_get_api_readonly", return_value={}),
+            patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=True),
+        ):
+            assert db._build_database_url() == database_url
+
+    def test_production_yaml_connection_requires_and_carries_verified_tls(self) -> None:
+        api_readonly = {
+            "dbhostname": "db.example",
+            "port": 5432,
+            "dbname": "brerc",
+            "user": "reader",
+            "password": "not-a-real-secret",
+            "sslmode": "verify-full",
+            "sslrootcert": "/run/secrets/database-ca.pem",
+        }
+        with (
+            patch.object(db.config, "IS_PROD", True),
+            patch.object(db, "_get_api_readonly", return_value=api_readonly),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            parameters = conninfo_to_dict(db._build_database_url())
+
+        assert parameters["sslmode"] == "verify-full"
+        assert parameters["sslrootcert"] == "/run/secrets/database-ca.pem"
+
+    @pytest.mark.parametrize(
+        "tls_parameters",
+        [
+            {},
+            {"sslmode": "require", "sslrootcert": "/run/secrets/database-ca.pem"},
+            {"sslmode": "verify-full"},
+        ],
+    )
+    def test_production_yaml_connection_rejects_missing_verified_tls(
+        self, tls_parameters: dict[str, str]
+    ) -> None:
+        api_readonly = {
+            "dbhostname": "db.example",
+            "port": 5432,
+            "dbname": "brerc",
+            "user": "reader",
+            "password": "not-a-real-secret",
+            **tls_parameters,
+        }
+        with (
+            patch.object(db.config, "IS_PROD", True),
+            patch.object(db, "_get_api_readonly", return_value=api_readonly),
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(RuntimeError, match="sslmode=verify-full.*sslrootcert"),
+        ):
+            db._build_database_url()
+
+    def test_development_connection_does_not_require_database_tls(self) -> None:
+        database_url = "postgresql://reader:pw@localhost/brerc"
+        with (
+            patch.object(db.config, "IS_PROD", False),
+            patch.object(db, "_get_api_readonly", return_value={}),
+            patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=True),
+        ):
+            assert db._build_database_url() == database_url
 
 
 class TestReleaseSelection:
@@ -246,6 +372,23 @@ class TestSummary:
 
         assert error.value.status_code == 404
         assert len(connection.transcript) == 1
+
+    def test_all_valid_year_buckets_are_returned_without_truncation(self) -> None:
+        year_rows = [{"record_year": year, "record_count": 1} for year in range(1900, 2201)]
+        connection = ScriptedConnection(
+            [
+                {"total_records": len(year_rows)},
+                {"total_species": 1},
+                year_rows,
+            ]
+        )
+        serving_patch, release_patch = _patch_router(summary, connection, _release())
+        with serving_patch, release_patch:
+            result = summary.summary(species=None)
+
+        assert len(result.recordsByYear) == 301
+        assert sum(bucket.count for bucket in result.recordsByYear) == result.totalRecords
+        assert connection.transcript[-1][1] == [None, None, 701]
 
 
 class TestRecords:
@@ -350,10 +493,40 @@ class TestDistribution:
             result = distribution.distribution_cells(species=species_id, year=2022)
 
         query, parameters = connection.transcript[0]
-        assert parameters == [species_id, 2022, 2022, distribution.config.MAX_CELLS]
+        assert parameters == [species_id, 2022, 2022, distribution.config.MAX_CELLS + 1]
         assert species_id not in query
         assert "geom" not in query.casefold()
         assert result.cells[0].verifiedCount == 3
+
+    def test_over_limit_distribution_fails_instead_of_returning_a_partial_map(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(distribution.config, "MAX_CELLS", 1)
+        connection = ScriptedConnection(
+            [
+                [
+                    {
+                        "cell_id": "ST57",
+                        "precision_metres": 10000,
+                        "record_count": 1,
+                        "verified_count": 1,
+                    },
+                    {
+                        "cell_id": "ST5872",
+                        "precision_metres": 1000,
+                        "record_count": 1,
+                        "verified_count": 1,
+                    },
+                ]
+            ]
+        )
+        serving_patch, release_patch = _patch_router(distribution, connection, _release())
+        with serving_patch, release_patch, pytest.raises(HTTPException) as error:
+            distribution.distribution_cells(species="S-1", year=None)
+
+        assert error.value.status_code == 503
+        assert "no partial map" in str(error.value.detail)
+        assert connection.transcript[0][1] == ["S-1", None, None, 2]
 
 
 class TestSpecies:
@@ -457,6 +630,25 @@ class TestStrictModelsAndSurface:
                 total=1,
             )
 
+    def test_aggregate_only_model_rejects_advertised_record_fields(self) -> None:
+        publication = RecordPublication(
+            mode="aggregates-only",
+            fields=PublicationFields(
+                abundance=False,
+                place=True,
+                recordType=False,
+                verification=False,
+            ),
+        )
+        with pytest.raises(ValidationError, match="cannot advertise record fields"):
+            RecordPage(
+                publication=publication,
+                items=[],
+                page=1,
+                pageSize=20,
+                total=0,
+            )
+
     def test_species_slugs_are_stable_url_safe_and_collision_aware(self) -> None:
         assert slugify("  Adder / Vipera berus  ") == "adder-vipera-berus"
         assert species_slug("Vipera berus", "S-1", ambiguous=False) == "vipera-berus"
@@ -477,3 +669,21 @@ class TestStrictModelsAndSurface:
             methods = getattr(route, "methods", set()) or set()
             assert methods <= {"GET", "HEAD", "OPTIONS"}
             assert not any(token in path.casefold() for token in forbidden)
+
+
+@pytest.mark.parametrize("path", ["/api/records", "/api/distribution/cells"])
+@pytest.mark.parametrize("year", [1499, 2201])
+def test_year_bounds_are_enforced_by_fastapi_before_database_access(path: str, year: int) -> None:
+    from app.main import app
+
+    def database_must_not_be_entered():
+        raise AssertionError("database dependency entered before query validation")
+
+    with (
+        patch.object(records, "serving_connection", side_effect=database_must_not_be_entered),
+        patch.object(distribution, "serving_connection", side_effect=database_must_not_be_entered),
+        TestClient(app) as client,
+    ):
+        response = client.get(path, params={"species": "S-1", "year": year})
+
+    assert response.status_code == 422

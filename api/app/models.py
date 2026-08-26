@@ -56,8 +56,12 @@ class RecordPage(StrictModel):
 
     @model_validator(mode="after")
     def validate_publication_boundary(self) -> RecordPage:
-        if self.publication.mode == "aggregates-only" and (self.items or self.total):
-            raise ValueError("aggregate-only releases cannot contain record rows")
+        if self.publication.mode == "aggregates-only":
+            if self.items or self.total:
+                raise ValueError("aggregate-only releases cannot contain record rows")
+            fields = self.publication.fields
+            if fields.abundance or fields.place or fields.recordType or fields.verification:
+                raise ValueError("aggregate-only releases cannot advertise record fields")
         if len(self.items) > self.pageSize or len(self.items) > self.total:
             raise ValueError("record page counts do not reconcile")
         return self

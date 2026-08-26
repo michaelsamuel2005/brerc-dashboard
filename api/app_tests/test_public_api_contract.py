@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -289,3 +290,19 @@ def test_api_role_cannot_write_and_guard_rejects_base_tables() -> None:
     ):
         with pytest.raises(ServingRelationError):
             assert_serving_relation(relation)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("BRERC_LOADER_TEST_DATABASE_URL"),
+    reason="requires the synthetic loader-role database URL",
+)
+def test_loader_credentials_are_rejected_before_the_api_yields_a_session() -> None:
+    from app import db
+
+    loader_url = os.environ["BRERC_LOADER_TEST_DATABASE_URL"]
+    with (
+        patch.object(db, "get_database_url", return_value=loader_url),
+        pytest.raises(RuntimeError, match="dedicated read-only API role"),
+        db.serving_connection(),
+    ):
+        raise AssertionError("the API yielded a session authenticated with loader credentials")

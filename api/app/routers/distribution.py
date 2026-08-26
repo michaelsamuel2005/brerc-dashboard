@@ -7,7 +7,7 @@ coarser public grid reference. Unscoped requests return no cells.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app import config
 from app.db import assert_serving_relation, serving_connection
@@ -50,9 +50,15 @@ def distribution_cells(
         with connection.cursor() as cursor:
             cursor.execute(
                 _CELLS_SQL,
-                [species, year, year, config.MAX_CELLS],
+                [species, year, year, config.MAX_CELLS + 1],
             )
             rows = cursor.fetchall()
+
+    if len(rows) > config.MAX_CELLS:
+        raise HTTPException(
+            status_code=503,
+            detail="Distribution exceeds the safe response limit; no partial map was returned",
+        )
 
     cells: list[GridCell] = []
     for row in rows:

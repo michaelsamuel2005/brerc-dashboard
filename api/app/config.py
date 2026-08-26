@@ -75,10 +75,15 @@ MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "100"))
 # Higher than a page size because the map legitimately draws many squares.
 MAX_CELLS = int(os.getenv("MAX_CELLS", "5000"))
 
-# Caps on the two grouped lists inside /api/summary. Bristol's records span
-# roughly a century, and there are a few dozen species groups, so these are
-# generous — they exist to bound the response, not to trim real data.
-MAX_YEAR_BUCKETS = int(os.getenv("MAX_YEAR_BUCKETS", "300"))
+# The publication contract permits years 1500 through 2200 inclusive.  A
+# summary can therefore contain at most 701 distinct year buckets.  Keep this
+# schema-derived ceiling non-configurable: a smaller deployment setting would
+# silently truncate a valid release and make its bucket total disagree with
+# its headline total.
+MAX_YEAR_BUCKETS = 2200 - 1500 + 1
+
+# Taxonomic groups remain unpublished in the current release contract, but
+# retain the bounded response setting for the reviewed future extension.
 MAX_GROUPS = int(os.getenv("MAX_GROUPS", "50"))
 
 
