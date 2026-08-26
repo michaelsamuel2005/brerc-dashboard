@@ -290,9 +290,7 @@ def begin_streaming_transform(
             f"reconciliation secret must contain at least {MIN_RECONCILIATION_SECRET_BYTES} bytes"
         )
     source_contract.require_mode(LoadMode.INITIAL)
-    policy.validate()
-    policy.assert_approved()
-    _validate_runtime_sensitivity_inputs(policy, dictionary)
+    validate_streaming_policy_inputs(policy=policy, dictionary=dictionary)
     source_contract.validate_initial(source_metadata)
     source_contract.validate_safety_mapping(columns, policy)
     projection = (*columns.required(), *columns.optional())
@@ -306,3 +304,19 @@ def begin_streaming_transform(
         reconciliation_secret=bytes(reconciliation_secret),
         _token=_SESSION_TOKEN,
     )
+
+
+def validate_streaming_policy_inputs(
+    *,
+    policy: PublicationPolicy,
+    dictionary: SpeciesDictionary | None,
+) -> None:
+    """Validate approval and the bound dictionary before any database socket.
+
+    The connector calls this during preflight ordering, then the transform calls
+    it again at construction. Repeating a deterministic, side-effect-free check
+    keeps the streaming boundary safe even if it is used independently.
+    """
+    policy.validate()
+    policy.assert_approved()
+    _validate_runtime_sensitivity_inputs(policy, dictionary)

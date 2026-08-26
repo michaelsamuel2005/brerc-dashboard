@@ -66,8 +66,50 @@ def main() -> int:
         )
         return 1
 
-    for module_name in module_names:
+    publication_modules = (
+        "etl.aggregate",
+        "etl.contract",
+        "etl.filtering",
+        "etl.gridref",
+        "etl.identifiers",
+        "etl.pipeline",
+        "etl.policy",
+        "etl.sensitivity",
+        "etl.source_contract",
+        "etl.species",
+        "etl.streaming",
+        "etl.view_identity",
+    )
+    missing_publication_modules = [
+        name for name in publication_modules if importlib.util.find_spec(name) is None
+    ]
+    if missing_publication_modules:
+        print(
+            f"FAIL: wheel omitted publication module(s): {missing_publication_modules}",
+            file=sys.stderr,
+        )
+        return 1
+    for module_name in publication_modules:
         importlib.import_module(module_name)
+
+    # This is intentionally a combined repository wheel, not a claim that the
+    # connector distribution contains only read-only code. Prove representative
+    # nightly/write-capable ETL modules are packaged without importing their
+    # host-only dependency/configuration path in the base-wheel smoke.
+    legacy_modules = (
+        "etl.aggregation.counts",
+        "etl.load.loader",
+        "etl.reconciliation.reconcile",
+    )
+    missing_legacy_modules = [
+        name for name in legacy_modules if importlib.util.find_spec(name) is None
+    ]
+    if missing_legacy_modules:
+        print(
+            f"FAIL: combined wheel omitted nightly ETL module(s): {missing_legacy_modules}",
+            file=sys.stderr,
+        )
+        return 1
 
     # The connector package must be present in the base wheel and importable
     # without PyYAML or Psycopg. Both dependencies are intentionally lazy and
@@ -103,7 +145,8 @@ def main() -> int:
         return 1
 
     print(f"OK: brerc-api {distribution.version} imports from {package_file.parent}.")
-    print(f"    imported {len(module_names)} packaged ETL module(s).")
+    print(f"    imported {len(publication_modules)} publication ETL module(s).")
+    print(f"    verified {len(legacy_modules)} packaged nightly ETL module(s).")
     print(f"    imported {len(connector_modules)} packaged connector module(s), dependency-free.")
     print(f"    licence notice: {licence_files[0]}")
     return 0

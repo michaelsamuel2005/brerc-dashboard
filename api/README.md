@@ -32,6 +32,12 @@ python -m pip install ".[connector-binary]"
 python -m unittest discover -s connector_tests -t . -p 'test_*.py'
 ```
 
+`pyproject.toml` builds one combined repository distribution. It includes the
+standard-library-only publication modules, the trusted connector, and the
+coexisting dependency-bearing nightly ETL subpackages; it is not described or
+deployed as a connector-only wheel. CI separately guards and smoke-tests the
+publication import boundary.
+
 ## What does **not** go here
 
 - ❌ Front‑end / UI code — that lives in `../web`.

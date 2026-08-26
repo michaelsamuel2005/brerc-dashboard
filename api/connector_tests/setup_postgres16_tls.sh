@@ -69,7 +69,13 @@ printf '%s\n' \
 printf '%s\n' \
   'localhost:5432:brerc_connector:brerc_column_reader:synthetic-column-password' \
   > "$output_directory/column.pgpass"
-chmod 600 "$output_directory/extract.pgpass" "$output_directory/column.pgpass"
+printf '%s\n' \
+  'localhost:5432:brerc_connector:brerc_startup:synthetic-startup-password' \
+  > "$output_directory/startup.pgpass"
+chmod 600 \
+  "$output_directory/extract.pgpass" \
+  "$output_directory/column.pgpass" \
+  "$output_directory/startup.pgpass"
 
 # Deliberately hostile defaults. The connector's explicit verify-full and
 # application_name parameters must override these service-file values.
@@ -81,6 +87,14 @@ printf '%s\n' \
   'user=brerc_extract' \
   'sslmode=disable' \
   'application_name=service-file-value-must-not-win' \
+  '' \
+  '[synthetic_startup]' \
+  'host=localhost' \
+  'port=5432' \
+  'dbname=brerc_connector' \
+  'user=brerc_startup' \
+  'options=-c role=brerc_extract' \
+  'sslmode=disable' \
   > "$output_directory/pg_service.conf"
 chmod 600 "$output_directory/pg_service.conf"
 
@@ -94,6 +108,7 @@ if [[ -n "${GITHUB_ENV:-}" ]]; then
     printf 'BRERC_SOURCE_SERVICE=synthetic_brerc\n'
     printf 'BRERC_SOURCE_PASSFILE=%s\n' "$output_directory/extract.pgpass"
     printf 'BRERC_COLUMN_PASSFILE=%s\n' "$output_directory/column.pgpass"
+    printf 'BRERC_STARTUP_PASSFILE=%s\n' "$output_directory/startup.pgpass"
     printf 'BRERC_PG_ADMIN_SECRET=%s\n' 'synthetic-admin-password'
     printf 'BRERC_SOURCE_SSLROOTCERT=%s\n' "$output_directory/ca.crt"
     printf 'PGSERVICEFILE=%s\n' "$output_directory/pg_service.conf"

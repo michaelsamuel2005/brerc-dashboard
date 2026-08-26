@@ -19,6 +19,7 @@ from pathlib import Path
 from brerc_source import (
     BRERC_SOURCE_APPLICATION_NAME,
     SourceConnectorConfig,
+    SourceProtocolError,
     TrustedPostgreSQLSourceConnector,
     load_source_config,
 )
@@ -60,6 +61,13 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
         config_path = Path(cls.temporary_directory.name, "configuration.yaml")
         config_path.write_text(configured, encoding="utf-8")
         cls.service_config = load_source_config(config_path)
+        startup_environment = dict(os.environ)
+        startup_environment["BRERC_SOURCE_SERVICE"] = "synthetic_startup"
+        startup_environment["BRERC_SOURCE_PASSFILE"] = os.environ["BRERC_STARTUP_PASSFILE"]
+        cls.startup_role_config = load_source_config(
+            config_path,
+            environ=startup_environment,
+        )
         service_block = """connection:
   mode: service
   service_env: BRERC_SOURCE_SERVICE
@@ -195,6 +203,15 @@ class TestPostgreSQL16TLSIntegration(unittest.TestCase):
         self.assertEqual(application_name, BRERC_SOURCE_APPLICATION_NAME)
         self.assertGreaterEqual(server_version, 160000)
         self.assertLess(server_version, 170000)
+
+    def test_service_profile_cannot_hide_an_unapproved_authenticated_role(self):
+        with self.assertRaises(SourceProtocolError) as raised:
+            TrustedPostgreSQLSourceConnector.from_config(self.startup_role_config).preflight(
+                source_contract=BRERC_MAIN_DATA_DASH,
+                columns=VIEW_COLUMNS,
+            )
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
 
     def test_public_direct_preflight_and_approved_named_cursor_extraction(self):
         direct_report = TrustedPostgreSQLSourceConnector.from_config(self.direct_config).preflight(

@@ -11,6 +11,7 @@ from etl.policy import PublicationPolicy
 from etl.streaming import StreamingTransformError, begin_streaming_transform
 from tests.test_source_contract import (
     RELEASE_READY_CONTRACT,
+    VIEW_DICTIONARY,
     VIEW_POLICY,
     metadata_from_contract,
     view_row,
@@ -39,6 +40,7 @@ def session(*, policy: PublicationPolicy | None = None):
         source_result_columns=(*COLUMNS.required(), *COLUMNS.optional()),
         policy=policy or VIEW_POLICY,
         reconciliation_secret=SECRET,
+        dictionary=VIEW_DICTIONARY,
     )
 
 
@@ -117,6 +119,7 @@ class TestStreamingTransform(unittest.TestCase):
                 source_result_columns=(*COLUMNS.required(), *COLUMNS.optional()),
                 policy=VIEW_POLICY,
                 reconciliation_secret=b"short",
+                dictionary=VIEW_DICTIONARY,
             )
         transform = session()
         row = source_row(unique_no="PRIVATE-IDENTIFIER")

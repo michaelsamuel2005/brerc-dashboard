@@ -120,6 +120,47 @@ jobs:
       - name: Run real Psycopg/PostgreSQL integration
         run: python -m unittest connector_tests.test_postgres16_integration
 
+  connector-package:
+    name: Connector Ruff and wheel smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned build and lint tools
+        run: >-
+          python -m pip install --disable-pip-version-check
+          "build==1.2.2.post1" "ruff==0.12.0"
+      - name: Lint and format the connector port
+        run: |
+          python -m ruff check \
+            brerc_source connector_tests etl/streaming.py \
+            tests/test_streaming.py scripts/smoke_installed_package.py
+          python -m ruff format --check \
+            brerc_source connector_tests etl/streaming.py \
+            tests/test_streaming.py scripts/smoke_installed_package.py
+      - name: Build the combined repository wheel
+        run: python -m build --wheel
+      - name: Install the wheel without source-tree fallback
+        run: |
+          python -m venv "${RUNNER_TEMP}/brerc-wheel-smoke"
+          "${RUNNER_TEMP}/brerc-wheel-smoke/bin/python" -m pip install \
+            --disable-pip-version-check --no-index --no-deps dist/*.whl
+      - name: Smoke the installed publication and connector boundary
+        working-directory: ${{ runner.temp }}
+        run: |
+          "${RUNNER_TEMP}/brerc-wheel-smoke/bin/python" -I \
+            "${GITHUB_WORKSPACE}/api/scripts/smoke_installed_package.py" \
+            --source-root "${GITHUB_WORKSPACE}/api"
+          "${RUNNER_TEMP}/brerc-wheel-smoke/bin/brerc-source" --help
+
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary
   # ---------------------------------------------------------------------------

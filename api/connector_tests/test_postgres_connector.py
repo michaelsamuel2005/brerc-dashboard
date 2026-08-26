@@ -37,7 +37,7 @@ from brerc_source.postgres import (
     _default_connection_factory,
 )
 from etl.pipeline import ColumnMap, ValidatedSourceRun
-from etl.policy import PublicationPolicy
+from etl.policy import InvalidPolicy, PublicationPolicy
 from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
 from etl.source_contract import BRERC_MAIN_DATA_DASH, SourceContract, SourceContractError
 from etl.species import SpeciesDictionary
@@ -184,6 +184,7 @@ def session_row() -> dict[str, object]:
         "tcp_transport": True,
         "tls_active": True,
         "database_name": "brerc_source_test",
+        "authenticated_role": "brerc_extract",
         "extraction_role": "brerc_extract",
     }
 
@@ -497,6 +498,26 @@ class TestConnectorSuccess(unittest.TestCase):
         self.assertIn('ORDER BY "unique_no" ASC NULLS FIRST', statements[row_query_index])
         self.assertFalse(any(entry[1] == "COMMIT" for entry in connection.transcript))
 
+    def test_unlisted_taxon_is_withheld_by_the_concrete_extraction_path(self):
+        contract = approved_contract()
+        unlisted = source_row() | {
+            "species_no": "UNLISTED-1",
+            "scientific_name": "Synthetic unlisted species",
+        }
+        connection = FakeConnection(row_batches=[[unlisted], []])
+        records, report = test_connector(
+            connector_config(contract),
+            connection_factory=lambda _: connection,
+        ).extract_initial(
+            source_contract=contract,
+            columns=VIEW_COLUMNS,
+            policy=approved_policy(),
+        )
+
+        self.assertEqual(records, [])
+        self.assertEqual(report.rows_in, 1)
+        self.assertEqual(report.withheld["species-not-permitted"], 1)
+
     def test_zero_rows_still_validate_the_cursor_header(self):
         contract = approved_contract()
         connection = FakeConnection(row_batches=[[]])
@@ -562,6 +583,7 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
                 reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
             )
             with stream as snapshot:
                 batches = list(snapshot)
@@ -570,6 +592,10 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
         self.assertEqual([len(batch) for batch in batches], [2, 1])
         self.assertEqual(evidence.rows_seen, 3)
         self.assertEqual(evidence.records_eligible_before_suppression, 3)
+        self.assertEqual(
+            evidence.observed_species_dictionary_sha256,
+            CONNECTOR_DICTIONARY.digest(),
+        )
         self.assertEqual(evidence.sensitivity_buckets, (("no", 2), ("yes", 1)))
         self.assertEqual(connection.row_cursor.fetchmany_calls, [100, 100, 100])
         self.assertEqual(connection.rollback_calls, 1)
@@ -602,7 +628,39 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
                 reconciliation_secret=b"short",
+                dictionary=CONNECTOR_DICTIONARY,
             )
+        self.assertEqual(calls, 0)
+
+    def test_missing_or_mismatched_dictionary_fails_before_a_socket(self):
+        contract = approved_contract()
+        calls = 0
+
+        def factory(_: object) -> FakeConnection:
+            nonlocal calls
+            calls += 1
+            return FakeConnection(row_batches=[])
+
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        mismatched = SpeciesDictionary.from_rows(
+            [{"SPECIES_NO": "other", "SCIENTIFIC": "Other species"}]
+        )
+        for dictionary in (None, mismatched):
+            with (
+                self.subTest(dictionary=dictionary is not None),
+                patch(
+                    "brerc_source.postgres._default_connection_factory",
+                    side_effect=factory,
+                ),
+                self.assertRaises(InvalidPolicy),
+            ):
+                connector._open_safe_initial_snapshot(
+                    source_contract=contract,
+                    columns=VIEW_COLUMNS,
+                    policy=approved_policy(),
+                    reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                    dictionary=dictionary,
+                )
         self.assertEqual(calls, 0)
 
     def test_early_consumer_failure_still_rolls_back_and_closes_source(self):
@@ -618,6 +676,7 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
                 reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
             )
             with self.assertRaisesRegex(RuntimeError, "target failed"), stream as snapshot:
                 next(snapshot)
@@ -641,6 +700,7 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
                 reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
             ) as snapshot,
         ):
             next(snapshot)
@@ -730,6 +790,7 @@ class TestFailClosedOrdering(unittest.TestCase):
     def test_wrong_database_or_role_fails_before_catalogue_or_rows(self):
         for change in (
             {"database_name": "lookalike"},
+            {"authenticated_role": "startup_role"},
             {"extraction_role": "postgres"},
             {"transaction_isolation": "read committed"},
             {"transaction_read_only": "off"},

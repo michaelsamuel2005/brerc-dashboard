@@ -100,10 +100,13 @@ connection method:
 - a protected libpq service name, recommended for BRERC; or
 - explicit host, port, database and user environment variables.
 
-The password, if password authentication is used, belongs in a protected libpq passfile or secret
-manager. It must not appear in YAML, a command argument, shell history, email, logs or Git. The
-connector rejects `PGPASSWORD` both while loading configuration and immediately before a
-connection, so an ambient process password cannot silently override the passfile-only design.
+The password, if password authentication is used, belongs in a protected libpq passfile, protected
+service profile, or secret manager. A libpq service file can itself contain a password, so both it
+and the explicitly configured passfile are part of the credential trust boundary and require the
+same restricted ownership and storage. Credentials must not appear in YAML, a command argument,
+shell history, email, logs or Git. The connector rejects `PGPASSWORD` both while loading
+configuration and immediately before a connection, so an ambient process password cannot silently
+override the reviewed files.
 Require TCP with TLS certificate and hostname verification (`sslmode=verify-full`). The
 implemented connector rejects a Unix socket, a non-TLS session and every weaker TLS mode. A
 service-mode deployment must export the standard `PGSERVICEFILE` environment variable with the
@@ -112,6 +115,11 @@ absolute path to its protected service file. Psycopg/libpq reads that process va
 `source_environment` value in configuration or an approval file is a comparison label, not proof
 of the server: Shankar must independently confirm the approved service/endpoint and the deployment
 must prevent operators from redirecting it to an unapproved clone.
+
+At runtime the connector requires both PostgreSQL `session_user` (the authenticated login) and
+`current_user` (the effective role) to equal the approved extraction role. This rejects a service
+profile that logs in through a broader startup role and uses `options` to switch into the expected
+role after authentication.
 
 The connector's configuration parser is strict. Duplicate keys, unknown keys, YAML aliases and
 YAML 1.1 shorthand/coercion forms are rejected; only lowercase JSON-style booleans/null and

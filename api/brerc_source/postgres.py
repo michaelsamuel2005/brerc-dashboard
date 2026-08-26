@@ -36,6 +36,7 @@ from etl.streaming import (
     StreamingTransformError,
     StreamingTransformSession,
     begin_streaming_transform,
+    validate_streaming_policy_inputs,
 )
 from etl.view_identity import EXPECTED_CAPTURE_SESSION, ViewCaptureEvidence, ViewIdentityError
 
@@ -109,6 +110,7 @@ SELECT
         false
     ) AS tls_active,
     current_database() AS database_name,
+    session_user AS authenticated_role,
     current_user AS extraction_role
 """.strip()
 
@@ -119,6 +121,7 @@ SESSION_HEADER = (
     "tcp_transport",
     "tls_active",
     "database_name",
+    "authenticated_role",
     "extraction_role",
 )
 
@@ -359,6 +362,17 @@ def _metadata_from_evidence(evidence: ViewCaptureEvidence) -> SourceMetadata:
     )
 
 
+def _validate_connector_dictionary(
+    policy: PublicationPolicy,
+    dictionary: SpeciesDictionary | None,
+) -> SpeciesDictionary:
+    """Require the approved dictionary before any source connection is opened."""
+    if dictionary is None or policy.species_dictionary_sha256 is None:
+        raise InvalidPolicy("trusted source extraction requires a policy-bound species dictionary")
+    validate_streaming_policy_inputs(policy=policy, dictionary=dictionary)
+    return dictionary
+
+
 class _SafeInitialSnapshot:
     """Private context/iterator yielding only already-generalised row batches."""
 
@@ -499,12 +513,16 @@ class _SafeInitialSnapshot:
                 approval_digest = self._policy.approval_digest
                 if approval_digest is None:
                     raise SourceProtocolError()
+                dictionary = self._dictionary
+                if dictionary is None:
+                    raise SourceProtocolError()
                 self._snapshot_evidence = SafeSourceSnapshotEvidence(
                     captured_at_utc=evidence.captured_at_utc,
                     contract_version=self._source_contract.version,
                     contract_sha256=self._source_contract.digest(),
                     policy_version=self._policy.version,
                     policy_approval_digest=approval_digest,
+                    observed_species_dictionary_sha256=dictionary.digest(),
                     observed_definition_sha256=evidence.observation.definition_sha256,
                     observed_identity_sha256=evidence.identity_sha256,
                     result_columns=header,
@@ -617,6 +635,7 @@ class TrustedPostgreSQLSourceConnector:
         source_contract.require_mode(LoadMode.INITIAL)
         policy.validate()
         policy.assert_approved()
+        dictionary = _validate_connector_dictionary(policy, dictionary)
         source_contract.assert_release_ready()
         source_contract.validate_safety_mapping(columns, policy)
         projection = (*columns.required(), *columns.optional())
@@ -659,6 +678,7 @@ class TrustedPostgreSQLSourceConnector:
         source_contract.require_mode(LoadMode.INITIAL)
         policy.validate()
         policy.assert_approved()
+        dictionary = _validate_connector_dictionary(policy, dictionary)
         source_contract.assert_release_ready()
         source_contract.validate_safety_mapping(columns, policy)
         projection = (*columns.required(), *columns.optional())
@@ -972,7 +992,10 @@ class TrustedPostgreSQLSourceConnector:
             raise SourceProtocolError()
         if row["database_name"] != self._config.runtime.expected_database:
             raise SourceProtocolError()
-        if row["extraction_role"] != self._config.runtime.expected_role:
+        if (
+            row["authenticated_role"] != self._config.runtime.expected_role
+            or row["extraction_role"] != self._config.runtime.expected_role
+        ):
             raise SourceProtocolError()
         for name, expected in EXPECTED_CAPTURE_SESSION.items():
             if row[name] != expected:

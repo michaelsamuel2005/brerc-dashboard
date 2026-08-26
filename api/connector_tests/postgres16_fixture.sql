@@ -141,6 +141,14 @@ GRANT CONNECT ON DATABASE brerc_connector TO brerc_extract;
 GRANT USAGE ON SCHEMA dashboard TO brerc_extract;
 GRANT SELECT ON TABLE dashboard.main_data_dash TO brerc_extract;
 
+-- A deliberately unsafe service-profile pivot. It may SET ROLE to the approved
+-- extractor, so current_user alone would look valid while session_user reveals
+-- the unapproved authenticated login.
+CREATE ROLE brerc_startup LOGIN PASSWORD 'synthetic-startup-password'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+GRANT CONNECT ON DATABASE brerc_connector TO brerc_startup;
+GRANT brerc_extract TO brerc_startup;
+
 CREATE ROLE brerc_column_reader LOGIN PASSWORD 'synthetic-column-password'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 ALTER ROLE brerc_column_reader SET default_transaction_read_only = on;
