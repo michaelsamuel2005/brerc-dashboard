@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import os
-import shutil
+import re
 import subprocess
 import sys
 import zipfile
-from email.parser import BytesParser
 from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -21,61 +21,50 @@ PINNED_API_REQUIREMENTS = (
 )
 
 
-def _build_app_only_wheel(tmp_path: Path) -> Path:
-    context = tmp_path / "context"
-    context.mkdir()
-    for name in ("pyproject.toml", "README.md", "LICENSE"):
-        shutil.copy2(API_ROOT / name, context / name)
-    shutil.copytree(API_ROOT / "app", context / "app")
+def _api_requirements_from_project() -> tuple[str, ...]:
+    """Read the API extra without adding a TOML dependency on Python 3.10."""
 
-    wheel_dir = tmp_path / "wheel"
-    wheel_dir.mkdir()
-    environment = {
-        **os.environ,
-        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-        "PIP_NO_INDEX": "1",
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    result = subprocess.run(  # noqa: S603 - fixed interpreter and arguments
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "wheel",
-            "--no-deps",
-            "--no-build-isolation",
-            "--wheel-dir",
-            str(wheel_dir),
-            ".",
-        ],
-        cwd=context,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    wheels = tuple(wheel_dir.glob("*.whl"))
-    assert len(wheels) == 1
-    return wheels[0]
+    pyproject = (API_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    optional_dependencies = pyproject.partition("[project.optional-dependencies]")[2]
+    optional_dependencies = optional_dependencies.partition("\n[")[0]
+    match = re.search(r"(?ms)^api\s*=\s*(\[.*?^\])", optional_dependencies)
+    assert match is not None
+    requirements = ast.literal_eval(match.group(1))
+    assert isinstance(requirements, list)
+    assert all(isinstance(requirement, str) for requirement in requirements)
+    return tuple(requirements)
 
 
-def test_isolated_context_packages_the_complete_app_and_no_write_modules(tmp_path: Path) -> None:
-    wheel = _build_app_only_wheel(tmp_path)
-    with zipfile.ZipFile(wheel) as archive:
+def _build_app_only_runtime_archive(tmp_path: Path) -> tuple[Path, set[str]]:
+    """Reproduce the source boundary used by the public API container.
+
+    The Docker image copies ``app/`` directly; it does not install the combined
+    repository wheel. Keeping this regression test on the same boundary also
+    makes it independent of a runner's ambient PEP 517 backend installation.
+    """
+
+    source_files = tuple(sorted((API_ROOT / "app").rglob("*.py")))
+    expected_names = {source.relative_to(API_ROOT).as_posix() for source in source_files}
+    archive_path = tmp_path / "brerc-api-runtime.zip"
+    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for source in source_files:
+            archive.write(source, source.relative_to(API_ROOT).as_posix())
+    return archive_path, expected_names
+
+
+def test_isolated_runtime_contains_the_complete_app_and_no_write_modules(tmp_path: Path) -> None:
+    runtime_archive, expected_names = _build_app_only_runtime_archive(tmp_path)
+    with zipfile.ZipFile(runtime_archive) as archive:
         names = set(archive.namelist())
-        metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
-        metadata = BytesParser().parsebytes(archive.read(metadata_name))
 
+    assert names == expected_names
     assert "app/__init__.py" in names
     assert "app/main.py" in names
     assert "app/routers/species.py" in names
     for forbidden in ("etl/", "brerc_loader/", "brerc_source/"):
         assert not any(name.startswith(forbidden) for name in names)
 
-    requirements = tuple(metadata.get_all("Requires-Dist", []))
-    for pin in PINNED_API_REQUIREMENTS:
-        assert any(requirement.startswith(f"{pin};") for requirement in requirements)
+    assert _api_requirements_from_project() == PINNED_API_REQUIREMENTS
 
     probe = """
 import importlib.abc
@@ -95,7 +84,7 @@ assert not {'etl', 'brerc_loader', 'brerc_source'}.intersection(sys.modules)
     environment = {
         **os.environ,
         "APP_ENV": "prod",
-        "PYTHONPATH": str(wheel),
+        "PYTHONPATH": str(runtime_archive),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     result = subprocess.run(  # noqa: S603 - fixed interpreter and arguments
