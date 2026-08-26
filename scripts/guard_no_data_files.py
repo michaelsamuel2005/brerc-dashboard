@@ -130,7 +130,9 @@ FORBIDDEN_EXACT_NAMES: frozenset[str] = frozenset(
 FORBIDDEN_SECRET_SUFFIXES: frozenset[str] = frozenset(
     {".key", ".pgpass", ".pg_service.conf"}
 )
-FORBIDDEN_EXACT_PATHS: frozenset[str] = frozenset({"api/configuration.yaml"})
+FORBIDDEN_EXACT_PATHS: frozenset[str] = frozenset(
+    {"api/configuration.yaml", "api/loader.configuration.yaml"}
+)
 
 # A renamed binary must not evade the suffix check. Read only a small prefix;
 # the guard reports the path, never file contents.

@@ -151,6 +151,8 @@ repository. The tracked template is deliberately not runnable. It references:
 
 - the reviewed source-connector configuration;
 - exact bytes and SHA-256 of an approved publication-policy artifact;
+- exact bytes and raw SHA-256 of the controlled species-dictionary CSV, whose
+  normalised semantic digest must also match the approved policy;
 - an independent public-record HMAC secret;
 - initial source-count activation bounds;
 - the expected target database, role and independently recorded environment UUID;

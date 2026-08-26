@@ -25,6 +25,13 @@ operation are documented in
 It is fully exercised with synthetic PostgreSQL 16/TLS fixtures; a real BRERC
 acceptance run remains a controlled production activity.
 
+The atomic destination loader lives in `api/brerc_loader`; its PostgreSQL/PostGIS
+schema is `db/migrations/0001_publication_store.sql`, and its operator runbook is
+[`docs/POSTGRES_RELEASE_LOADER.md`](../docs/POSTGRES_RELEASE_LOADER.md). The
+installed command is `brerc-load`. It will not contact either database unless
+the approved policy, controlled species dictionary, source contract and target
+identity all pass their fail-closed preflight checks.
+
 Run the source-connector checks from this directory:
 
 ```bash
