@@ -1,0 +1,121 @@
+# Deployment/source mapping only. Copy this outside source control as
+# configuration.yaml. The real file is blocked by both .gitignore and CI.
+#
+# Values ending in `_env` are ENVIRONMENT VARIABLE NAMES, never credentials.
+# The versioned schema and publication safety rules remain enforced in code;
+# this file cannot waive them.
+
+contract_version: brerc-main-data-dash-2026-07-31
+
+# These are finite operational limits, not release approvals. The environment,
+# database and role labels are checked against the connected session, but BRERC
+# must still independently approve the live view identity before release.
+runtime:
+  source_environment: brerc-production
+  expected_database: REPLACE_WITH_BRERC_DATABASE_NAME
+  expected_role: REPLACE_WITH_READ_ONLY_ROLE_NAME
+  batch_size: 5000
+  connect_timeout_seconds: 15
+  lock_timeout_ms: 30000
+  statement_timeout_ms: 3600000
+  idle_in_transaction_session_timeout_ms: 60000
+  total_timeout_seconds: 7200
+
+# Choose exactly one connection mode. This template uses a protected libpq
+# service. Every `_env` value below is the NAME of an environment variable whose
+# value is supplied by BRERC's scheduler/secret store. Passwords and DSNs are
+# never valid YAML values. The passfile, service file and CA file paths must be
+# absolute. TCP certificate and hostname verification cannot be weakened.
+connection:
+  mode: service
+  service_env: BRERC_SOURCE_SERVICE
+  # libpq/Psycopg reads this standard process variable directly; it is not a
+  # connection keyword. Its value remains a deployment-controlled absolute path.
+  service_file_env: PGSERVICEFILE
+  passfile_env: BRERC_SOURCE_PASSFILE
+  sslrootcert_env: BRERC_SOURCE_SSLROOTCERT
+  sslmode: verify-full
+
+source:
+  engine: postgresql
+  schema: dashboard
+  object: main_data_dash
+  object_type: view
+  strict_schema: true
+
+# Complete ordered column list confirmed in the client PDF. Types, lengths,
+# precision and scale are pinned by api/etl/source_contract.py.
+source_columns:
+  - scientific_name
+  - common_name
+  - grid_ref
+  - place
+  - date_of_record
+  - abundance
+  - sex_stage
+  - record_type
+  - start_date
+  - species_no
+  - precise_date
+  - vague_date
+  - vitality
+  - digital_or_paper
+  - date_entered
+  - bnes
+  - bcc
+  - sglos
+  - nsom
+  - year_end
+  - year_start
+  - end_date
+  - comments
+  - source
+  - bliss
+  - taxa_brerc
+  - unique_no
+  - licence
+  - sensitive
+  - taxo_id
+  - easting
+  - northing
+  - taxa_nb
+  - brerc_status
+  - national_status
+  - legal_protection
+  - bap
+  - rspb
+  - brerc_notable
+
+# Explicit extraction projection: no SELECT *. Precise coordinates, free text,
+# place and other unused private fields are deliberately not fetched.
+projection:
+  - unique_no
+  - species_no
+  - scientific_name
+  - grid_ref
+  - year_end
+  - common_name
+  - abundance
+  - record_type
+  - licence
+  - sensitive
+
+mapping:
+  record_id: unique_no
+  species_id: species_no
+  scientific_name: scientific_name
+  grid_ref: grid_ref
+  year: year_end
+  common_name: common_name
+  abundance: abundance
+  record_type: record_type
+  licence: licence
+  sensitivity: sensitive
+  place: null
+  verified: null
+  source: null
+
+incremental:
+  requested_modified_column: date_mdb_modified
+  status: blocked
+  reason: requires-a-new-versioned-source-contract-and-loader

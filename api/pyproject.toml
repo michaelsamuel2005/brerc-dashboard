@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brerc-api"
+version = "0.1.0"
+description = "BRERC public dashboard — ETL safety boundary and read-only API"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+
+# 3.10 is the floor because that is what the current development machine runs.
+# CI tests 3.10 through 3.13 so a version-specific behaviour change surfaces
+# here rather than on someone else's laptop or on BRERC's server.
+requires-python = ">=3.10"
+
+# DELIBERATELY EMPTY.
+#
+# `api/etl` is the safety boundary and is written against the standard library
+# only. That is not an aesthetic preference: the gate decides what locations
+# reach the public, and it must not depend on a package whose parsing behaviour
+# can change under a minor version bump. `scripts/guard_stdlib_only.py` enforces
+# this in CI, so adding an import here is a deliberate act with a reviewer.
+dependencies = []
+
+[project.scripts]
+brerc-source = "brerc_source.cli:main"
+
+[project.optional-dependencies]
+# Exploratory analysis only — notebooks, one-off inspection of a new extract.
+# NEVER imported by the gate. `cleaning.py` is the only module that touches
+# pandas, and it is explicitly not part of the boundary.
+explore = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",   # .xlsx
+    "xlrd>=2.0",       # .xls, which the BRERC exports actually use
+]
+dev = [
+    # Keep local lint/format output identical to CI. Upgrade deliberately.
+    "ruff==0.12.0",
+]
+# Database/YAML dependencies live in the adapter package, not the ETL safety
+# boundary. Use the local C/libpq build for a maintained production host. The
+# self-contained binary wheel is the reproducible CI and local-development path.
+connector-c = [
+    "psycopg[c]==3.3.4",
+    "PyYAML==6.0.3",
+]
+connector-binary = [
+    "psycopg[binary]==3.3.4",
+    "PyYAML==6.0.3",
+]
+
+[tool.setuptools]
+packages = ["etl", "brerc_source"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["."]
+extend-exclude = ["build"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # import sorting
+    "B",     # bugbear — mutable defaults, loop-variable binding, silent except
+    "C4",    # comprehensions
+    "UP",    # pyupgrade
+    "SIM",   # simplification
+    "RUF",   # ruff-specific
+    "S",     # bandit — this is a data-protection boundary; flag the obvious
+    "T20",   # flake8-print: no print() in the boundary. A diagnostic that
+             # prints record content puts real grid references and recorder
+             # attributions into CI logs and terminal scrollback.
+    "PTH",   # prefer pathlib
+    "A",     # builtin shadowing
+]
+ignore = [
+    "S101",  # assert — used deliberately in the belt-and-braces checks
+    "E501",  # line length is handled by the formatter, not the linter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may shadow builtins in fixtures and use assert freely.
+#
+# RUF001 (ambiguous unicode) is disabled for tests specifically because the
+# verdict corpora contain the real data's punctuation: BRERC exports use an
+# EN DASH in "Accepted – correct". That is the string the parser must handle, so
+# normalising it to a hyphen would make the test stop testing the real case.
+# RUF001 stays ON everywhere else, where a homoglyph is a genuine smell.
+"test_*.py" = ["S101", "A002", "A003", "RUF001"]
+# The guards are command-line tools; printing is their whole job.
+"scripts/*.py" = ["T20"]
+# The operator CLI's only output is its fixed, redacted JSON status envelope.
+"brerc_source/cli.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["brerc_source", "etl"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
