@@ -21,10 +21,10 @@ TLS PostgreSQL 16 source
   -> active-only serving views
 ```
 
-The harness is implemented but has **not been executed in this repository**.
-Its presence is not scale evidence. A retained `status=passed` artifact from an
-approved run is required before the five-million-row release blocker can be
-closed.
+Historical evidence from the archived canonical branch does not establish the
+ported implementation on protected `main`. A retained `status=passed` artifact
+whose `gitCommit` is the exact loader/store merge SHA is required before the
+five-million-row release blocker can be closed.
 
 ## Scope limitation
 
@@ -56,6 +56,12 @@ The workflow requires the operator to type:
 ```text
 RUN_EXACTLY_5000000_SYNTHETIC_ROWS
 ```
+
+It also requires the exact 40-character merge commit for the loader/store port.
+Dispatch the workflow with `main` selected only after that commit is present on
+protected `main`, and before another commit moves the branch. The validation job
+refuses any non-`main` ref or any `github.sha` that differs from the supplied
+merge SHA. The evidence document independently records that checked-out commit.
 
 It also requires explicit positive limits for:
 

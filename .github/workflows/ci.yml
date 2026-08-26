@@ -30,6 +30,9 @@ on:
     types: [checks_requested]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # REPOSITORY SAFETY — no client extracts, credentials or controlled evidence
@@ -46,9 +49,14 @@ jobs:
         with:
           python-version: "3.13"
       - name: Test the tracked-file guard
-        run: python -m unittest scripts.test_guard_no_data_files
+        run: >-
+          python -m unittest
+          scripts.test_guard_no_data_files
+          scripts.test_guard_workflow_dependencies
       - name: Reject tracked client data and source secrets
         run: python scripts/guard_no_data_files.py --repo-root .
+      - name: Smoke-test every workflow's repository dependencies
+        run: python scripts/guard_workflow_dependencies.py --repo-root .
 
   # ---------------------------------------------------------------------------
   # TRUSTED SOURCE — unit tests and a real PostgreSQL 16/TLS boundary test
@@ -138,14 +146,16 @@ jobs:
         run: >-
           python -m pip install --disable-pip-version-check
           "build==1.2.2.post1" "ruff==0.12.0"
-      - name: Lint and format the connector port
+      - name: Lint and format the connector and loader ports
         run: |
           python -m ruff check \
-            brerc_source connector_tests etl/streaming.py \
-            tests/test_streaming.py scripts/smoke_installed_package.py
+            brerc_source connector_tests brerc_loader loader_tests \
+            etl/streaming.py tests/test_streaming.py \
+            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py
           python -m ruff format --check \
-            brerc_source connector_tests etl/streaming.py \
-            tests/test_streaming.py scripts/smoke_installed_package.py
+            brerc_source connector_tests brerc_loader loader_tests \
+            etl/streaming.py tests/test_streaming.py \
+            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py
       - name: Build the combined repository wheel
         run: python -m build --wheel
       - name: Install the wheel without source-tree fallback
@@ -160,6 +170,103 @@ jobs:
             "${GITHUB_WORKSPACE}/api/scripts/smoke_installed_package.py" \
             --source-root "${GITHUB_WORKSPACE}/api"
           "${RUNNER_TEMP}/brerc-wheel-smoke/bin/brerc-source" --help
+          "${RUNNER_TEMP}/brerc-wheel-smoke/bin/brerc-load" --help
+
+  loader-unit:
+    name: Atomic release loader (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the pinned PostgreSQL and YAML adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Run release-loader unit and static migration tests
+        run: >-
+          python -m unittest discover
+          --start-directory loader_tests
+          --top-level-directory .
+          --pattern "test_*.py"
+      - name: Confirm the publication core stayed standard-library-only
+        run: python scripts/guard_stdlib_only.py
+
+  postgis-loader-integration:
+    name: PostgreSQL 16/PostGIS atomic loader integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      sourcepg:
+        image: >-
+          postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
+        env:
+          POSTGRES_DB: brerc_loader_source_e2e
+          POSTGRES_PASSWORD: synthetic-source-admin-password
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_loader_source_e2e"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      postgis:
+        image: >-
+          postgis/postgis:16-3.5@sha256:cfbd2d2a5ecded5af7afaad719fa2117096f59ac8d0d9430e157eeffcd82da2e
+        env:
+          POSTGRES_DB: brerc_ui_integration
+          POSTGRES_PASSWORD: synthetic-admin-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname brerc_ui_integration"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the pinned PostgreSQL and YAML adapter
+        run: python -m pip install --disable-pip-version-check ".[connector-binary]"
+      - name: Provision the separate synthetic TLS source
+        env:
+          SOURCE_CONTAINER: ${{ job.services.sourcepg.id }}
+        run: |
+          bash loader_tests/setup_postgres16_e2e_source.sh \
+            "${SOURCE_CONTAINER}" \
+            loader_tests/postgres16_e2e_source_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgres16-loader-source" \
+            55432
+      - name: Provision TLS, reviewed roles and publication migration
+        env:
+          POSTGIS_CONTAINER: ${{ job.services.postgis.id }}
+        run: |
+          bash loader_tests/setup_postgis16_destination.sh \
+            "${POSTGIS_CONTAINER}" \
+            ../db/roles.sql \
+            ../db/migrations/0001_publication_store.sql \
+            loader_tests/postgis16_destination_fixture.sql \
+            "${RUNNER_TEMP}/brerc-postgis16-destination"
+      - name: Run the real atomic destination lifecycle
+        run: >-
+          python -m unittest
+          loader_tests.test_postgis16_destination_integration
 
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary

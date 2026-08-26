@@ -244,6 +244,7 @@ class TestScaleWorkflowAndRunbook(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         event_block = text.split("on:", 1)[1].split("permissions:", 1)[0]
         self.assertIn("workflow_dispatch:", event_block)
+        self.assertIn("expected_git_sha:", event_block)
         self.assertNotIn("push:", event_block)
         self.assertNotIn("pull_request:", event_block)
         self.assertIn("group: brerc-loader-scale-acceptance-global", text)
@@ -252,6 +253,9 @@ class TestScaleWorkflowAndRunbook(unittest.TestCase):
         self.assertIn("timeout-minutes: 360", text)
         self.assertIn("needs: validate", text)
         self.assertNotIn("if: ${{ inputs.confirm", text)
+        self.assertIn("refs/heads/main", text)
+        self.assertIn('"${EXPECTED_GIT_SHA}" = "${WORKFLOW_GIT_SHA}"', text)
+        self.assertIn("'^[0-9a-f]{40}$'", text)
         self.assertIn("SCALE_INPUT_INVALID", text)
         self.assertIn("github.run_attempt", text)
         self.assertIn("if-no-files-found: error", text)
@@ -294,9 +298,10 @@ class TestScaleWorkflowAndRunbook(unittest.TestCase):
         ):
             self.assertIn(value, text)
 
-    def test_runbook_does_not_claim_unexecuted_or_replacement_evidence(self) -> None:
+    def test_runbook_requires_exact_main_evidence_and_does_not_claim_replacement(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")
-        self.assertIn("has **not been executed", text)
+        self.assertIn("archived canonical branch does not establish", text)
+        self.assertIn("exact loader/store merge SHA", text)
         self.assertIn("cannot prove", text)
         self.assertIn("old-release-to-new-release replacement", text)
         self.assertIn("missing metric", text)
