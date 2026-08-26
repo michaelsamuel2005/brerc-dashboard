@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from etl.safety_gate.classification import (
     classify_chunk,
@@ -145,14 +146,8 @@ def test_classify_chunk_source_sensitive_is_case_insensitive(
     ]
 
 
-def test_classify_chunk_handles_missing_sensitive_column(
-    monkeypatch,
-):
-    # Confirms supplied CSV data can still be processed when the
-    # source does not provide a "sensitive" column.
-    _patch_rules(monkeypatch)
-
-    df = pd.DataFrame(
+def _chunk_without_sensitive_column():
+    return pd.DataFrame(
         {
             "species_no": [999],
             "record_type": ["sighting"],
@@ -160,12 +155,53 @@ def test_classify_chunk_handles_missing_sensitive_column(
         }
     )
 
-    result = classify_chunk(df)
+
+def test_classify_chunk_processes_a_source_declared_to_have_no_sensitive_column(
+    monkeypatch,
+):
+    # This is the original test_classify_chunk_handles_missing_sensitive_column,
+    # unchanged in what it asserts: supplied CSV data with no "sensitive" column
+    # must still be processable, and must come out not-sensitive. The only
+    # difference is that the caller now says so, rather than it being assumed.
+    _patch_rules(monkeypatch)
+
+    result = classify_chunk(
+        _chunk_without_sensitive_column(),
+        source_provides_sensitivity=False,
+    )
 
     assert result["is_sensitive"].iloc[0] == False
     assert result["blurred"].iloc[0] == False
     assert result["resolution_m"].iloc[0] == FAKE_D0_FLOOR_M
     assert result["sensitivity_reason"].iloc[0] == "not_sensitive"
+
+
+def test_classify_chunk_refuses_a_silently_missing_sensitive_column(
+    monkeypatch,
+):
+    # The case the original could not distinguish: a source that DOES have a
+    # sensitivity flag, where the column was renamed, dropped or misspelled
+    # upstream. It arrives here looking exactly like the CSV case above, and
+    # treating it as not-sensitive publishes every affected record at full
+    # precision with nothing raised.
+    _patch_rules(monkeypatch)
+
+    with pytest.raises(ValueError, match="source_provides_sensitivity"):
+        classify_chunk(_chunk_without_sensitive_column())
+
+
+def test_classify_chunk_refuses_when_a_declared_column_is_absent(
+    monkeypatch,
+):
+    # Declaring the source provides the flag and then not providing it is the
+    # same failure wearing a different hat.
+    _patch_rules(monkeypatch)
+
+    with pytest.raises(ValueError, match="declared to provide"):
+        classify_chunk(
+            _chunk_without_sensitive_column(),
+            source_provides_sensitivity=True,
+        )
 
 
 def test_classify_chunk_records_multiple_reasons_including_source_sensitive(

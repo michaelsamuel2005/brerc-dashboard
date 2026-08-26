@@ -91,7 +91,10 @@ def make_safe_for_publishing(
     resolved = resolved.dropna(subset=["species_no"])
 
     # Classify sensitivity and determine blur thresholds
-    classified = classify_chunk(resolved)
+    classified = classify_chunk(
+        resolved,
+        source_provides_sensitivity=(CONFIG["source"]["mode"] == "database"),
+    )
 
     # Blur the location of the species
     generalised = generalise_locations(

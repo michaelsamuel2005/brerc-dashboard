@@ -41,6 +41,10 @@ def test_make_safe_for_publishing_returns_empty_schema_when_input_empty():
 @patch("etl.reconciliation.reconcile.add_coarse_locality")
 @patch("etl.reconciliation.reconcile.prepare_public_output")
 @patch("etl.reconciliation.reconcile.map_to_occurrence_public")
+@pytest.mark.parametrize(
+    ("source_mode", "expected_source_provides_sensitivity"),
+    [("csv", False), ("database", True)],
+)
 def test_make_safe_for_publishing_executes_pipeline(
     mock_map,
     mock_prepare,
@@ -49,6 +53,8 @@ def test_make_safe_for_publishing_executes_pipeline(
     mock_classify,
     mock_resolve,
     mock_filter,
+    source_mode,
+    expected_source_provides_sensitivity,
 ):
     # Confirms records successfully pass through all safety gate functions in order.
     # Expects the final mapped dataframe to be returned after schema mapping, else fails.
@@ -75,11 +81,22 @@ def test_make_safe_for_publishing_executes_pipeline(
         {"record_id": [100], "content_hash": ["abc_hash"], "date_mdb_modified": ["2026-08-09"]}
     )
 
-    result = make_safe_for_publishing(df, dictionary_df, connection)
+    with patch.dict(
+        "etl.reconciliation.reconcile.CONFIG",
+        {"source": {"mode": source_mode}},
+    ):
+        result = make_safe_for_publishing(df, dictionary_df, connection)
 
     mock_filter.assert_called_once()
     mock_resolve.assert_called_once()
     mock_classify.assert_called_once()
+    pd.testing.assert_frame_equal(
+        mock_classify.call_args.args[0],
+        mock_resolve.return_value,
+    )
+    assert mock_classify.call_args.kwargs == {
+        "source_provides_sensitivity": expected_source_provides_sensitivity,
+    }
     mock_generalise.assert_called_once()
     mock_add_locality.assert_called_once()
     mock_prepare.assert_called_once()
