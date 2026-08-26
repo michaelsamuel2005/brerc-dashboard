@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "src/lib/a11y/targetSpacing.ts",
+    "src/lib/a11y/mapCellTargets.ts",
+    "src/lib/a11y/resolutionLedger.ts",
+    "src/lib/a11y/collectTargets.ts",
+    "src/lib/a11y/diagnostics.ts",
+    "src/lib/a11y/findings.ts",
+    "src/lib/a11y/fingerprint.ts",
+    "src/lib/a11y/evidence.ts",
+    "src/lib/a11y/manualGates.ts"
+  ],
+  "operators": [
+    { "id": "or-to-and", "pattern": "\\|\\|", "replacement": "&&" },
+    { "id": "and-to-or", "pattern": "&&", "replacement": "||" },
+    { "id": "ge-to-gt", "pattern": "(?<![<>=!])>=", "replacement": ">" },
+    { "id": "le-to-lt", "pattern": "(?<![<>=!])<=", "replacement": "<" },
+    { "id": "lt-to-le", "pattern": "(?<![<>=!])<(?![=<])", "replacement": "<=" },
+    { "id": "every-to-some", "pattern": "\\.every\\(", "replacement": ".some(" },
+    { "id": "some-to-every", "pattern": "\\.some\\(", "replacement": ".every(" },
+    { "id": "max-to-min", "pattern": "Math\\.max", "replacement": "Math.min" },
+    { "id": "min-to-max", "pattern": "Math\\.min", "replacement": "Math.max" },
+    { "id": "false-to-true", "pattern": "return false;", "replacement": "return true;" },
+    { "id": "true-to-false", "pattern": "return true;", "replacement": "return false;" }
+  ],
+  "commands": {
+    "typecheck": ["./node_modules/.bin/tsc", "--noEmit", "-p", "tsconfig.a11y.json"],
+    "tests": ["./node_modules/.bin/vitest", "run", "--reporter=dot", "--no-color"]
+  },
+  "timeoutsSeconds": {
+    "install": 600,
+    "baseline": 300,
+    "typecheckPerMutant": 180,
+    "testsPerMutant": 240
+  }
+}
