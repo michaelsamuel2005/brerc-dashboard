@@ -3,10 +3,15 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from etl.aggregation.counts import (
+    SUPPRESSION_THRESHOLD,
     suppress_low_counts,
     aggregate_counts,
     build_public_aggregation,
 )
+
+
+def test_legacy_example_matches_safe_v1_k1_without_becoming_release_authority():
+    assert SUPPRESSION_THRESHOLD == 1
 
 # --- suppress_low_counts tests ---
 

@@ -128,6 +128,8 @@ def _policy(
     *,
     threshold: int = 1,
     allowed_licence_values: frozenset[str] | None = None,
+    sensitive_record_action: str | None = None,
+    ordinary_resolution_metres: int | None = None,
 ):
     policy = approved_policy()
     policy = dataclasses.replace(
@@ -141,6 +143,16 @@ def _policy(
             else policy.licensing_mode
         ),
         allowed_licence_values=allowed_licence_values,
+        sensitive_record_action=(
+            sensitive_record_action
+            if sensitive_record_action is not None
+            else policy.sensitive_record_action
+        ),
+        ordinary_resolution_metres=(
+            ordinary_resolution_metres
+            if ordinary_resolution_metres is not None
+            else policy.ordinary_resolution_metres
+        ),
         approval_digest=None,
     )
     policy = dataclasses.replace(
@@ -291,6 +303,7 @@ def _evidence(policy: object, rows: tuple[SafeDisposition, ...]) -> SafeSourceSn
         contract_sha256=contract.digest(),
         policy_version=policy.version,
         policy_approval_digest=policy.approval_digest,
+        sensitive_record_action=policy.sensitive_record_action,
         observed_species_dictionary_sha256=_species_dictionary().digest(),
         observed_definition_sha256=approval.definition_sha256,
         observed_identity_sha256=approval.identity_sha256,
@@ -678,14 +691,16 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 """
                 INSERT INTO publication.public_release (
                     release_id, source_data_as_of, publication_policy_version,
-                    dataset_version, suppression_mode, min_records_per_cell,
+                    dataset_version, sensitive_record_action, suppression_mode,
+                    min_records_per_cell,
                     verification_available, individual_records_available,
                     record_verification_available, place_available, abundance_available,
                     record_type_available, public_source_label
                 )
                 SELECT
                     %s, source_data_as_of, publication_policy_version,
-                    dataset_version, suppression_mode, min_records_per_cell,
+                    dataset_version, sensitive_record_action, suppression_mode,
+                    min_records_per_cell,
                     verification_available, individual_records_available,
                     record_verification_available, place_available, abundance_available,
                     record_type_available, public_source_label
@@ -762,7 +777,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     observed_view_definition_sha256, observed_view_identity_sha256,
                     projection_version, projection_sha256,
                     publication_policy_version, publication_policy_sha256,
-                    policy_approval_sha256, suppression_mode, min_records_per_cell,
+                    policy_approval_sha256, sensitive_record_action, suppression_mode,
+                    min_records_per_cell,
                     etl_version, compatibility_sha256, species_dictionary_sha256,
                     species_dictionary_artifact_sha256,
                     sensitivity_snapshot_sha256, source_row_count,
@@ -779,7 +795,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     observed_view_definition_sha256, observed_view_identity_sha256,
                     projection_version, projection_sha256,
                     publication_policy_version, publication_policy_sha256,
-                    policy_approval_sha256, suppression_mode, min_records_per_cell,
+                    policy_approval_sha256, sensitive_record_action, suppression_mode,
+                    min_records_per_cell,
                     etl_version, compatibility_sha256, species_dictionary_sha256,
                     species_dictionary_artifact_sha256,
                     sensitivity_snapshot_sha256, source_row_count,
@@ -875,12 +892,22 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             self.assertGreaterEqual(row["server_version_num"], 160000)
             self.assertLess(row["server_version_num"], 170000)
             self.assertTrue(str(row["postgis_version"]).startswith("3.5."))
-            migration = connection.execute(
-                "SELECT migration_version, migration_key FROM loader_control.schema_migration"
-            ).fetchone()
+            migrations = connection.execute(
+                "SELECT migration_version, migration_key "
+                "FROM loader_control.schema_migration ORDER BY migration_version"
+            ).fetchall()
             self.assertEqual(
-                migration,
-                {"migration_version": 1, "migration_key": "0001_publication_store"},
+                migrations,
+                [
+                    {
+                        "migration_version": 1,
+                        "migration_key": "0001_publication_store",
+                    },
+                    {
+                        "migration_version": 2,
+                        "migration_key": "0002_sensitive_record_action",
+                    },
+                ],
             )
 
         with self._admin_connection() as connection:
@@ -1031,12 +1058,150 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         )
         with self._connection("loader") as connection:
             history = connection.execute(
-                "SELECT migration_version, migration_key FROM loader_control.schema_migration"
+                "SELECT migration_version, migration_key "
+                "FROM loader_control.schema_migration ORDER BY migration_version"
             ).fetchall()
         self.assertEqual(
             history,
-            [{"migration_version": 1, "migration_key": "0001_publication_store"}],
+            [
+                {"migration_version": 1, "migration_key": "0001_publication_store"},
+                {
+                    "migration_version": 2,
+                    "migration_key": "0002_sensitive_record_action",
+                },
+            ],
         )
+
+    def test_sensitive_action_migration_refuses_reapplication_without_changing_history(
+        self,
+    ) -> None:
+        migration = (REPO_ROOT / "db/migrations/0002_sensitive_record_action.sql").read_text(
+            encoding="utf-8"
+        )
+        connection = self._admin_connection()
+        try:
+            with self.assertRaises(self.psycopg.errors.RaiseException) as raised:
+                self.ClientCursor(connection).execute(migration)
+            connection.rollback()
+        finally:
+            connection.close()
+        self.assertEqual(raised.exception.sqlstate, "P0001")
+        self.assertIn(
+            "migration 0002_sensitive_record_action is already applied",
+            raised.exception.diag.message_primary,
+        )
+        with self._connection("loader") as connection:
+            history = connection.execute(
+                "SELECT migration_version, migration_key "
+                "FROM loader_control.schema_migration ORDER BY migration_version"
+            ).fetchall()
+        self.assertEqual(
+            history,
+            [
+                {"migration_version": 1, "migration_key": "0001_publication_store"},
+                {
+                    "migration_version": 2,
+                    "migration_key": "0002_sensitive_record_action",
+                },
+            ],
+        )
+
+    def test_sensitive_action_is_immutable_matched_and_served_from_the_active_release(
+        self,
+    ) -> None:
+        policy = _policy(sensitive_record_action="withhold")
+        _store, handle, _summary, activation = self._activate_rows(
+            (_disposition(900),),
+            policy=policy,
+        )
+        self.assertEqual(activation.release_id, handle.release_id)
+
+        with self._connection("loader") as connection:
+            stored = connection.execute(
+                """
+                SELECT m.sensitive_record_action AS manifest_action,
+                       p.sensitive_record_action AS public_release_action
+                FROM loader_control.release_manifest AS m
+                JOIN publication.public_release AS p USING (release_id)
+                WHERE m.release_id = %s
+                """,
+                (handle.release_id,),
+            ).fetchone()
+            self.assertEqual(
+                stored,
+                {
+                    "manifest_action": "withhold",
+                    "public_release_action": "withhold",
+                },
+            )
+            for table, statement in (
+                (
+                    "loader_control.release_manifest",
+                    "UPDATE loader_control.release_manifest "
+                    "SET sensitive_record_action = 'generalise' WHERE release_id = %s",
+                ),
+                (
+                    "publication.public_release",
+                    "UPDATE publication.public_release "
+                    "SET sensitive_record_action = 'generalise' WHERE release_id = %s",
+                ),
+            ):
+                with (
+                    self.subTest(immutable_table=table),
+                    self.assertRaises(self.psycopg.errors.InsufficientPrivilege),
+                ):
+                    connection.execute(statement, (handle.release_id,))
+
+        with self._connection("api") as connection:
+            served = connection.execute(
+                "SELECT sensitive_record_action FROM serve.public_release WHERE release_id = %s",
+                (handle.release_id,),
+            ).fetchone()
+        self.assertEqual(served, {"sensitive_record_action": "withhold"})
+
+        # The two deferred triggers are deliberately symmetric: mutating either
+        # side alone must fail at commit and leave both immutable values intact.
+        for table, statement in (
+            (
+                "loader_control.release_manifest",
+                "UPDATE loader_control.release_manifest "
+                "SET sensitive_record_action = 'generalise' WHERE release_id = %s",
+            ),
+            (
+                "publication.public_release",
+                "UPDATE publication.public_release "
+                "SET sensitive_record_action = 'generalise' WHERE release_id = %s",
+            ),
+        ):
+            connection = self._admin_connection(autocommit=False)
+            try:
+                connection.execute(statement, (handle.release_id,))
+                with (
+                    self.subTest(mismatched_table=table),
+                    self.assertRaises(self.psycopg.errors.CheckViolation) as mismatch,
+                ):
+                    connection.commit()
+                self.assertEqual(mismatch.exception.sqlstate, "23514")
+                self.assertEqual(
+                    mismatch.exception.diag.message_primary,
+                    "release sensitive-record action differs from immutable manifest",
+                )
+                connection.rollback()
+            finally:
+                connection.close()
+
+        with self._connection("loader") as connection:
+            unchanged = connection.execute(
+                """
+                SELECT m.sensitive_record_action AS manifest_action,
+                       p.sensitive_record_action AS public_release_action
+                FROM loader_control.release_manifest AS m
+                JOIN publication.public_release AS p USING (release_id)
+                WHERE m.release_id = %s
+                """,
+                (handle.release_id,),
+            ).fetchone()
+        self.assertEqual(unchanged, stored)
 
     def test_postgis_grid_geometry_is_exact_and_wrong_precision_is_rejected(self) -> None:
         with self._connection("loader") as connection:
@@ -1096,7 +1261,11 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
 
     def test_real_source_connector_streams_into_one_atomic_public_release(self) -> None:
         """Exercise the concrete source, transform, destination and activation seam."""
-        policy = _policy(allowed_licence_values=frozenset({"y"}))
+        policy = _policy(
+            allowed_licence_values=frozenset({"y"}),
+            sensitive_record_action="withhold",
+            ordinary_resolution_metres=1_000,
+        )
         report = loader_coordinator._run_initial_with_inputs(
             _loader_config(policy),
             source_config=self.e2e_source_config,
@@ -1109,12 +1278,13 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         self.assertTrue(report.activated)
         self.assertEqual(report.source_rows, 3)
         self.assertEqual(report.public_records, 0)
-        self.assertEqual(report.distribution_cells, 2)
+        self.assertEqual(report.distribution_cells, 1)
 
         release_id = UUID(report.release_id)
         with self._connection("api") as connection:
             releases = connection.execute(
-                "SELECT release_id, individual_records_available FROM serve.public_release"
+                "SELECT release_id, individual_records_available, sensitive_record_action "
+                "FROM serve.public_release"
             ).fetchall()
             species = connection.execute(
                 "SELECT species_id, total_records FROM serve.public_species ORDER BY species_id"
@@ -1129,35 +1299,28 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             ).fetchone()["n"]
         self.assertEqual(
             releases,
-            [{"release_id": release_id, "individual_records_available": False}],
+            [
+                {
+                    "release_id": release_id,
+                    "individual_records_available": False,
+                    "sensitive_record_action": "withhold",
+                }
+            ],
         )
         self.assertEqual(
             species,
-            [
-                {"species_id": "SYNTH-E2E-1", "total_records": 1},
-                {"species_id": "SYNTH-E2E-2", "total_records": 1},
-            ],
+            [{"species_id": "SYNTH-E2E-2", "total_records": 1}],
         )
         self.assertEqual(
             cells,
             [
-                {
-                    "species_id": "SYNTH-E2E-1",
-                    # The controlled dictionary marks this taxon sensitive, so
-                    # its approved 10 km taxon floor is stronger than the
-                    # source row flag's 1 km floor.
-                    "cell_id": "ST57",
-                    "precision_metres": 10_000,
-                    "record_count": 1,
-                    "srid": 27700,
-                },
                 {
                     "species_id": "SYNTH-E2E-2",
                     "cell_id": "ST5972",
                     "precision_metres": 1_000,
                     "record_count": 1,
                     "srid": 27700,
-                },
+                }
             ],
         )
         self.assertEqual(public_record_count, 0)
@@ -1170,13 +1333,13 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                        record_type, source_label
                 FROM loader_control.source_disposition
                 WHERE release_id = %s
-                ORDER BY disposition, species_id NULLS LAST
+                ORDER BY disposition, species_id NULLS LAST, withheld_reason
                 """,
                 (release_id,),
             ).fetchall()
             withheld = connection.execute(
                 "SELECT reason_code, row_count FROM loader_control.withheld_summary "
-                "WHERE release_id = %s",
+                "WHERE release_id = %s ORDER BY reason_code",
                 (release_id,),
             ).fetchall()
             manifest = connection.execute(
@@ -1186,7 +1349,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                        suppression_withheld_count, published_basis_count,
                        species_count, cell_count, species_year_count,
                        public_record_count, species_dictionary_sha256,
-                       species_dictionary_artifact_sha256
+                       species_dictionary_artifact_sha256,
+                       sensitive_record_action
                 FROM loader_control.release_manifest
                 WHERE release_id = %s
                 """,
@@ -1223,21 +1387,9 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 {
                     "disposition": "eligible",
                     "withheld_reason": None,
-                    "species_id": "SYNTH-E2E-1",
-                    "record_grid_ref": "ST57",
-                    "record_precision_metres": 10_000,
-                    "cell_id": "ST57",
-                    "place": None,
-                    "abundance": None,
-                    "record_type": None,
-                    "source_label": "BRERC",
-                },
-                {
-                    "disposition": "eligible",
-                    "withheld_reason": None,
                     "species_id": "SYNTH-E2E-2",
-                    "record_grid_ref": "ST592721",
-                    "record_precision_metres": 100,
+                    "record_grid_ref": "ST5972",
+                    "record_precision_metres": 1_000,
                     "cell_id": "ST5972",
                     "place": None,
                     "abundance": None,
@@ -1256,25 +1408,44 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "record_type": None,
                     "source_label": None,
                 },
+                {
+                    "disposition": "withheld",
+                    "withheld_reason": "sensitive-record-withheld",
+                    "species_id": None,
+                    "record_grid_ref": None,
+                    "record_precision_metres": None,
+                    "cell_id": None,
+                    "place": None,
+                    "abundance": None,
+                    "record_type": None,
+                    "source_label": None,
+                },
             ],
         )
-        self.assertEqual(withheld, [{"reason_code": "licence-not-permitted", "row_count": 1}])
+        self.assertEqual(
+            withheld,
+            [
+                {"reason_code": "licence-not-permitted", "row_count": 1},
+                {"reason_code": "sensitive-record-withheld", "row_count": 1},
+            ],
+        )
         self.assertEqual(
             manifest,
             {
                 "source_row_count": 3,
                 "source_inventory_count": 3,
                 "delta_row_count": 3,
-                "eligible_pre_suppression_count": 2,
-                "transform_withheld_count": 1,
+                "eligible_pre_suppression_count": 1,
+                "transform_withheld_count": 2,
                 "suppression_withheld_count": 0,
-                "published_basis_count": 2,
-                "species_count": 2,
-                "cell_count": 2,
-                "species_year_count": 2,
+                "published_basis_count": 1,
+                "species_count": 1,
+                "cell_count": 1,
+                "species_year_count": 1,
                 "public_record_count": 0,
                 "species_dictionary_sha256": _species_dictionary().digest(),
                 "species_dictionary_artifact_sha256": (_species_dictionary_artifact_sha256()),
+                "sensitive_record_action": "withhold",
             },
         )
         self.assertEqual(
@@ -1293,6 +1464,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         rendered = repr(ledger) + repr(species) + repr(cells)
         for private_value in (
             "ST587721",
+            "ST592721",
             "358721.25",
             "172145.75",
             "PRIVATE-E2E-PLACE",
@@ -1512,12 +1684,14 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "public_release",
                 "INSERT INTO publication.public_release ("
                 "release_id, source_data_as_of, publication_policy_version, "
-                "dataset_version, suppression_mode, min_records_per_cell, "
+                "dataset_version, sensitive_record_action, suppression_mode, "
+                "min_records_per_cell, "
                 "verification_available, individual_records_available, "
                 "record_verification_available, place_available, abundance_available, "
                 "record_type_available, public_source_label) "
                 "SELECT %s, source_data_as_of, publication_policy_version, "
-                "dataset_version, suppression_mode, min_records_per_cell, "
+                "dataset_version, sensitive_record_action, suppression_mode, "
+                "min_records_per_cell, "
                 "verification_available, individual_records_available, "
                 "record_verification_available, place_available, abundance_available, "
                 "record_type_available, public_source_label "
@@ -1532,8 +1706,9 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "source_contract_version, source_contract_sha256, "
                 "observed_view_definition_sha256, observed_view_identity_sha256, "
                 "projection_version, projection_sha256, publication_policy_version, "
-                "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
-                "min_records_per_cell, etl_version, compatibility_sha256, "
+                "publication_policy_sha256, policy_approval_sha256, "
+                "sensitive_record_action, suppression_mode, min_records_per_cell, "
+                "etl_version, compatibility_sha256, "
                 "species_dictionary_sha256, species_dictionary_artifact_sha256, "
                 "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "
@@ -1546,8 +1721,9 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "source_contract_version, source_contract_sha256, "
                 "observed_view_definition_sha256, observed_view_identity_sha256, "
                 "projection_version, projection_sha256, publication_policy_version, "
-                "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
-                "min_records_per_cell, etl_version, compatibility_sha256, "
+                "publication_policy_sha256, policy_approval_sha256, "
+                "sensitive_record_action, suppression_mode, min_records_per_cell, "
+                "etl_version, compatibility_sha256, "
                 "species_dictionary_sha256, species_dictionary_artifact_sha256, "
                 "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "

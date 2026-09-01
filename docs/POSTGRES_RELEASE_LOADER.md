@@ -9,7 +9,7 @@ It is separate from the trusted source connector:
 ```text
 BRERC view (private)
   -> trusted read-only source connector
-  -> bounded safe/generalised dispositions
+  -> bounded policy dispositions (safe-v1 sensitive rows withheld)
   -> inactive destination candidate
   -> whole-candidate suppression, aggregation and validation
   -> one atomic active-release switch
@@ -69,6 +69,13 @@ northing, precise source grid reference, comments, recorder information, the
 raw sensitivity flag, raw place/source text, database credentials or raw adapter
 errors. Reconciliation and public record identifiers use different secrets.
 
+Safe v1 withholds a row classified as sensitive by any of four axes—the retained
+taxon snapshot, digest-bound dictionary, source row flag or approved record-type
+rule—before public geometry or public-id generation. Otherwise eligible ordinary
+rows are reduced to at least 1 km and a coarser source is never sharpened. Safe v1
+is aggregate-only and binds `k=1`, so no additional minimum-count suppression is
+applied after the safety gate.
+
 The row transform is bounded by the configured batch size. Cell suppression and
 aggregation are deliberately **not** performed per batch: they run only after the
 complete safe candidate has been staged, so changing batch size or input order
@@ -76,10 +83,13 @@ cannot change whether a cohort is published.
 
 ## Destination schemas
 
-The versioned migration is in `db/migrations/0001_publication_store.sql`.
+The destination schema consists of ordered migrations
+`db/migrations/0001_publication_store.sql` and
+`db/migrations/0002_sensitive_record_action.sql`.
 This implementation is pinned to PostgreSQL major version 16 and PostGIS 3.5;
 the target preflight reads both server-side and fails before loading if either
-version family differs. Migration 0001 also generates a single destination
+version family differs or the migration history is not exactly the expected
+ordered pair. Migration 0001 also generates a single destination
 environment UUID in `loader_control.deployment_identity`. Operations must copy
 that UUID into the protected loader configuration through a trusted channel;
 the loader compares it, the database name and the execution role before it
@@ -99,6 +109,8 @@ Apply roles and migration as a database administrator with `ON_ERROR_STOP`:
 psql -X -v ON_ERROR_STOP=1 -f db/roles.sql "$CONTROLLED_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0001_publication_store.sql "$CONTROLLED_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 \
+  -f db/migrations/0002_sensitive_record_action.sql "$CONTROLLED_ADMIN_DSN"
 ```
 
 The variable is illustrative. Do not place a DSN or password in source control,
@@ -107,6 +119,13 @@ file, passfile and CA certificate or an equivalent secret-managed deployment.
 After a backup is restored as a different logical environment, an administrator
 must assign the clone a new environment UUID before enabling loader credentials.
 Copying the production UUID into a clone defeats this wrong-target safeguard.
+
+Migration 0002 adds the approval-bound `sensitive_record_action` to both
+`loader_control.release_manifest` and `publication.public_release`, exposes it
+through `serve.public_release`, and installs a deferred symmetric constraint
+that refuses a committed mismatch. Existing pre-v2 development rows are
+truthfully backfilled as `generalise`, the only action artifact v1 supported;
+this backfill is historical labelling, not evidence of safe-v1 activation.
 
 ## Database authority
 
@@ -135,7 +154,8 @@ a multi-million-row transition table, while preventing insert privilege from
 appending to an active release after validation.
 
 Activation independently checks source-token parity, complete safe disposition
-fields, policy capabilities, the approved suppression rule, every map/year/species
+fields, policy capabilities, the approval-bound sensitive-record action, the
+approved suppression rule (`k=1`/none for safe v1), every map/year/species
 aggregate, optional public rows, geometry and count equations. Application SHA-256
 digests are retained integrity evidence; they are not a substitute for these
 database-owned comparisons and do not authenticate BRERC approval.
@@ -150,7 +170,8 @@ Copy `api/loader.configuration.example.yaml` to a controlled location outside th
 repository. The tracked template is deliberately not runnable. It references:
 
 - the reviewed source-connector configuration;
-- exact bytes and SHA-256 of an approved publication-policy artifact;
+- exact bytes and SHA-256 of an approved strict
+  `brerc-publication-policy/v2` artifact;
 - exact bytes and raw SHA-256 of the controlled species-dictionary CSV, whose
   normalised semantic digest must also match the approved policy;
 - an independent public-record HMAC secret;
@@ -163,6 +184,14 @@ Configuration parsing rejects duplicate/unknown keys, unsafe YAML coercions,
 inline passwords/DSNs, ambient `PGPASSWORD`, non-TLS target settings, arbitrary
 source queries and bypass switches. Resolved credentials and secrets are redacted
 from representations and operator errors.
+
+Artifact v2 binds `sensitiveRecordAction` and the approval-authority basis into
+the digest. A direct approval identifies the BRERC approver. A delegated approval
+must instead identify the actual approver and organisation as well as the BRERC
+delegator, delegator role, scope, date and retained delegation evidence. Version 1
+is rejected rather than silently inheriting those new decisions. The digest detects
+changed bytes and stale decision sets; it does not authenticate a person or evidence
+reference without the separate trusted-channel verification.
 
 The environment UUID is a deployment assertion, not proof of BRERC approval and
 not a replacement for hostname-verified TLS, protected service configuration or
@@ -229,17 +258,26 @@ in `docs/POSTGRES_LOADER_SCALE_ACCEPTANCE.md`. The harness being present is not 
 passing result; retain and review a green evidence artifact before closing the
 scale blocker.
 
-## External decisions still required
+## Production evidence and inputs still required
 
-Production activation remains blocked until the retained external evidence is
-real and Shankar verifies the named BRERC authority through the agreed channel:
+The safe-v1 mechanism and decision envelope are implemented, but no production
+activation is claimed. Activation remains blocked until the retained external
+evidence is real and the named authority is verified through the agreed channel:
 
 - approved live view identity and environment/role evidence;
-- an approved publication policy for precision, licensing, suppression,
-  record types and row-level output;
+- exact version-2 policy bytes and SHA-256 recording sensitive
+  `withhold`, ordinary 1 km, aggregates-only and `k=1`, plus the remaining
+  licensing/content decisions;
+- direct authority evidence or the complete actual-approver + BRERC-delegator
+  chain and delegation evidence;
+- digest-bound species dictionary and corrected approved record-type vocabulary;
+- controlled real sensitive-row examples and the real BRERC candidate acceptance
+  report proving each sensitivity axis was withheld;
 - approved initial count/drop thresholds;
 - BRERC scheduling and operational limits for the approximately five-million-row
-  source snapshot; and
+  source snapshot;
+- production PostgreSQL/PostGIS provisioning, verify-full TLS identity, secrets,
+  service ownership and retained deployment evidence; and
 - the missing incremental contract below.
 
 The confirmed source view includes `taxa_nb`, but the current safe projection and

@@ -94,8 +94,14 @@ def test_provenance_describes_the_active_release_exactly(client) -> None:
     assert set(body) == PROVENANCE_KEYS
     assert body["recordTotal"] >= 0
     assert body["coverageCaveats"]
-    assert body["sensitivityPolicy"]["appliesToProtectedTaxa"] is True
-    tiers = body["sensitivityPolicy"]["generalisationTiersMetres"]
+    policy = body["sensitivityPolicy"]
+    assert set(policy) == {
+        "protectedRecordsMode",
+        "publishedLocationTiersMetres",
+        "note",
+    }
+    assert policy["protectedRecordsMode"] in {"generalised", "withheld"}
+    tiers = policy["publishedLocationTiersMetres"]
     assert tiers == sorted(set(tiers))
     assert all(tier in {100, 1000, 10000} for tier in tiers)
     assert body["lastUpdated"]
@@ -115,8 +121,19 @@ def test_provenance_describes_the_active_release_exactly(client) -> None:
             "ORDER BY precision_metres"
         )
         observed_tiers = [int(row["precision_metres"]) for row in cursor.fetchall()]
+        cursor.execute("SELECT sensitive_record_action FROM serve.public_release")
+        sensitive_record_action = cursor.fetchone()["sensitive_record_action"]
     assert body["recordTotal"] == observed_total
     assert tiers == observed_tiers
+    assert (
+        policy["protectedRecordsMode"]
+        == {
+            "generalise": "generalised",
+            "withhold": "withheld",
+        }[sensitive_record_action]
+    )
+    if sensitive_record_action == "withhold":
+        assert "generalis" not in policy["note"].casefold()
 
 
 def test_species_listing_and_detail_match_the_strict_browser_contract(

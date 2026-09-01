@@ -131,13 +131,13 @@ describe('"The explanation of how sensitive species locations are blurred is to 
     expect(await screen.findByRole("columnheader", { name: "Capture resolution" })).toBeInTheDocument();
   });
 
-  it("keeps one sentence in the privacy notice, as a flagged recommendation", async () => {
-    // Deliberately the single exception, and it says only THAT it happens. A statutory
-    // notice silent on processing that does occur is a weaker document. Tim can strike
-    // it; until he does, this asserts we have not quietly dropped it either.
+  it("states the approved withholding outcome in the privacy notice without describing a method", async () => {
     const { container } = renderAt("/privacy");
-    await screen.findByRole("heading", { level: 1 });
-    expect(container.textContent ?? "").toMatch(/generalised before publication/i);
+    await screen.findByText(/records requiring sensitive-record protection are withheld/i);
+    expect(container.textContent ?? "").toMatch(
+      /records requiring sensitive-record protection are withheld/i,
+    );
+    expect(container.textContent ?? "").not.toMatch(/generali[sz]|blurred|coarse grid/i);
   });
 });
 

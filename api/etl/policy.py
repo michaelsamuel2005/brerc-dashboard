@@ -70,6 +70,7 @@ MIN_PUBLIC_ID_SECRET_BYTES = 32
 # names, addresses or internal references, so it is never copied through.
 PUBLIC_SOURCE_LABELS: frozenset[str] = frozenset({"BRERC"})
 REQUIRED_APPROVER_ORGANISATION = "BRERC"
+APPROVAL_AUTHORITY_BASES: frozenset[str] = frozenset({"direct", "delegated"})
 
 # Approval modes distinguish a deliberate decision from an omitted value. For
 # example, ``allowed_licence_values=None`` alone cannot tell us whether BRERC
@@ -82,6 +83,12 @@ LICENSING_MODES: frozenset[str] = frozenset(
 RECORD_TYPE_SAFETY_MODES: frozenset[str] = frozenset({"undecided", "not-used", "rules"})
 ROW_LEVEL_RECORDS_MODES: frozenset[str] = frozenset({"undecided", "aggregates-only", "publish"})
 VERIFICATION_PUBLICATION_MODES: frozenset[str] = frozenset({"undecided", "unavailable", "publish"})
+SENSITIVE_RECORD_ACTIONS: frozenset[str] = frozenset({"undecided", "generalise", "withhold"})
+
+# Adding delegation metadata and the sensitive-record action changes the exact
+# approval envelope. Version 2 deliberately refuses older artifacts rather than
+# silently assigning new decisions to an approval that never covered them.
+PUBLICATION_POLICY_ARTIFACT_FORMAT = "brerc-publication-policy/v2"
 
 # Only one suppression model is implemented. Binding its semantics into the
 # approval digest prevents a later code change from silently reinterpreting the
@@ -134,11 +141,14 @@ class PublicationPolicy:
 
     version: str
 
-    #: Named individual at BRERC who approved this policy. None = NOT APPROVED.
+    #: Named individual who approved this policy. None = NOT APPROVED. For a
+    #: delegated approval this is the person who exercised the authority, not
+    #: the BRERC person who delegated it.
     approved_by: str | None = None
-    #: BRERC role in which the named individual has publication authority.
+    #: Role in which the named individual exercised publication authority.
     approver_role: str | None = None
-    #: Organisation owning the decision; a production approval must be BRERC's.
+    #: Approver's actual organisation. Direct approvals must be BRERC; delegated
+    #: approvals retain BRERC ownership through the delegation fields below.
     approver_organisation: str | None = None
     #: Retained BRERC-controlled evidence (ticket, signed note or document id).
     evidence_reference: str | None = None
@@ -151,6 +161,17 @@ class PublicationPolicy:
     #: approval automatically. This detects accidental/stale reuse; it is not a
     #: substitute for an externally signed governance record.
     approval_digest: str | None = field(default=None, repr=False)
+
+    #: Direct BRERC approval or authority expressly delegated by BRERC.
+    approval_authority_basis: str = "direct"
+    #: Delegation chain. Direct approvals leave all six fields null; delegated
+    #: approvals require every field and bind them into the approval digest.
+    delegating_authority_name: str | None = None
+    delegating_authority_role: str | None = None
+    delegating_authority_organisation: str | None = None
+    delegation_scope: str | None = None
+    delegated_on: str | None = None
+    delegation_evidence_reference: str | None = None
 
     #: Marks a policy that exists for tests and synthetic-data development. Such
     #: a policy can NEVER report itself approved, whatever else is set on it.
@@ -166,6 +187,9 @@ class PublicationPolicy:
     record_type_safety_mode: str = "undecided"
     row_level_records_mode: str = "undecided"
     verification_publication_mode: str = "undecided"
+    #: Whether records classified as sensitive are coarsened or excluded. This
+    #: is separate from precision: safe-v1 deliberately withholds them entirely.
+    sensitive_record_action: str = "undecided"
 
     #: Version and digest of the retained sensitive-species snapshot used at
     #: runtime. These are supplied from sensitivity.py by the deployment policy
@@ -392,6 +416,7 @@ class PublicationPolicy:
             "recordTypeSafetyMode": self.record_type_safety_mode,
             "rowLevelRecordsMode": self.row_level_records_mode,
             "verificationPublicationMode": self.verification_publication_mode,
+            "sensitiveRecordAction": self.sensitive_record_action,
             "sensitiveSnapshotVersion": self.sensitive_snapshot_version,
             "sensitiveSnapshotSha256": self.sensitive_snapshot_sha256,
             "speciesDictionarySha256": self.species_dictionary_sha256,
@@ -440,6 +465,13 @@ class PublicationPolicy:
             "evidenceReference": self.evidence_reference,
             "approvedOn": self.approved_on,
             "reviewDue": self.review_due,
+            "approvalAuthorityBasis": self.approval_authority_basis,
+            "delegatingAuthorityName": self.delegating_authority_name,
+            "delegatingAuthorityRole": self.delegating_authority_role,
+            "delegatingAuthorityOrganisation": self.delegating_authority_organisation,
+            "delegationScope": self.delegation_scope,
+            "delegatedOn": self.delegated_on,
+            "delegationEvidenceReference": self.delegation_evidence_reference,
             "decisions": self._decision_document(),
         }
         canonical = json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -489,11 +521,28 @@ class PublicationPolicy:
         if self.approved_by != self.approved_by.strip():
             return "the approver name has leading or trailing whitespace"
         if not isinstance(self.approver_role, str) or not self.approver_role.strip():
-            return "it has no non-blank BRERC approver role"
+            return "it has no non-blank approver role"
         if self.approver_role != self.approver_role.strip():
             return "the approver role has leading or trailing whitespace"
-        if self.approver_organisation != REQUIRED_APPROVER_ORGANISATION:
-            return f"approver_organisation must be exactly {REQUIRED_APPROVER_ORGANISATION!r}"
+        if self.approval_authority_basis not in APPROVAL_AUTHORITY_BASES:
+            return (
+                "approval_authority_basis must be 'direct' or 'delegated', not "
+                f"{self.approval_authority_basis!r}"
+            )
+        if (
+            not isinstance(self.approver_organisation, str)
+            or not self.approver_organisation.strip()
+        ):
+            return "it has no non-blank approver organisation"
+        if self.approver_organisation != self.approver_organisation.strip():
+            return "the approver organisation has leading or trailing whitespace"
+        if (
+            self.approval_authority_basis == "direct"
+            and self.approver_organisation != REQUIRED_APPROVER_ORGANISATION
+        ):
+            return (
+                f"direct approver_organisation must be exactly {REQUIRED_APPROVER_ORGANISATION!r}"
+            )
         if not isinstance(self.evidence_reference, str) or not self.evidence_reference.strip():
             return "it has no non-blank retained BRERC evidence reference"
         if self.evidence_reference != self.evidence_reference.strip():
@@ -503,6 +552,46 @@ class PublicationPolicy:
             review_due = self._iso_date(self.review_due, "review_due")
         except InvalidPolicy as exc:
             return str(exc)
+
+        delegation = {
+            "delegating_authority_name": self.delegating_authority_name,
+            "delegating_authority_role": self.delegating_authority_role,
+            "delegating_authority_organisation": self.delegating_authority_organisation,
+            "delegation_scope": self.delegation_scope,
+            "delegated_on": self.delegated_on,
+            "delegation_evidence_reference": self.delegation_evidence_reference,
+        }
+        if self.approval_authority_basis == "direct":
+            present = [name for name, value in delegation.items() if value is not None]
+            if present:
+                return "direct approval must not carry delegation metadata: " + ", ".join(present)
+        else:
+            missing = [name for name, value in delegation.items() if value is None]
+            if missing:
+                return "delegation metadata is incomplete: " + ", ".join(missing)
+            for field_name in (
+                "delegating_authority_name",
+                "delegating_authority_role",
+                "delegating_authority_organisation",
+                "delegation_scope",
+                "delegation_evidence_reference",
+            ):
+                value = delegation[field_name]
+                if not isinstance(value, str) or not value.strip():
+                    return f"{field_name} must be a non-blank string when approval is delegated"
+                if value != value.strip():
+                    return f"{field_name} has leading or trailing whitespace"
+            if self.delegating_authority_organisation != REQUIRED_APPROVER_ORGANISATION:
+                return (
+                    "delegating_authority_organisation must be exactly "
+                    f"{REQUIRED_APPROVER_ORGANISATION!r}"
+                )
+            try:
+                delegated_on = self._iso_date(self.delegated_on, "delegated_on")
+            except InvalidPolicy as exc:
+                return str(exc)
+            if delegated_on > approved_on:
+                return "delegated_on is after approved_on"
 
         today = as_of or date.today()
         if approved_on > today:
@@ -535,9 +624,9 @@ class PublicationPolicy:
         if problem is not None:
             raise PolicyNotApproved(
                 f"publication policy '{self.version}' is not currently approved: "
-                f"{problem}. A named BRERC data owner must approve and periodically "
-                "review the resolution, place-name, record-id, licensing and "
-                "suppression rules before any real release."
+                f"{problem}. A named BRERC decision owner, or a person acting under "
+                "documented BRERC delegation, must approve and periodically review "
+                "every publication decision before any real release."
             )
 
     def validate(self) -> None:
@@ -571,6 +660,7 @@ class PublicationPolicy:
             "record_type_safety_mode": RECORD_TYPE_SAFETY_MODES,
             "row_level_records_mode": ROW_LEVEL_RECORDS_MODES,
             "verification_publication_mode": VERIFICATION_PUBLICATION_MODES,
+            "sensitive_record_action": SENSITIVE_RECORD_ACTIONS,
         }
         for field_name, permitted in mode_sets.items():
             value = getattr(self, field_name)
@@ -578,6 +668,14 @@ class PublicationPolicy:
                 raise InvalidPolicy(
                     f"{field_name}={value!r} is invalid. Permitted: {sorted(permitted)}"
                 )
+        if (
+            not isinstance(self.approval_authority_basis, str)
+            or self.approval_authority_basis not in APPROVAL_AUTHORITY_BASES
+        ):
+            raise InvalidPolicy(
+                "approval_authority_basis must be one of "
+                f"{sorted(APPROVAL_AUTHORITY_BASES)}, not {self.approval_authority_basis!r}"
+            )
         if self.sensitive_snapshot_version is not None and (
             not isinstance(self.sensitive_snapshot_version, str)
             or not self.sensitive_snapshot_version.strip()
@@ -783,6 +881,7 @@ class PublicationPolicy:
                 "record_type_safety_mode",
                 "row_level_records_mode",
                 "verification_publication_mode",
+                "sensitive_record_action",
             )
             if getattr(self, field_name) == "undecided"
         )
@@ -898,7 +997,7 @@ class PublicationPolicy:
         approved_on: str,
         review_due: str,
     ) -> PublicationPolicy:
-        """Return an approval bound to retained evidence from a BRERC owner."""
+        """Return a direct approval bound to evidence from a BRERC owner."""
         if self.development_only:
             raise PolicyNotApproved(
                 f"policy '{self.version}' is marked development_only and cannot be "
@@ -912,6 +1011,13 @@ class PublicationPolicy:
             evidence_reference=evidence_reference,
             approved_on=approved_on,
             review_due=review_due,
+            approval_authority_basis="direct",
+            delegating_authority_name=None,
+            delegating_authority_role=None,
+            delegating_authority_organisation=None,
+            delegation_scope=None,
+            delegated_on=None,
+            delegation_evidence_reference=None,
             approval_digest=None,
         )
         candidate.validate()
@@ -919,6 +1025,50 @@ class PublicationPolicy:
             candidate,
             approval_digest=candidate._expected_approval_digest(),
         )
+        approved.assert_approved()
+        return approved
+
+    def with_delegated_approval(
+        self,
+        *,
+        approved_by: str,
+        approver_role: str,
+        approver_organisation: str,
+        evidence_reference: str,
+        approved_on: str,
+        review_due: str,
+        delegating_authority_name: str,
+        delegating_authority_role: str,
+        delegating_authority_organisation: str,
+        delegation_scope: str,
+        delegated_on: str,
+        delegation_evidence_reference: str,
+    ) -> PublicationPolicy:
+        """Return an approval that transparently records delegated BRERC authority."""
+        if self.development_only:
+            raise PolicyNotApproved(
+                f"policy '{self.version}' is marked development_only and cannot be "
+                "approved. Build a real policy from BRERC's answers instead."
+            )
+        candidate = replace(
+            self,
+            approved_by=approved_by,
+            approver_role=approver_role,
+            approver_organisation=approver_organisation,
+            evidence_reference=evidence_reference,
+            approved_on=approved_on,
+            review_due=review_due,
+            approval_authority_basis="delegated",
+            delegating_authority_name=delegating_authority_name,
+            delegating_authority_role=delegating_authority_role,
+            delegating_authority_organisation=delegating_authority_organisation,
+            delegation_scope=delegation_scope,
+            delegated_on=delegated_on,
+            delegation_evidence_reference=delegation_evidence_reference,
+            approval_digest=None,
+        )
+        candidate.validate()
+        approved = replace(candidate, approval_digest=candidate._expected_approval_digest())
         approved.assert_approved()
         return approved
 
@@ -933,6 +1083,13 @@ class PublicationPolicy:
             "evidenceReference": self.evidence_reference,
             "approvedOn": self.approved_on,
             "reviewDue": self.review_due,
+            "approvalAuthorityBasis": self.approval_authority_basis,
+            "delegatingAuthorityName": self.delegating_authority_name,
+            "delegatingAuthorityRole": self.delegating_authority_role,
+            "delegatingAuthorityOrganisation": self.delegating_authority_organisation,
+            "delegationScope": self.delegation_scope,
+            "delegatedOn": self.delegated_on,
+            "delegationEvidenceReference": self.delegation_evidence_reference,
             "approvalDigest": self.approval_digest,
             "developmentOnly": self.development_only,
             "precisionMode": self.precision_mode,
@@ -941,6 +1098,7 @@ class PublicationPolicy:
             "recordTypeSafetyMode": self.record_type_safety_mode,
             "rowLevelRecordsMode": self.row_level_records_mode,
             "verificationPublicationMode": self.verification_publication_mode,
+            "sensitiveRecordAction": self.sensitive_record_action,
             "sensitiveSnapshotVersion": self.sensitive_snapshot_version,
             "sensitiveSnapshotSha256": self.sensitive_snapshot_sha256,
             "speciesDictionarySha256": self.species_dictionary_sha256,
@@ -983,7 +1141,7 @@ class PublicationPolicy:
         self.validate()
         self.assert_approved()
         return {
-            "artifactFormat": "brerc-publication-policy/v1",
+            "artifactFormat": PUBLICATION_POLICY_ARTIFACT_FORMAT,
             "status": "approved",
             "approval": {
                 "approvedBy": self.approved_by,
@@ -992,6 +1150,13 @@ class PublicationPolicy:
                 "evidenceReference": self.evidence_reference,
                 "approvedOn": self.approved_on,
                 "reviewDue": self.review_due,
+                "approvalAuthorityBasis": self.approval_authority_basis,
+                "delegatingAuthorityName": self.delegating_authority_name,
+                "delegatingAuthorityRole": self.delegating_authority_role,
+                "delegatingAuthorityOrganisation": self.delegating_authority_organisation,
+                "delegationScope": self.delegation_scope,
+                "delegatedOn": self.delegated_on,
+                "delegationEvidenceReference": self.delegation_evidence_reference,
                 "approvalDigest": self.approval_digest,
             },
             "decisions": self._decision_document(),
@@ -1016,6 +1181,7 @@ DEVELOPMENT_POLICY = PublicationPolicy(
     record_type_safety_mode="not-used",
     row_level_records_mode="publish",
     verification_publication_mode="publish",
+    sensitive_record_action="generalise",
     ordinary_resolution_metres=FINEST_EMITTABLE_METRES,
     default_sensitive_metres=COARSEST_EMITTABLE_METRES,
     unknown_species_action="withhold",

@@ -92,6 +92,7 @@ VIEW_POLICY = PublicationPolicy(
     record_type_safety_mode="not-used",
     row_level_records_mode="publish",
     verification_publication_mode="unavailable",
+    sensitive_record_action="generalise",
     sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
     sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
     ordinary_resolution_metres=100,

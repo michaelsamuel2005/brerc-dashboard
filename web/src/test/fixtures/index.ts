@@ -465,9 +465,9 @@ export const provenanceFixture = {
     "Absence of records does not mean absence of a species.",
   ],
   sensitivityPolicy: {
-    generalisationTiersMetres: [1000, 10000],
-    appliesToProtectedTaxa: true,
-    note: "Sensitive-species locations are generalised server-side and blended into the ordinary grid.",
+    protectedRecordsMode: "withheld",
+    publishedLocationTiersMetres: [1000, 10000],
+    note: "Records requiring sensitive-record protection are withheld from the public release.",
   },
   attributions: [{ label: "BRERC", url: "https://www.brerc.org.uk", licence: "CC BY-NC 4.0" }],
 } satisfies z.input<typeof ProvenanceSchema>;

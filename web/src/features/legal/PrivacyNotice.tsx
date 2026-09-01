@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { toAsyncState, useProvenance } from "../../lib/api";
 
 /**
  * Privacy notice.
@@ -15,6 +16,34 @@ function Outstanding({ children }: { children: React.ReactNode }) {
     <mark style={{ background: "var(--accent-bg)", color: "var(--accent-d)", padding: "0 .25rem", borderRadius: "4px" }}>
       [BRERC to confirm: {children}]
     </mark>
+  );
+}
+
+function ProtectedRecordsNotice() {
+  const state = toAsyncState(useProvenance());
+  if (state.status === "ready") {
+    if (state.data.sensitivityPolicy.protectedRecordsMode === "withheld") {
+      return (
+        <p>
+          Records requiring sensitive-record protection are withheld from this public
+          dashboard. Their locations and aggregate counts are not sent to your browser. See{" "}
+          <Link href="/about">about the data</Link> for what each square means.
+        </p>
+      );
+    }
+    return (
+      <p>
+        Locations of records requiring sensitive-record protection are generalised before
+        publication. Precise coordinates are not sent to your browser. See{" "}
+        <Link href="/about">about the data</Link> for what each square means.
+      </p>
+    );
+  }
+  return (
+    <p>
+      Sensitive records are handled according to the active publication policy. Precise
+      coordinates are not sent to your browser.
+    </p>
   );
 }
 
@@ -91,17 +120,7 @@ export function PrivacyNotice() {
           names and any other identifying fields are not sent to your browser and are not
           present in the published data at all.
         </p>
-        {/* The single sentence below is the one place location generalisation is still
-            mentioned anywhere on the site. BRERC asked at client meeting 2 for the
-            explanation of how it works to be removed, and it has been removed everywhere
-            else — this says only THAT it happens, with no method, no tiers and no
-            indication of which species. A privacy notice silent on processing that does
-            occur is a weaker document, so this is our recommendation, not a decision;
-            Tim can strike it. */}
-        <p>
-          Locations of protected species are generalised before publication. See{" "}
-          <Link href="/about">about the data</Link> for what each square means.
-        </p>
+        <ProtectedRecordsNotice />
 
         <h2>Your rights and who to contact</h2>
         <p>

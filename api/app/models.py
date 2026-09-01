@@ -74,14 +74,14 @@ class Attribution(StrictModel):
 
 
 class SensitivityPolicy(StrictModel):
-    generalisationTiersMetres: list[Literal[100, 1000, 10000]]
-    appliesToProtectedTaxa: Literal[True] = True
+    protectedRecordsMode: Literal["generalised", "withheld"]
+    publishedLocationTiersMetres: list[Literal[100, 1000, 10000]]
     note: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_tiers(self) -> SensitivityPolicy:
-        if self.generalisationTiersMetres != sorted(set(self.generalisationTiersMetres)):
-            raise ValueError("generalisation tiers must be sorted and unique")
+        if self.publishedLocationTiersMetres != sorted(set(self.publishedLocationTiersMetres)):
+            raise ValueError("published location tiers must be sorted and unique")
         return self
 
 

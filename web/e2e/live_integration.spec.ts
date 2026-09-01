@@ -47,6 +47,15 @@ interface RecordPageResponse {
   readonly publication: { readonly mode: string };
 }
 
+interface ProvenanceResponse {
+  readonly recordTotal: number;
+  readonly sensitivityPolicy: {
+    readonly protectedRecordsMode: string;
+    readonly publishedLocationTiersMetres: readonly number[];
+    readonly note: string;
+  };
+}
+
 function bodyFor<T>(results: readonly ApiProbeResult[], path: string): T {
   const result = results.find((candidate) => candidate.path === path);
   if (!result) throw new Error(`Missing live API probe for ${path}`);
@@ -92,17 +101,17 @@ test("the production build uses the protected live release, never browser mocks"
     page.getByRole("heading", { name: "The living record of the West of England" }),
   ).toBeVisible();
   await expect(page.locator(".kpi").filter({ hasText: "Records published" }).locator(".v"))
-    .toHaveText("2");
+    .toHaveText("1");
   await expect(page.locator(".kpi").filter({ hasText: "Species" }).locator(".v"))
-    .toHaveText("2");
+    .toHaveText("1");
   await expect(page.getByText(/prototype|illustrative demo data/i)).toHaveCount(0);
 
   const probePaths = [
     "/api/health",
+    "/api/meta/provenance",
     "/api/summary",
     "/api/species?sort=name-asc&page=1&pageSize=24",
     "/api/species?q=Synthetic%20ordinary&sort=name-asc&page=1&pageSize=24",
-    `/api/summary?species=${SENSITIVE_SPECIES_ID}`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2024`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2023`,
@@ -138,19 +147,27 @@ test("the production build uses the protected live release, never browser mocks"
   );
 
   const summary = bodyFor<SummaryResponse>(probes, "/api/summary");
-  expect(summary).toMatchObject({ totalRecords: 2, totalSpecies: 2 });
+  expect(summary).toMatchObject({ totalRecords: 1, totalSpecies: 1 });
+
+  const provenance = bodyFor<ProvenanceResponse>(probes, "/api/meta/provenance");
+  expect(provenance).toMatchObject({
+    recordTotal: 1,
+    sensitivityPolicy: {
+      protectedRecordsMode: "withheld",
+      publishedLocationTiersMetres: [1_000],
+    },
+  });
+  expect(provenance.sensitivityPolicy.note).not.toMatch(/generali[sz]/i);
 
   const species = bodyFor<SpeciesListResponse>(
     probes,
     "/api/species?sort=name-asc&page=1&pageSize=24",
   );
-  expect(species.total).toBe(2);
-  expect(species.items.map(({ speciesId }) => speciesId).sort()).toEqual(
-    [SENSITIVE_SPECIES_ID, ORDINARY_SPECIES_ID].sort(),
-  );
-  expect(species.items.map(({ commonName }) => commonName).sort()).toEqual(
-    [SENSITIVE_NAME, ORDINARY_NAME].sort(),
-  );
+  expect(species.total).toBe(1);
+  expect(species.items).toEqual([
+    expect.objectContaining({ speciesId: ORDINARY_SPECIES_ID, commonName: ORDINARY_NAME }),
+  ]);
+  expect(species.items.map(({ speciesId }) => speciesId)).not.toContain(SENSITIVE_SPECIES_ID);
 
   const searchedSpecies = bodyFor<SpeciesListResponse>(
     probes,
@@ -165,9 +182,7 @@ test("the production build uses the protected live release, never browser mocks"
     probes,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2024`,
   );
-  expect(sensitiveCells.cells).toEqual([
-    { cellId: "ST57", precisionMetres: 10_000, recordCount: 1 },
-  ]);
+  expect(sensitiveCells.cells).toEqual([]);
   const ordinaryCells = bodyFor<CellDistributionResponse>(
     probes,
     `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2023`,
@@ -196,20 +211,13 @@ test("the production build uses the protected live release, never browser mocks"
 
   await page.goto("/#/species");
   await expect(page.getByRole("heading", { name: "Species directory" })).toBeVisible();
-  await expect(page.getByText(SENSITIVE_NAME, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(SENSITIVE_NAME, { exact: true })).toHaveCount(0);
   await expect(page.getByText(ORDINARY_NAME, { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/public demonstration catalogue/i)).toHaveCount(0);
   for (const name of MOCK_SPECIES) {
     await expect(page.getByText(name, { exact: true })).toHaveCount(0);
   }
 
-  await page.getByRole("link", { name: `Explore ${SENSITIVE_NAME}` }).click();
-  await expect(page.getByRole("heading", { name: SENSITIVE_NAME })).toBeVisible();
-  const sensitiveRow = page.locator("tbody tr").filter({ hasText: "ST57" }).first();
-  await expect(sensitiveRow).toContainText("10 km square");
-  await expect(page.getByText("Individual records are not published.")).toBeVisible();
-
-  await page.goto("/#/species");
   await page.getByRole("link", { name: `Explore ${ORDINARY_NAME}` }).click();
   await expect(page.getByRole("heading", { name: ORDINARY_NAME })).toBeVisible();
   const ordinaryRow = page.locator("tbody tr").filter({ hasText: "ST5972" }).first();
