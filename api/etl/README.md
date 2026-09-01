@@ -1,7 +1,18 @@
 # `api/etl` — the public-data safety boundary
 
-Turns raw BRERC records into the aggregated, generalised payloads the public API serves.
+Turns raw BRERC records into policy-filtered aggregate payloads for the public API.
 **Nothing here may emit a location finer than the publication policy allows.**
+
+The selected **safe-v1** boundary withholds every record classified as sensitive before a
+public geometry or public identifier is created. Sensitivity is the union of the retained taxon
+snapshot, the digest-bound species dictionary, the source row flag and approved sensitive
+record-type rules. Ordinary records may contribute only at 1 km or coarser, and a coarser source
+record is never sharpened. Safe v1 is aggregate-only and uses `min_records_per_cell=1`, which
+means no additional minimum-count suppression after the safety gate.
+
+The mechanism is implemented and tested in this repository. That is not a claim that a real-data
+release is active: production still requires the retained version-2 policy artifact, its exact
+live inputs and the operational evidence listed below.
 
 ```bash
 cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
@@ -10,7 +21,7 @@ cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 The publication safety modules listed below are **standard-library only** — no
 pandas and no third-party runtime dependency. The existing nightly ETL remains
 in this package as `nightly_pipeline.py` and its established subpackages; it is
-not used as publication authority by the future trusted connector or release loader.
+not used as publication authority by the trusted connector or release loader.
 `scripts/guard_stdlib_only.py` pins the exact boundary file set so the two paths
 can coexist without making a false package-wide dependency claim.
 
@@ -20,7 +31,7 @@ can coexist without making a false package-wide dependency claim.
 |---|---|
 | `gridref.py` | Parse OS grid references, derive precision, coarsen to a larger square |
 | `policy.py` | **BRERC's publication decisions, as a versioned, approvable object** |
-| `sensitivity.py` | The sensitive-species gate: **generalise, never silently drop** |
+| `sensitivity.py` | The multi-axis sensitivity gate: **withhold or generalise only as the explicit policy says** |
 | `contract.py` | Public allow-list types; verified-status parity with the client |
 | `aggregate.py` | Species + year + grid-cell aggregation, with an auditable report |
 | `pipeline.py` | The whole boundary. Explicit column mapping, nothing inferred |
@@ -44,32 +55,38 @@ from etl.policy import PublicationPolicy
 from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
 from etl.source_contract import BRERC_MAIN_DATA_DASH, LoadMode
 
-# PROPOSED conservative envelope only. These values are not BRERC-approved and
-# must not be copied into production until the sign-off record is complete.
+# Safe-v1 decision envelope. This example is not a production artifact: real
+# approval/evidence values and exact retained bytes must be supplied externally.
 policy = PublicationPolicy(
     version="brerc-2026-08",
     precision_mode="approved",
-    suppression_mode="none",               # only after BRERC chooses it
-    licensing_mode="not-applicable",        # only after BRERC chooses it
-    record_type_safety_mode="not-used",     # only if row sensitivity includes type
+    suppression_mode="none",
+    # External fact, not an engineering default: use an evidenced allow-list,
+    # or "not-applicable" only when the retained authority expressly says so.
+    licensing_mode=approved_licensing_mode,
+    allowed_licence_values=approved_licence_allow_list,
+    record_type_safety_mode="rules",
     row_level_records_mode="aggregates-only",
     verification_publication_mode="unavailable",  # view has no verdict column
-    ordinary_resolution_metres=1000,       # proposed; NOT BRERC-approved
-    default_sensitive_metres=10000,        # BRERC MUST confirm, per taxon
-    row_sensitive_resolution_metres=1000,  # BRERC MUST confirm
+    sensitive_record_action="withhold",
+    ordinary_resolution_metres=1000,
+    map_cell_resolution_metres=1000,
+    min_records_per_cell=1,                # k=1: no additional sparse-cell suppression
+    default_sensitive_metres=10000,        # retained policy metadata; no safe-v1 sensitive row emits
+    row_sensitive_resolution_metres=1000,  # classification metadata; the row is withheld
     non_sensitive_values=frozenset({"no"}),
+    sensitive_record_type_metres=approved_sensitive_record_type_rules,
+    record_type_vocabulary=approved_record_type_vocabulary,
     sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
     sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
     # At least 32 random bytes, supplied by a secret store; never in the repo.
     public_id_salt=os.environ["BRERC_PUBLIC_ID_SECRET"],
-).with_approval(
-    approved_by=os.environ["BRERC_POLICY_APPROVER"],
-    approver_role=os.environ["BRERC_POLICY_APPROVER_ROLE"],
-    approver_organisation="BRERC",
-    evidence_reference=os.environ["BRERC_POLICY_EVIDENCE_REFERENCE"],
-    approved_on=os.environ["BRERC_POLICY_APPROVED_ON"],
-    review_due=os.environ["BRERC_POLICY_REVIEW_DUE"],
 )
+
+# Direct approval uses policy.with_approval(...). If BRERC delegated authority,
+# use policy.with_delegated_approval(...): name the actual approver and their
+# organisation as well as the BRERC delegator, delegation scope/date and the
+# separately retained delegation evidence. Do not label a delegate as BRERC.
 
 records, report = run_pipeline_for_source(
     rows,
@@ -88,6 +105,11 @@ That final value is a **development/QA preview**, not a public release. The conf
 contract pins column metadata but does not yet contain an approved identity for the view SQL,
 so `build_payloads(...)` deliberately refuses it. A future reviewed contract must pin that
 identity before the release path can succeed.
+
+Production loading accepts only exact JSON with
+`artifactFormat="brerc-publication-policy/v2"`. Version 2 binds
+`sensitiveRecordAction` and the direct/delegated approval chain into the approval digest; a
+version-1 artifact is rejected rather than being assigned the new decision implicitly.
 
 Three guards make this more than documentation:
 
@@ -114,18 +136,18 @@ Generalising to 1 km keeps two digits *per axis* → `ST5872`. Truncating the st
 generalised record, including protected species, and it looks correct on review.
 Pinned by `test_naive_string_truncation_would_be_wrong`.
 
-**2. Sensitive species were dropped, not generalised.** The old `filtering.py` removed them.
-Safe from disclosure, so nobody caught it — but it contradicts
-`Data_Governance_and_Compliance.md` (*"Generalise, do not randomise"*) and quietly destroys
-data. A public map that omits protected species shows a false distribution with no indication
-anything is missing. `sensitivity.generalise()` coarsens instead.
+**2. Historical drop and generalisation behaviours are not the safe-v1 decision.** The old
+`filtering.py` silently removed sensitive species; a later development policy generalised them
+to coarser squares. Both histories matter when reading old evidence, but neither is allowed to
+choose current production behaviour implicitly. `PublicationPolicy.sensitive_record_action`
+now makes the decision explicit. Safe v1 chooses `withhold`, records the fixed
+`sensitive-record-withheld` disposition and does so before geometry and public-id generation.
 
-**3. The public floor was wrong.** An earlier draft used 1 km. The app has **two tiers**:
-individual records at a **100 m** contract limit (`PUBLIC_MIN_PRECISION_METRES` in
-`web/src/lib/api/schemas.ts`), and map cells aggregated to **1 km**. A 1 km floor would have
-destroyed the precision the records table exists to show. Note the 100 m figure is a *contract
-limit, not an authorisation* — whether BRERC permits 100 m publication of real locations is
-still unconfirmed, which is why it now comes from the policy.
+**3. Safe v1 has one public location tier.** Older prototype contracts accepted individual
+records at 100 m and map cells at 1 km. Safe v1 publishes aggregates only: an otherwise eligible
+ordinary record contributes at **1 km or coarser**, and a coarser source record is retained at
+its honest source precision. The browser's ability to parse 100 m is not permission to publish
+real BRERC data at 100 m.
 
 **4. The column name was hard-coded and guessable.** `df["species_id"]` raises a KeyError on
 the real data — fail-closed, survivable. But the tempting fix is a `.get()` or a try/except,
@@ -211,6 +233,7 @@ is the failure the report exists to detect.
 
 | Reason | Cause |
 |---|---|
+| `sensitive-record-withheld` | Safe-v1 classification found sensitivity on the taxon snapshot, dictionary flag, source row or approved record type |
 | `species-not-permitted` | Taxon did not resolve, and the policy withholds unknowns |
 | `missing-grid-ref` | No reference on the record |
 | `unparseable-grid-ref` | Not a valid OS reference, or an odd digit count |
@@ -242,24 +265,25 @@ them, so emitting either produces a square the client silently fails to draw:
 A record whose *own* resolution is one of these is withheld as `resolution-not-public`.
 `policy.coarsen_unpublishable_resolutions` (default **False**) would instead promote it to the
 next drawable square — 2 km → 10 km, strictly coarser so it cannot disclose more, but a
-resolution BRERC did not choose. **BRERC's decision, listed in the questions below.**
+different presentation. Safe v1 keeps this switch false and withholds the input; enabling it
+later requires a new policy version.
 
-## Mixed-resolution map cells
+## Safe-v1 resolution behaviour
 
-A sensitive record generalised to 10 km cannot be placed in a 1 km cell without inventing
-precision. So cells are emitted at **mixed resolutions**: ordinary records aggregate to 1 km,
-sensitive ones keep their coarser square. `GridCellSchema` carries `precisionMetres` per cell
-and the client derives each polygon from the id, so a 10 km cell draws as a 10 km square —
-honest, and the NBN/GBIF presentation.
+Safe v1 emits no sensitive record and therefore has no sensitive 10 km cell. Ordinary records
+aggregate at 1 km unless their source reference is already coarser; in that case the source
+precision is kept because the pipeline must never invent finer knowledge. `GridCellSchema`
+carries `precisionMetres` per cell and the client derives the polygon from the grid reference.
 
-> **Frontend note:** the current fixtures hardcode `precisionMetres: 1000` for every cell, so
-> the map has only ever drawn one square size. Mixed resolutions are valid under the contract
-> but are **new behaviour and need a visual check**.
+Older development evidence may show sensitive rows generalised into mixed-resolution cells.
+That remains a supported, explicitly selectable policy mechanism for a future approved policy,
+but it is **legacy/development behaviour, not safe v1**.
 
 ## Historical real-subset verification (28 Jul 2026; rerun required)
 
 Run against `varied sample from main5.xls` (998 rows) and `reptile sample from main5.xls`
 (918 rows), with the full 96,824-row species dictionary and the 155-row record-type list.
+This used the former development/generalisation policy, not safe v1.
 
 | Check | Result |
 |---|---|
@@ -282,11 +306,12 @@ That run predates the reviewed source-view contract, approval binding and the mo
 current release sign-off. It must be repeated after BRERC approves a publication policy and
 before any real-data release.
 
-**The gate was also exercised against all 65 real sensitive taxa** — every `SENSITIVE = "yes"`
-id from the dictionary, crossed with the seven reference shapes present in the samples
-(1 m through 100 km, including a tetrad). 455 cases: **390 emitted, every one at 10 km; 65
-withheld** (the 100 km case, which is undrawable). **Nothing finer than 10 km was ever
-emitted.**
+**Historical generalisation test only:** the gate was also exercised under the former
+development action against all 65 retained sensitive taxa, crossed with seven grid-reference
+shapes. That 455-case run emitted 390 at 10 km and withheld 65 undrawable 100 km cases. It does
+not evidence the selected safe-v1 action. Under safe v1, all 455 sensitive cases must instead
+receive `sensitive-record-withheld` before a public grid reference or identifier is created;
+the automated safety tests enforce that invariant.
 
 > **The samples themselves cannot exercise the sensitive-species gate.** Neither contains a
 > listed taxon — the list is 54 plants, 8 moths, a lichen, a crustacean and a mammal; the
@@ -325,10 +350,12 @@ flag. Sensitivity can attach to the **record type**, not only the species, but B
 correct and approve the complete versioned classification before release.
 
 The gate now checks it: `policy.sensitive_record_type_metres` maps a lower-cased record type
-to its required resolution, the coarser of species and record type wins, and a listed type
-marks the record sensitive even where it does not change the resolution. **The resolutions
-themselves are not in the source — BRERC must state them.** Neither sample contains a
-sensitive record type, so this path is proven by unit tests only.
+to a protection rule and a listed type marks the record sensitive independently of the taxon
+and source-row flag. Under safe v1, that classification withholds the row before any public
+geometry or identifier is formed; the configured metres remain approval-bound metadata for
+future policies but do not make a safe-v1 sensitive row publishable. Neither supplied sample
+contains a positive sensitive record type, so the mechanism is proven by synthetic tests; a
+controlled real example is still required for production acceptance.
 
 ## What the ETL cannot yet produce
 
@@ -360,67 +387,67 @@ individual rows are enabled; aggregate counts never switch row verdicts on impli
 Derived figures live under `payloads["meta"]`, outside the contract shapes, precisely so
 nothing can drift into a strict schema by accident.
 
-## What BRERC must confirm before real data
+## What is decided for safe v1
 
-1. **Per-taxon public resolutions.** The 65 ids are exactly the taxa flagged
-   `SENSITIVE = "yes"` in the dictionary and match the separate sensitive-list export — that
-   question is closed. But **neither file carries a resolution column**, and NBN assigns these
-   individually (1/2/10/50/100 km). Also needed: the list's version and review date.
-2. **The ordinary resolution.** Is 100 m publication of real locations authorised? The
-   frontend accepting it is a contract fact, not a permission.
-3. **A corrected classification and resolutions for all 155 record types.**
-4. **Suppression threshold** (`min_records_per_cell`). 1 means no suppression: every occupied
-   square is shown.
-5. **Place names** — publish or withhold?
-6. **Record ids** — publish BRERC's own numbers, or the derived non-reversible ids?
-7. **Licence vocabulary.** `licence` is populated on 257 reptile rows and blank on all varied
-   rows; its meaning is unclear, and it gates any export or download feature.
-8. **Verification vocabulary.** Should `accepted_verification_values` be BRERC's exhaustive
-   list? Real data contains values such as `"BRERC (1)"`, which normalise to `unknown`.
-9. **Tetrads.** Withhold them, promote them to 10 km, or add tetrad support to the client
-   parser? `Data_Governance_and_Compliance.md` lists 2 km as a supported public resolution,
-   but the client cannot draw one.
-10. **100 km references.** Same question, with no promotion available — 10 km is the coarsest
-    square the client can draw.
-11. **A sample containing known sensitive records**, with expected output resolutions.
-12. **Where the HMAC secret lives**, how it is generated/rotated, and who holds it after
-    handover.
+The safe-v1 decision set is deliberately narrow:
 
-## Still to build
+1. publish aggregates only; individual occurrences and their optional fields remain off;
+2. withhold every sensitive record, whether sensitivity comes from the retained taxon snapshot,
+   digest-bound dictionary, source row or approved record type;
+3. publish otherwise eligible ordinary records at 1 km or their coarser source precision;
+4. use `min_records_per_cell=1` and `suppression_mode="none"`, so there is no additional
+   sparse-cell threshold after the safety gate;
+5. withhold unresolvable taxa and unrenderable grid references; and
+6. never publish original BRERC identifiers, private coordinates, place names or raw source text.
 
-The source-view preflight is now implemented in `source_contract.py`: it pins the exact
-39-column `dashboard.main_data_dash` definition, validates database metadata and zero-row
-cursor headers, binds the singular `sensitive` control to the 1 km rule, canonicalises
-`unique_no numeric(13,2)`, and refuses incremental mode with named blockers. See
-`docs/SOURCE_CONTRACT.md`.
+These choices remove the need to invent per-sensitive-taxon public resolutions for the first
+release: sensitive records do not reach aggregation at any resolution. A future decision to show
+them in coarse cells is a new policy version and needs new impact modelling and approval.
 
-The live-view identity workflow is also implemented: `sql/capture_main_data_dash_view.sql`
-captures the exact non-pretty PostgreSQL view definition and catalogue evidence;
-`scripts/prepare_view_approval.py` validates it and creates a sanitised pending hand-off; and
-`scripts/verify_view_approval.py` verifies the named BRERC approval against both the contract and
-raw capture. BRERC still has to run and approve it on the internal live database. See
-`docs/VIEW_DEFINITION_APPROVAL.md`.
+## Production inputs and evidence still required
 
-`run_pipeline` creates a candidate transformation. Synthetic tests use the explicitly named
-`build_candidate_payloads`, which returns a `CandidatePreview` rather than a dictionary. The
-preview is deliberately not JSON-serialisable and cannot be passed to the release builder.
-Only `build_payloads(..., policy=approved_policy)` can construct a releasable dictionary: it
-rechecks approval dates, review expiry, the policy decision digest and the exact approval
-digest recorded by the transformation. Changing any publication rule after approval or trying
-to release a development candidate fails closed. A future public-database writer must accept only
-a trusted source result and invoke the release-gated builder itself; it must never accept
-caller-built dictionaries or candidate previews.
+Implemented code is not production activation. Before a real BRERC run, operators must retain
+and verify all of the following:
 
-This port contains the publication safety core, exact source contract, view-identity model,
-manual capture/approval tools, and their regression gates. It deliberately does not contain the
-trusted PostgreSQL connector or the destination release loader. Those are separate items in the
-main-based reconciliation queue and cannot be inferred from dormant helper methods in this
-package. A releasable policy that binds a species dictionary must receive that exact dictionary at
-runtime, and an identifier absent from a dictionary is not treated as known merely because its
-shape is valid. The ordinary complete-run pipeline still materialises its result in memory.
+1. the exact `brerc-publication-policy/v2` JSON bytes and SHA-256, with the safe-v1 decisions,
+   approval dates and evidence reference;
+2. either a direct BRERC approver, or a delegated approval that identifies the actual approver
+   and organisation **and** the BRERC delegator, role, scope, delegation date and retained
+   delegation evidence;
+3. the approved live-view identity capture and independently pinned environment/role evidence;
+4. the exact species dictionary and corrected record-type classification bound to the policy;
+5. the record-data licence codebook or an evidenced `not-applicable` decision for aggregate
+   display—blank source licence values are not permission;
+6. a controlled sample containing genuinely sensitive rows on each available sensitivity axis,
+   with expected withholding outcomes, followed by the real BRERC acceptance run;
+7. production source-count/drop bounds and the evidence from the exact candidate snapshot;
+8. protected public-id and reconciliation HMAC secrets, destination TLS identity and ownership;
+   and
+9. an approved source-view version with modification/deletion semantics before incremental mode
+   can be enabled.
 
-Not yet present in this port or externally approved: trusted locked database extraction;
-streaming safe transformation and inactive PostgreSQL/PostGIS staging; immutable release ledgers,
-database reconciliation and atomic activation; the incremental source window, update/deletion
-coordinator and lookup invalidation; BRERC-approved count/drop thresholds; the outbox email worker;
-the frozen public API contract; Martin; and the licensed-image pipeline.
+## Implemented mechanism and remaining operational work
+
+The source-view preflight in `source_contract.py` pins the 39-column
+`dashboard.main_data_dash` schema, validates database metadata and zero-row cursor headers,
+canonicalises `unique_no numeric(13,2)`, binds the row sensitivity column and refuses
+incremental mode with named blockers. Safe v1 interprets every value except explicit `No` as
+sensitive and withholds that row; the old description of this field as a public 1 km route is
+historical context, not current output behaviour. See `docs/SOURCE_CONTRACT.md`.
+
+The live-view identity capture/approval workflow, trusted locked PostgreSQL connector,
+streaming safety transformation, inactive PostGIS candidate loader, immutable release evidence,
+database reconciliation and atomic activation mechanism are implemented in this integrated
+codebase. `run_pipeline` still separates a non-serialisable `CandidatePreview` from the
+release-gated payload builder, and the loader accepts only a strict approved version-2 artifact.
+
+Migration `0002_sensitive_record_action` records `generalise` or `withhold` on both the immutable
+release manifest and public-release capability row, with a deferred database constraint proving
+they match. The API can therefore report the action belonging to the active release rather than
+claiming a static privacy rule.
+
+None of those mechanisms supplies the missing live BRERC capture, approval artifact, dictionary,
+record-type list, licence decision, credentials, secrets, production PostGIS/TLS target or real
+acceptance evidence. No production activation is claimed. Incremental update/deletion handling,
+Martin (or a formally approved alternative), operational deployment/monitoring, and licensed
+production content remain separate delivery decisions.

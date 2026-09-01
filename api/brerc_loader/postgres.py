@@ -71,9 +71,9 @@ from .models import LoaderRunReport, LoadMode, RunState
 from .policy_artifact import parse_publication_policy_artifact
 from .species_dictionary import parse_species_dictionary_artifact
 
-LOADER_VERSION = "brerc-postgres-loader-v1"
+LOADER_VERSION = "brerc-postgres-loader-v2"
 PROJECTION_VERSION = "brerc-main-data-dash-safe-projection-v1"
-SOURCE_RESULT_EVIDENCE_PROFILE = "brerc-source-result-evidence-v1"
+SOURCE_RESULT_EVIDENCE_PROFILE = "brerc-source-result-evidence-v2"
 SOURCE_ID = "dashboard.main_data_dash"
 TARGET_BEGIN = "BEGIN"
 TARGET_COMMIT = "COMMIT"
@@ -750,13 +750,15 @@ class _PostgreSQLTargetStore:
             if row is None:
                 break
             migrations.append(row)
-        if len(migrations) != 1:
+        if len(migrations) != 2:
             raise LoaderTargetProtocolError()
-        migration = mapping_row(migrations[0], TARGET_MIGRATION_HEADER)
-        if migration != {
-            "migration_version": 1,
-            "migration_key": "0001_publication_store",
-        }:
+        observed_migrations = tuple(
+            mapping_row(migration, TARGET_MIGRATION_HEADER) for migration in migrations
+        )
+        if observed_migrations != (
+            {"migration_version": 1, "migration_key": "0001_publication_store"},
+            {"migration_version": 2, "migration_key": "0002_sensitive_record_action"},
+        ):
             raise LoaderTargetProtocolError()
         self._set_statement_budget(cursor)
         _execute(cursor, TARGET_IDENTITY_SQL)
@@ -1481,6 +1483,7 @@ class _PostgreSQLTargetStore:
 
             source_result_sha256 = self._source_result_digest(
                 handle.release_id,
+                sensitive_record_action=policy.sensitive_record_action,
                 sensitivity_buckets=evidence.sensitivity_buckets,
             )
             candidate_sha256 = self._candidate_public_digest(
@@ -1508,8 +1511,8 @@ class _PostgreSQLTargetStore:
                 "source_contract_version, source_contract_sha256, "
                 "observed_view_definition_sha256, observed_view_identity_sha256, "
                 "projection_version, projection_sha256, publication_policy_version, "
-                "publication_policy_sha256, policy_approval_sha256, suppression_mode, "
-                "min_records_per_cell, etl_version, compatibility_sha256, "
+                "publication_policy_sha256, policy_approval_sha256, sensitive_record_action, "
+                "suppression_mode, min_records_per_cell, etl_version, compatibility_sha256, "
                 "species_dictionary_artifact_sha256, species_dictionary_sha256, "
                 "sensitivity_snapshot_sha256, source_row_count, "
                 "source_inventory_count, delta_row_count, eligible_pre_suppression_count, "
@@ -1519,7 +1522,7 @@ class _PostgreSQLTargetStore:
                 ") VALUES ("
                 "%s, %s, NULL, NULL, NULL, NULL, %s, %s, %s, %s, %s, %s, %s, %s, "
                 "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-                "%s, %s, %s, %s, %s, %s"
+                "%s, %s, %s, %s, %s, %s, %s"
                 ")",
                 (
                     handle.release_id,
@@ -1533,6 +1536,7 @@ class _PostgreSQLTargetStore:
                     policy.version,
                     policy_artifact_sha256,
                     approval_sha256,
+                    policy.sensitive_record_action,
                     policy.suppression_mode,
                     policy.min_records_per_cell,
                     LOADER_VERSION,
@@ -1670,6 +1674,7 @@ class _PostgreSQLTargetStore:
             or evidence.contract_sha256 != source_contract.digest()
             or evidence.policy_version != policy.version
             or evidence.policy_approval_digest != policy.approval_digest
+            or evidence.sensitive_record_action != policy.sensitive_record_action
             or evidence.result_columns != projection
             or not projection
             or len(set(projection)) != len(projection)
@@ -1821,15 +1826,16 @@ class _PostgreSQLTargetStore:
             cursor,
             "INSERT INTO publication.public_release ("
             "release_id, source_data_as_of, publication_policy_version, dataset_version, "
-            "suppression_mode, min_records_per_cell, verification_available, "
+            "sensitive_record_action, suppression_mode, min_records_per_cell, verification_available, "
             "individual_records_available, record_verification_available, place_available, "
             "abundance_available, record_type_available, public_source_label"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 handle.release_id,
                 snapshot_at,
                 policy.version,
                 dataset_version,
+                policy.sensitive_record_action,
                 policy.suppression_mode,
                 policy.min_records_per_cell,
                 capabilities["verification"],
@@ -2039,6 +2045,7 @@ class _PostgreSQLTargetStore:
         self,
         release_id: UUID,
         *,
+        sensitive_record_action: str,
         sensitivity_buckets: tuple[tuple[str, int], ...],
     ) -> str:
         disposition_sql = (
@@ -2062,6 +2069,7 @@ class _PostgreSQLTargetStore:
             {
                 "ledgerSha256": ledger_sha256,
                 "profile": SOURCE_RESULT_EVIDENCE_PROFILE,
+                "sensitiveRecordAction": sensitive_record_action,
                 "sensitivityBuckets": [list(bucket) for bucket in sensitivity_buckets],
             }
         )
@@ -2076,7 +2084,8 @@ class _PostgreSQLTargetStore:
     ) -> tuple[tuple[str, Sequence[object]], ...]:
         release_sql = (
             "SELECT %s::text AS publication_policy_version, %s::text AS dataset_version, "
-            "%s::text AS suppression_mode, %s::integer AS min_records_per_cell, "
+            "%s::text AS sensitive_record_action, %s::text AS suppression_mode, "
+            "%s::integer AS min_records_per_cell, "
             "%s::boolean AS verification_available, %s::boolean AS individual_records_available, "
             "%s::boolean AS record_verification_available, %s::boolean AS place_available, "
             "%s::boolean AS abundance_available, %s::boolean AS record_type_available, "
@@ -2085,6 +2094,7 @@ class _PostgreSQLTargetStore:
         release_params: Sequence[object] = (
             policy.version,
             dataset_version,
+            policy.sensitive_record_action,
             policy.suppression_mode,
             policy.min_records_per_cell,
             capabilities["verification"],
@@ -2165,8 +2175,8 @@ class _PostgreSQLTargetStore:
 
     def _database_public_digest(self, release_id: UUID) -> str:
         release_sql = (
-            "SELECT publication_policy_version, dataset_version, suppression_mode, "
-            "min_records_per_cell, verification_available, individual_records_available, "
+            "SELECT publication_policy_version, dataset_version, sensitive_record_action, "
+            "suppression_mode, min_records_per_cell, verification_available, individual_records_available, "
             "record_verification_available, place_available, abundance_available, "
             "record_type_available, public_source_label FROM publication.public_release "
             "WHERE release_id = %s"

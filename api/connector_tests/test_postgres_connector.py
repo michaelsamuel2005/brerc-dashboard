@@ -118,7 +118,11 @@ def test_connector(config, *, connection_factory, monotonic=None):
     )
 
 
-def approved_policy() -> PublicationPolicy:
+def approved_policy(
+    *,
+    sensitive_record_action: str = "generalise",
+    ordinary_resolution_metres: int = 100,
+) -> PublicationPolicy:
     policy = PublicationPolicy(
         version="connector-test-policy",
         precision_mode="approved",
@@ -127,10 +131,11 @@ def approved_policy() -> PublicationPolicy:
         record_type_safety_mode="not-used",
         row_level_records_mode="aggregates-only",
         verification_publication_mode="unavailable",
+        sensitive_record_action=sensitive_record_action,
         sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
         sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
         species_dictionary_sha256=CONNECTOR_DICTIONARY.digest(),
-        ordinary_resolution_metres=100,
+        ordinary_resolution_metres=ordinary_resolution_metres,
         default_sensitive_metres=10_000,
         row_sensitive_resolution_metres=1_000,
         non_sensitive_values=frozenset({"no"}),
@@ -592,6 +597,7 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
         self.assertEqual([len(batch) for batch in batches], [2, 1])
         self.assertEqual(evidence.rows_seen, 3)
         self.assertEqual(evidence.records_eligible_before_suppression, 3)
+        self.assertEqual(evidence.sensitive_record_action, "generalise")
         self.assertEqual(
             evidence.observed_species_dictionary_sha256,
             CONNECTOR_DICTIONARY.digest(),
@@ -605,6 +611,47 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
             self.assertNotIn(private, rendered)
         self.assertNotIn("ST587721", repr(batches[1]))
         self.assertEqual(batches[1][0].record.grid_ref, "ST5872")
+
+    def test_safe_v1_evidence_and_batches_withhold_sensitive_rows(self):
+        contract = approved_contract()
+        connection = FakeConnection(
+            row_batches=[
+                [source_row("1.00"), source_row("2.00") | {"sensitive": "Yes"}],
+                [],
+            ]
+        )
+        policy = approved_policy(
+            sensitive_record_action="withhold",
+            ordinary_resolution_metres=1000,
+        )
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        with patch(
+            "brerc_source.postgres._default_connection_factory",
+            return_value=connection,
+        ):
+            stream = connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=policy,
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
+            )
+            with stream as snapshot:
+                batch = next(snapshot)
+                with self.assertRaises(StopIteration):
+                    next(snapshot)
+                evidence = snapshot.evidence
+
+        self.assertEqual(evidence.sensitive_record_action, "withhold")
+        self.assertEqual(evidence.rows_seen, 2)
+        self.assertEqual(evidence.records_eligible_before_suppression, 1)
+        self.assertEqual(batch[0].record.grid_ref, "ST5872")
+        self.assertEqual(batch[0].record.precision_metres, 1000)
+        self.assertIsNone(batch[1].record)
+        self.assertIsNone(batch[1].cell_id)
+        self.assertIsNone(batch[1].cell_precision_metres)
+        self.assertEqual(batch[1].withheld_reason, "sensitive-record-withheld")
+        self.assertNotIn("ST587721", repr(batch[1]))
 
     def test_short_reconciliation_secret_fails_before_a_socket(self):
         contract = approved_contract()

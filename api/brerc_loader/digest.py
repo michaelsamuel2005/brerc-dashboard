@@ -17,7 +17,7 @@ from uuid import UUID
 
 from .errors import LoaderCandidateInvalid
 
-DIGEST_PROFILE = "brerc-publication-database-sha256-v2"
+DIGEST_PROFILE = "brerc-publication-database-sha256-v3"
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,7 @@ PUBLIC_RELEASE_DIGEST_TABLES = (
         (
             "publication_policy_version",
             "dataset_version",
+            "sensitive_record_action",
             "suppression_mode",
             "min_records_per_cell",
             "verification_available",

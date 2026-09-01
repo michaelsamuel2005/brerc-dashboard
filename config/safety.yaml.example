@@ -102,7 +102,9 @@ generalisation:
   default_sensitive_resolution_m: 1000
 
 aggregation:
-  suppression_threshold: 2
+  # Legacy pandas preview only; the approval artifact is production authority.
+  # Safe-v1 has no additional sparse-cell suppression after safety gates (k=1).
+  suppression_threshold: 1
   cell_size_m: 1000
 
 species_resolutions: {}

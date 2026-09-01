@@ -143,6 +143,7 @@ class StreamingTransformSession:
         report.policy_version = policy.version
         report.policy_approved = policy.is_approved()
         report.policy_approval_digest = policy.approval_digest
+        report.sensitive_record_action = policy.sensitive_record_action
         report.publish_individual_records = policy.publish_individual_records
         report.publish_abundance = policy.publish_abundance
         report.publish_place_names = policy.publish_place_names

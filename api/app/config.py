@@ -43,15 +43,6 @@ ALLOWED_ORIGINS = (
 # before PostgreSQL cancels it, so a heavy/runaway query can't hang the API.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 
-# Published alongside the release. The actual tiers are measured from the
-# serving views; this note explains their meaning without asserting a tier.
-SENSITIVITY_POLICY_NOTE = os.getenv(
-    "SENSITIVITY_POLICY_NOTE",
-    "Locations of protected species are generalised before publication. "
-    "Precise coordinates are never released.",
-)
-
-
 # ---------------------------------------------------------------------------
 # ROW CAPS — the most rows any single request may ever receive
 # ---------------------------------------------------------------------------

@@ -118,6 +118,7 @@ class PipelineReport:
     policy_version: str = "unknown"
     policy_approved: bool = False
     policy_approval_digest: str | None = None
+    sensitive_record_action: str = "undecided"
     candidate_digest: str | None = None
     source_contract_version: str | None = None
     source_contract_digest: str | None = None
@@ -157,6 +158,7 @@ class PipelineReport:
             "policyVersion": self.policy_version,
             "policyApproved": self.policy_approved,
             "policyApprovalDigest": self.policy_approval_digest,
+            "sensitiveRecordAction": self.sensitive_record_action,
             "candidateDigest": self.candidate_digest,
             "sourceContractVersion": self.source_contract_version,
             "sourceContractDigest": self.source_contract_digest,
@@ -703,6 +705,7 @@ def run_pipeline(
     report.policy_version = policy.version
     report.policy_approved = policy.is_approved()
     report.policy_approval_digest = policy.approval_digest
+    report.sensitive_record_action = policy.sensitive_record_action
     report.publish_individual_records = policy.publish_individual_records
     report.publish_abundance = policy.publish_abundance
     report.publish_place_names = policy.publish_place_names
@@ -1215,6 +1218,10 @@ def build_payloads(
     if report.policy_version != policy.version:
         raise PolicyNotApproved(
             "release policy version differs from the policy that transformed the records"
+        )
+    if report.sensitive_record_action != policy.sensitive_record_action:
+        raise PolicyNotApproved(
+            "sensitive-record action differs from the policy that transformed the records"
         )
     if report.publish_individual_records is not policy.publish_individual_records:
         raise PolicyNotApproved(

@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = ROOT / "db" / "migrations" / "0001_publication_store.sql"
+SENSITIVE_ACTION_MIGRATION_PATH = ROOT / "db" / "migrations" / "0002_sensitive_record_action.sql"
 ROLES_PATH = ROOT / "db" / "roles.sql"
 README_PATH = ROOT / "db" / "README.md"
 
@@ -30,7 +31,7 @@ def _table_body(sql: str, qualified_name: str) -> str:
 
 def _view_body(sql: str, qualified_name: str) -> str:
     match = re.search(
-        rf"CREATE VIEW {re.escape(qualified_name)} .*? AS\n(.*?);",
+        rf"CREATE (?:OR REPLACE )?VIEW {re.escape(qualified_name)} .*? AS\n(.*?);",
         sql,
         flags=re.DOTALL,
     )
@@ -43,6 +44,7 @@ class DestinationMigrationContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.sql = MIGRATION_PATH.read_text(encoding="utf-8")
+        cls.sensitive_action_sql = SENSITIVE_ACTION_MIGRATION_PATH.read_text(encoding="utf-8")
         cls.roles = ROLES_PATH.read_text(encoding="utf-8")
         cls.readme = README_PATH.read_text(encoding="utf-8")
 
@@ -59,6 +61,107 @@ class DestinationMigrationContract(unittest.TestCase):
         )
         self.assertNotRegex(self.sql.upper(), r"\b(?:DROP|TRUNCATE)\b")
         self.assertNotIn("CREATE OR REPLACE VIEW", self.sql.upper())
+
+    def test_sensitive_action_migration_is_transactional_and_strictly_ordered(self):
+        sql = self.sensitive_action_sql
+        self.assertRegex(sql, r"(?m)^BEGIN;$")
+        self.assertRegex(sql, r"(?m)^COMMIT;$")
+        self.assertIn("pg_advisory_xact_lock", sql)
+        self.assertIn("loader_control.schema_migration", sql)
+        self.assertIn("migration 0001_publication_store is absent", sql)
+        self.assertIn("migration 0002_sensitive_record_action is already applied", sql)
+        self.assertIn("migration history is not exactly 0001", sql)
+        self.assertIn("migration_version = 1", sql)
+        self.assertIn("migration_key = '0001_publication_store'", sql)
+        self.assertIn("migration_version = 2", sql)
+        self.assertIn("migration_key = '0002_sensitive_record_action'", sql)
+        self.assertNotRegex(sql.upper(), r"\b(?:DROP TABLE|TRUNCATE)\b")
+
+    def test_sensitive_action_is_required_and_allow_listed_on_both_release_rows(self):
+        sql = self.sensitive_action_sql
+        for table, constraint in (
+            (
+                "loader_control.release_manifest",
+                "release_manifest_sensitive_record_action",
+            ),
+            (
+                "publication.public_release",
+                "public_release_sensitive_record_action",
+            ),
+        ):
+            with self.subTest(table=table):
+                self.assertRegex(
+                    sql,
+                    rf"ALTER TABLE {re.escape(table)}\s+"
+                    r"ADD COLUMN sensitive_record_action text NOT NULL "
+                    r"DEFAULT 'generalise';",
+                )
+                self.assertRegex(
+                    sql,
+                    rf"ALTER TABLE {re.escape(table)}\s+"
+                    r"ALTER COLUMN sensitive_record_action DROP DEFAULT;",
+                )
+                self.assertRegex(
+                    sql,
+                    rf"ALTER TABLE {re.escape(table)}\s+"
+                    rf"ADD CONSTRAINT {constraint} CHECK \(\s*"
+                    r"sensitive_record_action IN \('generalise', 'withhold'\)\s*\);",
+                )
+
+    def test_sensitive_action_match_is_symmetric_and_deferred(self):
+        sql = self.sensitive_action_sql
+        function_start = sql.index(
+            "CREATE FUNCTION loader_control.enforce_sensitive_record_action_match()"
+        )
+        function_end = sql.index("$enforce_sensitive_record_action_match$;", function_start)
+        function = sql[function_start:function_end]
+        self.assertIn("FROM loader_control.release_manifest AS m", function)
+        self.assertIn("FROM publication.public_release AS p", function)
+        self.assertIn("manifest_action <> release_action", function)
+        self.assertIn("ERRCODE = '23514'", function)
+        self.assertIn(
+            "release sensitive-record action differs from immutable manifest",
+            function,
+        )
+        for trigger, table in (
+            (
+                "release_manifest_sensitive_record_action_match",
+                "loader_control.release_manifest",
+            ),
+            (
+                "public_release_sensitive_record_action_match",
+                "publication.public_release",
+            ),
+        ):
+            with self.subTest(trigger=trigger):
+                self.assertRegex(
+                    sql,
+                    rf"CREATE CONSTRAINT TRIGGER {trigger}\s+"
+                    r"AFTER INSERT OR UPDATE OF sensitive_record_action\s+"
+                    rf"ON {re.escape(table)}\s+"
+                    r"DEFERRABLE INITIALLY DEFERRED\s+"
+                    r"FOR EACH ROW\s+"
+                    r"EXECUTE FUNCTION "
+                    r"loader_control\.enforce_sensitive_record_action_match\(\);",
+                )
+
+    def test_sensitive_action_is_visible_only_through_the_active_release_view(self):
+        view = _view_body(self.sensitive_action_sql, "serve.public_release")
+        self.assertIn("p.sensitive_record_action", view)
+        self.assertIn("loader_control.release", view)
+        self.assertIn("r.status = 'active'", view)
+        self.assertIn("loader_control.source_state", view)
+        self.assertIn("s.active_release_id = r.release_id", view)
+
+    def test_sensitive_action_migration_records_exact_version_and_name(self):
+        sql = self.sensitive_action_sql
+        self.assertRegex(
+            sql,
+            r"INSERT INTO loader_control\.schema_migration \(\s*"
+            r"migration_version,\s*migration_key,\s*migration_name\s*"
+            r"\) VALUES \(\s*2,\s*'0002_sensitive_record_action',\s*"
+            r"'Approval-bound sensitive-record action and serving evidence'\s*\);",
+        )
 
     def test_postgis_and_four_schemas_are_explicit(self):
         self.assertIn("CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public", self.sql)

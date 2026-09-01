@@ -8,6 +8,7 @@ No fake in this module is allowed to accept a raw BRERC row.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import hashlib
 import inspect
@@ -67,6 +68,48 @@ SPECIES_DICTIONARY_ARTIFACT = (
     b"SYNTH-2,Synthetic species beta,Synthetic beta,Yes\n"
 )
 SPECIES_DICTIONARY_ARTIFACT_SHA256 = hashlib.sha256(SPECIES_DICTIONARY_ARTIFACT).hexdigest()
+
+
+class TestConcreteInsertParameterShapes(unittest.TestCase):
+    """Catch SQL/tuple drift even when the real PostGIS service is unavailable."""
+
+    def test_critical_release_inserts_bind_one_parameter_per_placeholder(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "brerc_loader" / "postgres.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        observed: dict[str, tuple[int, int]] = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or len(node.args) < 3:
+                continue
+            try:
+                sql = ast.literal_eval(node.args[1])
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(sql, str):
+                continue
+            table = next(
+                (
+                    name
+                    for name in (
+                        "loader_control.release_manifest",
+                        "publication.public_release",
+                    )
+                    if sql.startswith(f"INSERT INTO {name} (")
+                ),
+                None,
+            )
+            if table is None:
+                continue
+            parameters = node.args[2]
+            self.assertIsInstance(parameters, ast.Tuple)
+            observed[table] = (sql.count("%s"), len(parameters.elts))
+
+        self.assertEqual(
+            observed,
+            {
+                "loader_control.release_manifest": (33, 33),
+                "publication.public_release": (14, 14),
+            },
+        )
 
 
 def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
@@ -229,6 +272,7 @@ def evidence(
         contract_sha256="a" * 64,
         policy_version="connector-test-policy",
         policy_approval_digest="b" * 64,
+        sensitive_record_action="generalise",
         observed_species_dictionary_sha256=CONNECTOR_DICTIONARY.digest(),
         observed_definition_sha256="c" * 64,
         observed_identity_sha256="d" * 64,

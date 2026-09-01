@@ -522,6 +522,7 @@ class _SafeInitialSnapshot:
                     contract_sha256=self._source_contract.digest(),
                     policy_version=self._policy.version,
                     policy_approval_digest=approval_digest,
+                    sensitive_record_action=self._policy.sensitive_record_action,
                     observed_species_dictionary_sha256=dictionary.digest(),
                     observed_definition_sha256=evidence.observation.definition_sha256,
                     observed_identity_sha256=evidence.identity_sha256,

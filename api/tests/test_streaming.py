@@ -48,6 +48,26 @@ def source_row(**changes):
     return view_row(**changes)
 
 
+def safe_v1_policy() -> PublicationPolicy:
+    policy = dataclasses.replace(
+        VIEW_POLICY,
+        version="streaming-safe-v1",
+        sensitive_record_action="withhold",
+        ordinary_resolution_metres=1000,
+        row_level_records_mode="aggregates-only",
+        publish_individual_records=False,
+        approval_digest=None,
+    )
+    return policy.with_approval(
+        approved_by="Synthetic test approver",
+        approver_role="Test data owner",
+        approver_organisation="BRERC",
+        evidence_reference="BRERC-TEST-STREAM-SAFE-V1",
+        approved_on=VIEW_POLICY.approved_on or "2026-08-14",
+        review_due=VIEW_POLICY.review_due or "2027-08-14",
+    )
+
+
 class TestGridSquareBounds(unittest.TestCase):
     def test_public_bng_squares_have_exact_epsg27700_bounds(self):
         self.assertEqual(square_bounds("ST5872"), (358000, 172000, 359000, 173000))
@@ -135,6 +155,45 @@ class TestStreamingTransform(unittest.TestCase):
             transform.finish()
         with self.assertRaises(StreamingTransformError):
             transform.transform_batch(())
+
+
+class TestSafeV1StreamingTransform(unittest.TestCase):
+    def test_sensitive_row_never_leaves_streaming_as_geometry_or_a_public_record(self):
+        transform = session(policy=safe_v1_policy())
+        disposition = transform.transform_batch(
+            (source_row(unique_no="984321.00", grid_ref="ST587721", sensitive="Yes"),)
+        )[0]
+
+        self.assertIsNone(disposition.record)
+        self.assertIsNone(disposition.cell_id)
+        self.assertIsNone(disposition.cell_precision_metres)
+        self.assertEqual(disposition.withheld_reason, "sensitive-record-withheld")
+        rendered = repr(disposition)
+        for private_value in ("984321.00", "ST587721", "Yes"):
+            self.assertNotIn(private_value, rendered)
+
+        report = transform.finish()
+        self.assertEqual(report.sensitive_record_action, "withhold")
+        self.assertEqual(report.records_public, 0)
+        self.assertEqual(report.withheld, {"sensitive-record-withheld": 1})
+        self.assertTrue(report.reconciles())
+
+    def test_ordinary_singleton_streams_at_one_kilometre_under_k_one(self):
+        policy = safe_v1_policy()
+        transform = session(policy=policy)
+        disposition = transform.transform_batch(
+            (source_row(unique_no="984322.00", grid_ref="ST587721", sensitive="No"),)
+        )[0]
+
+        self.assertIsNotNone(disposition.record)
+        self.assertEqual(disposition.record.grid_ref, "ST5872")
+        self.assertEqual(disposition.record.precision_metres, 1000)
+        self.assertEqual(disposition.cell_id, "ST5872")
+        self.assertEqual(policy.min_records_per_cell, 1)
+        report = transform.finish()
+        self.assertEqual(report.records_public, 1)
+        self.assertEqual(report.records_suppressed, 0)
+        self.assertTrue(report.reconciles())
 
 
 if __name__ == "__main__":

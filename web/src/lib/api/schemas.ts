@@ -2,7 +2,7 @@
 // Zod schemas = the SINGLE SOURCE OF TRUTH for the API contract (PLAN apiContract).
 // Every schema is .strict(): any unexpected key (a leaked Recorder1 / BLISS / easting(s) /
 // northing(s) / Comments / sensitive/sensitivity marker) makes the parse FAIL LOUDLY. This is the
-// client-side C2 net (server-side generalisation is the fix).
+// client-side C2 net (the approval-bound server policy is the safety boundary).
 //
 // Runtime safety gates (run on every parsed response, real API included):
 //   - a record's grid reference must resolve to EXACTLY its precisionMetres;
@@ -527,9 +527,14 @@ export const ProvenanceSchema = z
     coverageCaveats: z.array(z.string()),
     sensitivityPolicy: z
       .object({
-        generalisationTiersMetres: z.array(z.number().int().positive()),
-        appliesToProtectedTaxa: z.literal(true),
-        note: z.string(),
+        protectedRecordsMode: z.enum(["generalised", "withheld"]),
+        publishedLocationTiersMetres: z
+          .array(z.union([z.literal(100), z.literal(1_000), z.literal(10_000)]))
+          .refine(
+            (tiers) => tiers.every((tier, index) => index === 0 || tier > tiers[index - 1]!),
+            "published location tiers must be unique and strictly ascending",
+          ),
+        note: z.string().min(1),
       })
       .strict(),
     attributions: z.array(z.object({ label: z.string(), url: httpsUrl, licence: z.string() }).strict()),
