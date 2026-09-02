@@ -316,6 +316,30 @@ jobs:
               )
           PY
           python -m pytest app_tests -q
+      - name: Install the internal PostgreSQL run-history viewer
+        run: |
+          python -m venv "${RUNNER_TEMP}/brerc-run-dashboard"
+          "${RUNNER_TEMP}/brerc-run-dashboard/bin/python" -m pip install \
+            --disable-pip-version-check \
+            -r "${GITHUB_WORKSPACE}/run-dashboard/requirements-dev.txt"
+      - name: Prove the run-history viewer reads the successful atomic refresh
+        working-directory: run-dashboard
+        env:
+          DASHBOARD_USERNAME: synthetic-operator
+          DASHBOARD_PASSWORD: synthetic-dashboard-password
+          DASHBOARD_SECRET_KEY: synthetic-session-key-for-ci-only
+          DASHBOARD_ENV: test
+          RUN_DASHBOARD_DB_MODE: direct
+          RUN_DASHBOARD_DATABASE_URL: >-
+            postgresql://brerc_monitor_test:synthetic-monitor-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          RUN_DASHBOARD_EXPECTED_DATABASE: brerc_ui_integration
+          RUN_DASHBOARD_EXPECTED_ROLE: brerc_monitor_test
+          BRERC_RUN_DASHBOARD_INTEGRATION: "1"
+          BRERC_RUN_DASHBOARD_ADMIN_URL: >-
+            postgresql://postgres:synthetic-admin-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+        run: >-
+          "${RUNNER_TEMP}/brerc-run-dashboard/bin/python"
+          -m pytest tests -q
       # Run the browser against the exact refreshed safe-v1 release left active
       # above: one newly permitted aggregate, one source deletion removed, and
       # the sensitive synthetic row still withheld.

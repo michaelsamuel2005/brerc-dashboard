@@ -58,7 +58,7 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    overflow: hidden;
+    overflow-x: auto;
   }
   table {
     width: 100%;
@@ -99,6 +99,7 @@
   .badge.running { color: var(--running); background: var(--running-bg); }
   .badge.successful { color: var(--successful); background: var(--successful-bg); }
   .badge.failed { color: var(--failed); background: var(--failed-bg); }
+  .badge.cancelled { color: var(--failed); background: var(--failed-bg); }
   .reason {
     max-width: 480px;
     white-space: normal;
@@ -181,7 +182,7 @@
   <header>
     <div>
       <h1>BRERC ETL Run History</h1>
-      <p class="subtitle">Live status of every "UI ETL RUN" pipeline run. Refreshes automatically.</p>
+      <p class="subtitle">Authoritative status from the atomic PostgreSQL publication loader. This run list refreshes every five seconds.</p>
     </div>
     <a class="logout" href="/logout">Log out</a>
   </header>
@@ -189,13 +190,14 @@
     <table>
       <thead>
         <tr>
-          <th>Run #</th>
-          <th>Job name</th>
-          <th>Job type</th>
-          <th>Date</th>
+          <th>Job</th>
+          <th>Source</th>
+          <th>Attempt</th>
+          <th>Mode</th>
+          <th>Started</th>
           <th>Duration</th>
           <th>Status</th>
-          <th>Reason</th>
+          <th>Outcome</th>
         </tr>
       </thead>
       <tbody id="runs-body"></tbody>
@@ -225,16 +227,18 @@
     return div.innerHTML;
   }
 
-  function renderReason(run, expandable) {
-    // error_summary is the plain-English version for non-technical staff;
-    // error_message is just the exception's type name (e.g. "ValueError"),
-    // tucked behind a toggle — deliberately not the full exception message,
-    // since that can carry fragments of source data. The full error and
-    // traceback are in the server logs for anyone who needs to dig further.
-    const summary = run.error_summary || run.error_message;
+  function formatTimestamp(value) {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleString();
+  }
+
+  function renderOutcome(run, expandable) {
+    // Only a fixed failure code and its repository-owned explanation are
+    // rendered. Database/server exception text is never returned by the API.
+    const summary = run.failure_summary;
     if (!summary) {
-      // Expandable rows (successful runs) never have a reason, so this
-      // otherwise-empty cell doubles as a hover hint that the row expands.
+      if (run.reused_active_release) return "No data change — active release reused";
       if (expandable) {
         return '<span class="dash">—</span><span class="hover-hint">Click for details</span>';
       }
@@ -242,28 +246,28 @@
     }
 
     let html = escapeHtml(summary);
-    if (run.error_message && run.error_message !== summary) {
-      html += `<details><summary>Error type</summary><code>${escapeHtml(run.error_message)}</code></details>`;
+    if (run.failure_code) {
+      html += `<details><summary>Failure code</summary><code>${escapeHtml(run.failure_code)}</code></details>`;
     }
     return html;
   }
 
-  // Which runs the user has expanded to see their insert/update/delete
+  // Which runs the user has expanded to see their bounded publication counts,
   // counts, kept across the 5s auto-refresh so the table doesn't collapse
   // under someone mid-read.
   const expandedRuns = new Set();
 
   function hasCounts(run) {
-    return run.inserts !== null || run.updates !== null || run.deletes !== null;
+    return run.source_rows_seen !== null || run.candidate_rows !== null || run.rows_withheld !== null;
   }
 
   function renderCounts(run) {
     const count = (value) => (value === null || value === undefined ? 0 : value);
     return `
       <div class="counts">
-        <span>Inserted <strong>${count(run.inserts)}</strong></span>
-        <span>Updated <strong>${count(run.updates)}</strong></span>
-        <span>Deleted <strong>${count(run.deletes)}</strong></span>
+        <span>Source rows <strong>${count(run.source_rows_seen)}</strong></span>
+        <span>Publication basis <strong>${count(run.candidate_rows)}</strong></span>
+        <span>Withheld <strong>${count(run.rows_withheld)}</strong></span>
       </div>
     `;
   }
@@ -272,7 +276,7 @@
     const tr = document.createElement("tr");
     const status = (run.status || "").toLowerCase();
     const expandable = hasCounts(run);
-    const isExpanded = expandable && expandedRuns.has(run.run_number);
+    const isExpanded = expandable && expandedRuns.has(run.job_id);
 
     if (expandable) {
       tr.classList.add("expandable");
@@ -280,20 +284,21 @@
     }
 
     tr.innerHTML = `
-      <td>${run.run_number}</td>
-      <td>${escapeHtml(run.job_name)}</td>
-      <td>${escapeHtml(run.job_type)}</td>
-      <td>${escapeHtml(run.load_no || run.date) || "—"}</td>
+      <td><code title="${escapeHtml(run.job_id)}">${escapeHtml(run.job_id.slice(0, 8))}</code></td>
+      <td>${escapeHtml(run.source_id)}</td>
+      <td>${run.attempt}</td>
+      <td>${escapeHtml(run.load_mode)}</td>
+      <td>${formatTimestamp(run.started_at)}</td>
       <td>${formatDuration(run.duration_seconds)}</td>
       <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
-      <td class="reason">${renderReason(run, expandable)}</td>
+      <td class="reason">${renderOutcome(run, expandable)}</td>
     `;
 
     if (!expandable) return [tr];
 
     const detailRow = document.createElement("tr");
     detailRow.className = `detail-row${isExpanded ? "" : " hidden"}`;
-    detailRow.innerHTML = `<td colspan="7">${renderCounts(run)}</td>`;
+    detailRow.innerHTML = `<td colspan="8">${renderCounts(run)}</td>`;
 
     tr.addEventListener("click", (event) => {
       // Don't hijack clicks on the Reason column's own "Technical details"
@@ -303,9 +308,9 @@
       const nowExpanded = detailRow.classList.toggle("hidden") === false;
       tr.classList.toggle("expanded", nowExpanded);
       if (nowExpanded) {
-        expandedRuns.add(run.run_number);
+        expandedRuns.add(run.job_id);
       } else {
-        expandedRuns.delete(run.run_number);
+        expandedRuns.delete(run.job_id);
       }
     });
 
@@ -321,7 +326,10 @@
         return;
       }
 
+      if (!response.ok) throw new Error("Run history request failed");
+
       const runs = await response.json();
+      if (!Array.isArray(runs)) throw new Error("Run history response was invalid");
 
       tbody.innerHTML = "";
       emptyState.hidden = runs.length > 0;

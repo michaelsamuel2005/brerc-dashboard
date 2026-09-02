@@ -15,7 +15,9 @@ brerc-dashboard/
 ├── web/            # 🌐 PUBLIC front-end dashboard (React + TypeScript + Vite) — the main deliverable
 ├── api/            # 🔌 BACK-END API — talks to the database, serves safe data to web/
 ├── internal-web/   # 🛠️  INTERNAL staff data-quality dashboard (secondary, if time permits)
+├── run-dashboard/  # 🔐 INTERNAL atomic-loader run-history viewer (PostgreSQL)
 ├── db/             # 🗄️  DATABASE schema & migrations (PostgreSQL / PostGIS)
+├── deploy/         # ⚙️  Inert deployment templates and operator runbooks
 ├── docs/           # 📚 All shared documentation (you are here)
 ├── data/           # 🔒 Local sample data — GIT-IGNORED, never committed
 ├── .github/        # ⚙️  GitHub templates (e.g. the pull-request template)
@@ -46,7 +48,9 @@ Each area will have its own README with the detail. This table is the quick summ
 | [`web/`](../web/README.md) | The **public dashboard** — the interactive, accessible website that shows BRERC's species and environmental records to the public. React + TypeScript, built with Vite. **This is our primary deliverable.** | **Michael** | 🟢 In progress |
 | [`api/`](../api/README.md) | The **back-end API and ETL**. The loader builds publication-safe releases, while the read-only API serves only the active `serve.*` views to `web/` over HTTPS/JSON. | **Team** | 🟢 Implemented for synthetic integration; production acceptance remains |
 | [`internal-web/`](../internal-web/README.md) | The **internal data-quality tool** for BRERC staff. Helps them monitor the content and quality of their database. | **Team** | 🟡 Separate secondary tool; production operation remains |
+| [`run-dashboard/`](../run-dashboard/README.md) | The authenticated, read-only **ETL job-history viewer**. Reads only the bounded PostgreSQL monitor view; it is separate from `internal-web/`. | **Ting Ting / Team** | 🟢 Integrated with the atomic loader; production deployment remains |
 | [`db/`](../db/README.md) | The **database definitions** — roles and ordered PostgreSQL/PostGIS migrations for atomic publication releases. (*Schema* = the shape of the data; *migrations* = tracked, ordered changes to that shape.) | **Team** | 🟢 Initial and full-snapshot refresh store implemented |
+| [`deploy/`](../deploy/refresh/README.md) | Hardened, inert full-snapshot scheduling templates plus preflight, evidence and rollback instructions. | **Team / production operator** | 🟡 Implemented template; not installed or enabled |
 
 > 📝 **A note on status.** “Implemented for synthetic integration” does not mean deployed with
 > BRERC data. Live view approval, production credentials/infrastructure, production thresholds and
@@ -56,7 +60,10 @@ Each area will have its own README with the detail. This table is the quick summ
 
 ## 🔗 How the pieces fit together
 
-The three code areas talk to each other in a deliberate, one-directional chain — and this order matters for **security** and for our **legal accessibility duty** as a public-sector project.
+The public data path is a deliberate, one-directional chain — and this order
+matters for **security** and for our **legal accessibility duty** as a
+public-sector project. The internal run-history viewer observes a separate,
+redacted PostgreSQL monitoring view and is not in the public request path.
 
 ```text
    Public visitor
@@ -89,7 +96,9 @@ Use this table before you start a new piece of work. When in doubt, ask on your 
 | A new **front-end component / page / style** | `web/src/…` | For example a components or features folder inside `web/src/`. Owner: Michael. |
 | A new **API endpoint** or back-end logic | `api/…` | The back-end owns all database access and all query logic. |
 | A change to the **internal staff tool** | `internal-web/src/…` | Secondary — check priorities with the team first. |
+| A change to the **ETL run-history viewer** | `run-dashboard/…` | Internal authenticated UI; it must keep the exact `brerc_monitor` read-only boundary. |
 | A **database change** (new table, column, migration) | `db/…` | Schema and migrations only — never real data. Create `db/` if it doesn't exist yet. |
+| A **scheduler/deployment template** | `deploy/…` | Keep templates inert and credential-free; production installation is a controlled operator action. |
 | **Documentation** (guides, notes, decisions) | `docs/…` | Keep it in Markdown and cross-link where helpful. |
 | **Sample data** for local testing | `data/` | 🔒 **GIT-IGNORED** (Git is set to ignore this folder, so nothing in it is ever uploaded). Kept only on your own machine — see [`data/README.md`](../data/README.md). Create `data/` locally if it doesn't exist yet. |
 | **Real or sensitive BRERC data** | ❌ **Nowhere in Git** | Never commit it — not in `data/`, not anywhere. Real data stays out of the repository entirely. |
@@ -120,6 +129,10 @@ New to any of this? The step-by-step walkthrough is in [**docs/GETTING_STARTED_G
 | [docs/README.md](README.md) | Index of all documentation |
 | [docs/GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Zero-knowledge Git & GitHub guide |
 | [docs/MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md) | Guide for the BRERC maintainer after handover |
-| [web/README.md](../web/README.md) · [api/README.md](../api/README.md) · [internal-web/README.md](../internal-web/README.md) · [db/README.md](../db/README.md) · [data/README.md](../data/README.md) | Per-folder details |
+| [web/README.md](../web/README.md) · [api/README.md](../api/README.md) · [internal-web/README.md](../internal-web/README.md) · [run-dashboard/README.md](../run-dashboard/README.md) · [db/README.md](../db/README.md) · [deploy/refresh/README.md](../deploy/refresh/README.md) · [data/README.md](../data/README.md) | Per-folder details |
 
-> ℹ️ Some details — exactly how and where the dashboard is hosted, the precise data-update mechanism, the owners of `api/`, `internal-web/` and `db/`, and the final handover contact — are **[TO BE CONFIRMED]** as the project progresses. This document will be updated as those decisions are made.
+> ℹ️ The update mechanism is decided: one `brerc-load initial`, then atomic
+> full-snapshot `brerc-load refresh` runs. Exactly where the dashboard is
+> hosted, the production cadence and installation, the owners of `api/`,
+> `internal-web/` and `db/`, alert delivery, and the final handover contact are
+> **[TO BE CONFIRMED]**.

@@ -5,6 +5,15 @@
 **Superseded integration proposal:** PR #30, `integration/canonical` at
 `d5a2711fd2f8e3e87ed4c632f3745cf79e2e725e`, must never be merged wholesale.
 
+> **Current operational supersession:** this document records a branch decision,
+> not the production ETL command. The later atomic full-snapshot implementation
+> supersedes the legacy nightly pipeline operationally. Scheduled publication
+> updates now use `brerc-load refresh`; the retained run-history UI has since
+> been adapted to the authoritative PostgreSQL monitor view while the old
+> SQLite writer remains historical only. See
+> [`FULL_SNAPSHOT_REFRESH.md`](FULL_SNAPSHOT_REFRESH.md) and
+> [`../run-dashboard/README.md`](../run-dashboard/README.md).
+
 ## Why `main` is authoritative
 
 The two lines forked at `5417e772e45c7ccc932a17e76681bbf99d30ff33`.
@@ -14,7 +23,7 @@ At the decision point, `main` was
 reported 53 conflicted paths across the API routers, ETL, database integration,
 CI, and frontend.
 
-`main` is also the protected default branch and contains the reviewed work from
+`main` was also the protected default branch and contained the reviewed work from
 Ting Ting, Victor, Athul, and Michael, including the nightly ETL, incremental
 safety behaviour, run-history dashboard, database credential separation,
 sensitive-species fail-closed preflight, and mandatory ETL CI. Replacing that
@@ -39,10 +48,14 @@ or erase its authorship.
 
 ## Non-negotiable `main` behaviour
 
-Ports must preserve these already-integrated behaviours unless a later,
-explicitly reviewed decision replaces one:
+Ports had to preserve these already-integrated behaviours unless a later,
+explicitly reviewed decision replaced one. The atomic full-snapshot refresh is
+such a later replacement of the operational update path:
 
-- Ting Ting's nightly ETL and authenticated run-history dashboard.
+- Preserve Ting Ting's legacy ETL/dashboard code and authorship as historical
+  provenance. Do not schedule its table writer or treat its SQLite log as the
+  authoritative production run history. The retained UI is now adapted to the
+  PostgreSQL monitoring view.
 - Victor's API, PostGIS, tile/deployment, query-cap, and incremental-watermark
   work.
 - Incremental runs do not infer whole-database deletions from a partial window.
@@ -60,7 +73,7 @@ does not mean approved for production or exempt from component-owner review.
 
 | Order | Subsystem | Canonical sources | Required integration rule |
 | --- | --- | --- | --- |
-| 1 | Publication safety core | selected parts of `333ddfc`, plus `7420158` and the view-identity fixes | Coexist with the nightly ETL; do not replace it. Keep publication blocked until BRERC approves the view and policy. |
+| 1 | Publication safety core | selected parts of `333ddfc`, plus `7420158` and the view-identity fixes | At the time, coexist with the nightly ETL without erasing its authorship. Current production scheduling is superseded by atomic full-snapshot refresh. Keep publication blocked until BRERC approves the view and policy. |
 | 2 | Trusted PostgreSQL source connector | `api/brerc_source`, connector tests, capture SQL and connector documentation from `333ddfc`, `db5cadb`, `bd01cc0`, `c8558f2`, `f2d5eca` | Read-only, TLS-verified, exact database/role/view identity; no credentials in git. |
 | 3 | Initial publication store and loader | `bf7f39b`, `5c8bf2b`, `f2d5eca`, `85272bc` | Initial-only port at the time of this decision; now extended by migration 0003 and the full-snapshot refresh runbook. Preserve the deliberate incremental block. Migrations, roles, loader, atomic activation, cleanup, and live PostGIS tests travel together. |
 | 4 | `serve.*` API adapter | `91cd71f`, `9368a7a`, `da85b86`, relevant part of `df9dd66` | Adapt Victor's current routers; do not replace the API package wholesale. Prove compatibility against a real activated release. |
@@ -74,8 +87,10 @@ the API response contract is fixed.
 
 ## Work deliberately not ported from canonical
 
-- The canonical copy of the run-history dashboard: `main` already contains the
-  reviewed, newer implementation.
+- The canonical copy of the run-history dashboard: `main` already contained the
+  reviewed, newer implementation. Its UI and authorship were retained, then
+  adapted in a focused later change to read the PostgreSQL production
+  monitoring contract. Its original SQLite writer remains historical only.
 - A wholesale replacement of `api/etl`, `api/app`, or `web`.
 - Claims or code paths for genuine incremental deletion/withdrawal handling.
 - Martin: canonical contains a database role, not a complete vector-tile
