@@ -124,6 +124,13 @@ jobs:
       - name: Run the ETL and safety-gate tests
         run: python -m pytest etl/tests -q
 
+      - name: Guard the publication safety boundary
+        run: |
+          python -m unittest scripts.test_guard_stdlib_only
+          python scripts/guard_stdlib_only.py
+          python scripts/generate_browser_contract_fixture.py \
+            --check ../contracts/etl-browser-contract-fixture.json
+
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build
   # ---------------------------------------------------------------------------

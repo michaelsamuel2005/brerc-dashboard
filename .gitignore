@@ -41,3 +41,11 @@ data/*
 
 # Local database / ETL configuration
 config/safety.yaml
+
+# BRERC live-view attestation evidence contains internal catalogue identifiers
+# and SQL. Keep raw captures in controlled storage; only reviewed public
+# contracts and explicitly approved fixtures belong in git.
+*.brerc-view-capture.json
+*.brerc-view-definition.sql
+*.brerc-view-approval.pending.json
+*.brerc-view-approval.json

@@ -15,7 +15,7 @@ counts that only the real sample data produces.
 from fastapi.testclient import TestClient
 
 from app.main import app 
-from conftest import needs_b6_schema  # shared skip marker
+from tests.conftest import needs_b6_schema  # shared skip marker
 
 client = TestClient(app)
 
