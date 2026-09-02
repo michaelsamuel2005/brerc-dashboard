@@ -1,17 +1,20 @@
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 import pytest
-from unittest.mock import patch, MagicMock
 
 from etl.job import (
+    LegacyNightlyJobBlocked,
+    _assert_legacy_nightly_job_allowed,
     describe_failure,
+    get_current_ui_map,
     load_source_data,
     load_species_dictionary,
-    get_current_ui_map,
     nightly_job,
 )
 
-
 # --- load_source_data tests ---
+
 
 @patch("etl.job.pd.read_csv")
 def test_load_source_data_csv_mode_without_watermark(mock_read_csv):
@@ -106,12 +109,11 @@ def test_load_source_data_database_mode_incremental(mock_read_sql):
     # the ETL's internal modification-date column.
     assert "modified_date" in result.columns
 
-    assert result["modified_date"].equals(
-        result["date_mdb_modified"]
-    )
+    assert result["modified_date"].equals(result["date_mdb_modified"])
 
 
 # --- load_species_dictionary tests ---
+
 
 @patch("etl.job.pd.read_csv")
 def test_load_species_dictionary_csv_mode(mock_read_csv):
@@ -157,6 +159,7 @@ def test_load_species_dictionary_database_mode_raises_missing_connection():
 
 # --- get_current_ui_map tests ---
 
+
 @patch("etl.job.get_ui_map")
 def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
     # Confirms get_current_ui_map delegates to get_ui_map.
@@ -175,6 +178,57 @@ def test_get_current_ui_map_calls_ui_map_getter(mock_get_ui_map):
 
 
 # --- nightly_job tests ---
+
+
+def test_nightly_job_is_blocked_by_default_before_any_side_effect():
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch("etl.job.get_config") as mock_get_config,
+        patch("etl.job.get_destination_connection") as mock_get_destination,
+        patch("etl.job.start_run") as mock_start_run,
+        pytest.raises(LegacyNightlyJobBlocked, match="brerc-load refresh"),
+    ):
+        nightly_job()
+
+    mock_get_config.assert_not_called()
+    mock_get_destination.assert_not_called()
+    mock_start_run.assert_not_called()
+
+
+@pytest.mark.parametrize("environment", ("dev", "test"))
+def test_legacy_nightly_guard_requires_explicit_test_or_development_opt_in(environment):
+    with patch.dict(
+        "os.environ",
+        {
+            "APP_ENV": environment,
+            "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS": "1",
+        },
+        clear=True,
+    ):
+        _assert_legacy_nightly_job_allowed()
+
+
+def test_nightly_job_cannot_be_enabled_in_production():
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "APP_ENV": "prod",
+                "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS": "1",
+            },
+            clear=True,
+        ),
+        patch("etl.job.get_config") as mock_get_config,
+        patch("etl.job.get_destination_connection") as mock_get_destination,
+        patch("etl.job.start_run") as mock_start_run,
+        pytest.raises(LegacyNightlyJobBlocked, match="brerc-load refresh"),
+    ):
+        nightly_job()
+
+    mock_get_config.assert_not_called()
+    mock_get_destination.assert_not_called()
+    mock_start_run.assert_not_called()
+
 
 @patch("etl.job.mark_run_successful")
 @patch("etl.job.start_run", return_value=1)
@@ -205,19 +259,29 @@ def test_nightly_job_incremental_flow(
     mock_conn_ctx = MagicMock()
     mock_get_conn.return_value.__enter__.return_value = mock_conn_ctx
 
-    with patch(
-        "etl.job.get_config",
-        return_value={
-            "source": {
-                "mode": "csv",
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "APP_ENV": "test",
+                "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS": "1",
             },
-            "destination": {
-                "table": "occurrence_public",
+            clear=False,
+        ),
+        patch(
+            "etl.job.get_config",
+            return_value={
+                "source": {
+                    "mode": "csv",
+                },
+                "destination": {
+                    "table": "occurrence_public",
+                },
+                "load": {
+                    "incremental_check": True,
+                },
             },
-            "load": {
-                "incremental_check": True,
-            },
-        },
+        ),
     ):
         nightly_job()
 
@@ -271,19 +335,29 @@ def test_nightly_job_marks_run_failed_on_exception(
     mock_conn_ctx = MagicMock()
     mock_get_conn.return_value.__enter__.return_value = mock_conn_ctx
 
-    with patch(
-        "etl.job.get_config",
-        return_value={
-            "source": {
-                "mode": "csv",
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "APP_ENV": "test",
+                "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS": "1",
             },
-            "destination": {
-                "table": "occurrence_public",
+            clear=False,
+        ),
+        patch(
+            "etl.job.get_config",
+            return_value={
+                "source": {
+                    "mode": "csv",
+                },
+                "destination": {
+                    "table": "occurrence_public",
+                },
+                "load": {
+                    "incremental_check": True,
+                },
             },
-            "load": {
-                "incremental_check": True,
-            },
-        },
+        ),
     ):
         with pytest.raises(RuntimeError):
             nightly_job()
@@ -301,6 +375,7 @@ def test_nightly_job_marks_run_failed_on_exception(
 # type name is stored alongside it (as error_message) — never its message,
 # which can carry fragments of source data. The full error and traceback go
 # to the server logs via logger.exception() instead.
+
 
 def test_describe_failure_database_mismatch():
     from etl.load.reload import DatabaseMismatchError

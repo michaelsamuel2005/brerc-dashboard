@@ -53,9 +53,10 @@ python -m unittest discover -s connector_tests -t . -p 'test_*.py'
 
 `pyproject.toml` builds one combined repository distribution. It includes the
 standard-library-only publication modules, the trusted connector, and the
-coexisting dependency-bearing nightly ETL subpackages; it is not described or
-deployed as a connector-only wheel. CI separately guards and smoke-tests the
-publication import boundary.
+coexisting dependency-bearing legacy ETL subpackages; it is not described or
+deployed as a connector-only wheel. The legacy `nightly_job()` is fail-closed
+outside explicit development/test rehearsals and is not a production fallback.
+CI separately guards and smoke-tests the publication import boundary.
 
 ## What does **not** go here
 

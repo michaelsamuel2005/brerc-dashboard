@@ -1,17 +1,18 @@
-The aggregation module transforms cleaned, verified individual occurrence records into a public-facing statistical and spatial dataset. Instead of exposing exact sensitive locations, it groups data into standardized grid cells and summary tables ready for web mapping and public queries.
+# Legacy aggregation modules
 
-File-by-File Breakdown
-Verification Filtering (etl/aggregation/cell_filtering.py)
-- Retains only records with accepted or legacy verification statuses based on NBN standards, dropping unverified or rejected rows.
+> **Historical development/test path only.** These pandas modules built the old
+> `species` and `distribution_cell` tables. They remain for provenance and
+> regression tests; they are not the PostgreSQL/PostGIS publication store used
+> by the current FastAPI application.
 
-Spatial Binning & Geometry (etl/aggregation/geometry.py)
-- Converts British National Grid (BNG) coordinates into grid cells using the cell size defined in safety.yaml and generates WGS84 WKT polygons (geom) for GIS mapping.
+The old flow filtered verification states, binned coordinates, applied its
+configuration threshold, built a species index and truncated/reloaded the
+active `distribution_cell` table. Scheduling that behavior would risk exposing
+a partial or incomplete update, so `etl.job.nightly_job()` is now blocked by
+default and always blocked in production.
 
-Counts & Privacy Suppression (etl/aggregation/ or main aggregation logic)
-- Summarizes counts and verified counts grouped by species, grid cell, and year, and removes grid cells where record counts fall below the safety threshold to protect sensitive locations.
-
-Species Indexing (etl/aggregation/species_index.py)
-- Builds a summary table of unique species actively appearing in public data, tracking total records, names, and active year ranges.
-
-Database Persistence (etl/aggregation/persist.py)
-- Safely truncates and reloads the distribution_cell table each run while executing an upsert on the species table to protect foreign-key relationships with occurrence_public.
+Current publication uses `brerc-load initial` once and `brerc-load refresh` for
+later complete replacements. Aggregates are built under an inactive release;
+PostgreSQL validates the entire candidate before one atomic active-release
+switch. `brerc-load incremental` remains deliberately blocked. See
+[`../../../docs/FULL_SNAPSHOT_REFRESH.md`](../../../docs/FULL_SNAPSHOT_REFRESH.md).

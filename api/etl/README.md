@@ -19,9 +19,11 @@ cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 ```
 
 The publication safety modules listed below are **standard-library only** — no
-pandas and no third-party runtime dependency. The existing nightly ETL remains
-in this package as `nightly_pipeline.py` and its established subpackages; it is
-not used as publication authority by the trusted connector or release loader.
+pandas and no third-party runtime dependency. The legacy nightly ETL remains
+in this package as `nightly_pipeline.py` and its established subpackages only
+for provenance and development/test coverage. Its `nightly_job()` entry point
+is blocked by default and always blocked in production; scheduled publication
+uses [`brerc-load refresh`](../../docs/FULL_SNAPSHOT_REFRESH.md).
 `scripts/guard_stdlib_only.py` pins the exact boundary file set so the two paths
 can coexist without making a false package-wide dependency claim.
 

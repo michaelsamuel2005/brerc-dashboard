@@ -124,43 +124,53 @@ def test_nightly_job_end_to_end(
     # ------------------------------------------------------------------
     # Configuration used by nightly_job().
     # ------------------------------------------------------------------
-    with patch(
-        "etl.job.get_config",
-        return_value={
-            "source": {
-                "mode": "csv",
-                "records_path": "dummy.csv",
-                "dictionary_path": "dummy_dict.csv",
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "APP_ENV": "test",
+                "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS": "1",
             },
-            "destination": {
-                "table": "occurrence_public",
+            clear=False,
+        ),
+        patch(
+            "etl.job.get_config",
+            return_value={
+                "source": {
+                    "mode": "csv",
+                    "records_path": "dummy.csv",
+                    "dictionary_path": "dummy_dict.csv",
+                },
+                "destination": {
+                    "table": "occurrence_public",
+                },
+                "load": {
+                    "incremental_check": False,
+                },
+                "aggregation": {
+                    "cell_size_m": 1000,
+                },
+                "columns": {
+                    "verified": "verified",
+                    "eastings": "eastings",
+                    "northings": "northings",
+                    "record_date": "date_of_record",
+                    "modified_date": "date_mdb_modified",
+                },
+                "reconciliation": {
+                    "hash_columns": [
+                        "scientific_name",
+                        "abundance",
+                        "sex_stage",
+                        "record_type",
+                        "vitality",
+                        "verified",
+                        "eastings",
+                        "northings",
+                    ]
+                },
             },
-            "load": {
-                "incremental_check": False,
-            },
-            "aggregation": {
-                "cell_size_m": 1000,
-            },
-            "columns": {
-                "verified": "verified",
-                "eastings": "eastings",
-                "northings": "northings",
-                "record_date": "date_of_record",
-                "modified_date": "date_mdb_modified",
-            },
-            "reconciliation": {
-                "hash_columns": [
-                    "scientific_name",
-                    "abundance",
-                    "sex_stage",
-                    "record_type",
-                    "vitality",
-                    "verified",
-                    "eastings",
-                    "northings",
-                ]
-            },
-        },
+        ),
     ):
         try:
             result = nightly_job()

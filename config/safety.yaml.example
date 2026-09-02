@@ -62,8 +62,10 @@ admin:
   password: ""
 
 load:
-  # Pipeline can perform incremental updates if true
-  incremental_check: true
+  # Safe default for the superseded occurrence_public ETL. The current dashboard
+  # is updated with `brerc-load refresh`, which rebuilds one complete inactive
+  # release and switches it atomically; do not enable this legacy watermark path.
+  incremental_check: false
 
 source:
   mode: "csv"
