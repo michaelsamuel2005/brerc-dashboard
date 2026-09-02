@@ -221,9 +221,17 @@ aggregate, optional public rows, geometry and count equations. Application SHA-2
 digests are retained integrity evidence; they are not a substitute for these
 database-owned comparisons and do not authenticate BRERC approval.
 
-The loader can read but cannot update the notification outbox. A separate future
-notifier role/worker must deliver email and update delivery state. The presence of
-an outbox row does not mean an email service or ETL dashboard is already built.
+The loader can read but cannot update the notification outbox. A separate
+least-privilege notifier role/worker must deliver messages and update delivery
+state. The presence of an outbox row does not mean a message has been delivered.
+Operational consumers must read the fixed, redacted
+`serve.etl_job_status`, `serve.etl_release_status` and
+`serve.etl_notification_status` views as `brerc_monitor`. The current
+`run-dashboard/` application reads `serve.etl_job_status` through an exact,
+read-only `brerc_monitor` login and refuses broader or wrong-target sessions.
+The retained SQLite writer under `api/etl/run_history.py` is a legacy-only
+component and is not part of this production contract. Delivery from the
+notification outbox remains a separately reviewed worker responsibility.
 
 ## Configuration and secrets
 
@@ -282,7 +290,10 @@ The overall deadline is enforced between phases and batches, while remaining
 time is pushed into PostgreSQL statement and lock timeouts and the source
 connector's cancellation path. It is a cooperative/server-bounded control, not
 an operating-system hard kill for a broken network stack; the scheduler should
-retain its own outer job timeout.
+retain its own outer job timeout. The reviewed but deliberately inert systemd
+templates, approval boundary and production preflight are in
+[`../deploy/refresh/README.md`](../deploy/refresh/README.md); their example
+cadence, timeout and catch-up behavior are not production decisions.
 
 The target connection must remain pinned to one PostgreSQL backend session for
 the complete run because the per-source advisory lock survives committed batch

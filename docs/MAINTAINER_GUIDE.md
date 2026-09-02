@@ -2,6 +2,13 @@
 
 **A gentle, plain-English guide for the person at BRERC who will look after the public dashboard once the student team has finished.**
 
+> **Pre-handover status (3 September 2026):** the application and its atomic
+> update mechanism are implemented and tested with synthetic data, but the
+> production URL, host, schedule, alert delivery and accountable support owner
+> are not yet confirmed. Instructions that describe visiting or automatically
+> updating the live site apply only after the production acceptance record has
+> been completed.
+
 > 💚 **Don't worry — you're in the right place.**
 > You do **not** need to be technical to use this guide. You do **not** need to write any code. Read it slowly, one section at a time. Everything here is explained in plain words, and there's a glossary at the bottom for any word you're unsure about.
 
@@ -9,12 +16,14 @@
 
 ## What is this dashboard?
 
-The **dashboard** is a page on the internet that shows BRERC's environmental and species records to **the public**.
+Once deployed, the **dashboard** will be a page on the internet that shows
+approved BRERC environmental and species records to **the public**.
 
 In plain words:
 
 - It is a **website**.
-- Anyone can visit it — local residents, students, researchers, curious neighbours.
+- Anyone will be able to visit it — local residents, students, researchers,
+  curious neighbours.
 - It shows things like **maps of where species have been recorded** across the West of England, along with information and images about those species.
 
 It was built by a student team from **180 Degrees Consulting Bristol** for **BRERC**, so that the public can explore BRERC's data in a friendly, visual way.
@@ -49,16 +58,18 @@ That's it. You are the person who **notices** problems and **reports** them. Som
 
 The information you see on the dashboard comes from **BRERC's own records database** — the same collection of records BRERC already keeps. (A **database** is just a big, organised store of records; there's more on this in the glossary.)
 
-- When BRERC's records change, the dashboard is designed to **reflect those changes**.
+- When BRERC's records change, the deployed dashboard will be able to
+  **reflect those changes** through an approved scheduled refresh.
 - You do **not** update the dashboard by hand. There is no typing in numbers or editing maps.
 
-> ⚙️ **How the dashboard refreshes its data:** the technical mechanism is now a
-> complete, automatic replacement. Each run safely prepares a whole new public
+> ⚙️ **How the dashboard will refresh its data:** the atomic replacement
+> mechanism is implemented. Once an authorised operator installs and enables
+> the approved scheduler, each run safely prepares a whole new public
 > dataset in the background. People continue to see the previous good dataset
 > until the new one has passed its checks, then the dashboard changes over in
 > one step. If a run fails, the previous dataset stays visible. **The calendar
-> schedule and the person or service that starts each run are still
-> [TO BE CONFIRMED].**
+> schedule, production installation, alert delivery and accountable owner are
+> still [TO BE CONFIRMED].**
 
 After a successful data run, reload the page to see the newly active dataset.
 There is no need to edit a map or enter records into the dashboard by hand.

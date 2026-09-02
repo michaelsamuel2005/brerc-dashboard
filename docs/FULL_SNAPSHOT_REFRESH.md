@@ -101,20 +101,39 @@ and `activated:true` fields as success. For a changed refresh, record the new
 active release, because the duplicate candidate was deliberately not published.
 Never add a force path around a rejection.
 
-## Scheduling it nightly
+## Scheduling full-snapshot refreshes
 
-Once BRERC approves the cadence and production thresholds, the scheduler's
-nightly command is simply the same `brerc-load refresh` command above. Schedule
-one run at a time, use the protected configuration and secret store, retain an
-outer scheduler timeout, and route the fixed terminal outcome to the monitoring
-and notification worker. The per-source advisory lock rejects overlap; do not
-configure a second invocation to bypass it.
+Once BRERC approves the cadence and production thresholds, every scheduled run
+uses the same `brerc-load refresh` command above. Schedule one run at a time,
+use the protected configuration and secret store, and retain an outer scheduler
+timeout. The current authenticated run-history UI observes the authoritative
+PostgreSQL `serve.etl_job_status` view using a dedicated `brerc_monitor` login.
+The same role's bounded operational contract also includes
+`serve.etl_release_status` and `serve.etl_notification_status`; the exact
+boundaries are in
+[`../run-dashboard/README.md`](../run-dashboard/README.md). The per-source
+advisory lock rejects overlap; do not configure a second invocation to bypass
+it. Alert evaluation, notification delivery/acknowledgement and the independent
+pre-database scheduler dead-man check are separate production services and must
+not be claimed present until their focused implementation is reviewed and
+deployed.
+
+Hardened, deliberately inert systemd templates and the production preflight,
+acceptance-evidence and rollback procedure are in
+[`../deploy/refresh/README.md`](../deploy/refresh/README.md). They cannot be
+installed merely by checking out this repository: an authorised operator must
+first bind the approved host, cadence, thresholds, runtime window and external
+secret files. The tracked 02:30 UTC cadence, 2h15m timeout and persistent
+catch-up setting are examples, not approved production state.
 
 Do not schedule the older `nightly_job()` implementation as a substitute. That
 legacy path writes tables such as `occurrence_public`, `species` and
 `distribution_cell`; the current FastAPI reads only the atomic `serve.*` release
-views. The full-snapshot `refresh` command is the path that changes the dataset
-the current dashboard actually reads.
+views. The application under `run-dashboard/` now reads the authoritative
+PostgreSQL `serve.etl_job_status` view; the retained SQLite writer in
+`api/etl/run_history.py` belongs only to the legacy path. The full-snapshot
+`refresh` command is therefore both the path that changes the dataset the
+public dashboard reads and the path the internal run-history UI observes.
 
 ## Synthetic two-snapshot acceptance
 
@@ -137,7 +156,9 @@ of these steps:
    both watermark endpoints remain null, and inventory/disposition counts cover
    the complete new snapshot.
 9. Run the API suite against that refreshed release.
-10. Build the production frontend with mocks disabled and run Playwright against
+10. Query the authoritative job view as the TLS-authenticated, read-only
+    `brerc_monitor` role and verify the internal run-history response.
+11. Build the production frontend with mocks disabled and run Playwright against
     the real FastAPI/PostGIS stack, including `releaseId` and `datasetVersion`.
 
 The focused real-database test is:
