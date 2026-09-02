@@ -276,20 +276,22 @@ jobs:
             ../db/roles.sql \
             ../db/migrations/0001_publication_store.sql \
             ../db/migrations/0002_sensitive_record_action.sql \
+            ../db/migrations/0003_full_snapshot_refresh.sql \
             loader_tests/postgis16_destination_fixture.sql \
             "${RUNNER_TEMP}/brerc-postgis16-destination"
       - name: Run the real atomic destination lifecycle
         run: >-
           python -m unittest
           loader_tests.test_postgis16_destination_integration
-      - name: Publish one clean release for the API acceptance boundary
+      - name: Publish and refresh one clean release for the API acceptance boundary
         # The lifecycle suite deliberately creates, corrupts and removes many
         # candidates. Its setUp truncates state before each case. Re-running the
-        # single successful end-to-end publication test LAST leaves exactly one
-        # active synthetic release for the read-only API checks below.
+        # two-snapshot source test LAST proves an initial publication followed by
+        # one atomic changed refresh. It leaves exactly one active synthetic
+        # release for the read-only API and browser checks below.
         run: >-
           python -m unittest
-          loader_tests.test_postgis16_destination_integration.TestPostGIS16DestinationIntegration.test_real_source_connector_streams_into_one_atomic_public_release
+          loader_tests.test_postgis16_destination_integration.TestPostGIS16DestinationIntegration.test_real_source_full_snapshot_refresh_applies_updates_and_deletions
       - name: Run the complete API suite against the active TLS release
         env:
           APP_ENV: prod
@@ -314,8 +316,9 @@ jobs:
               )
           PY
           python -m pytest app_tests -q
-      # Run the browser against the exact safe-v1 release left active above:
-      # one ordinary public row and the sensitive synthetic row withheld.
+      # Run the browser against the exact refreshed safe-v1 release left active
+      # above: one newly permitted aggregate, one source deletion removed, and
+      # the sensitive synthetic row still withheld.
       # The preview proxy keeps browser requests same-origin while Uvicorn still
       # connects as the restricted brerc_api role over verify-full TLS.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

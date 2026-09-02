@@ -20,26 +20,41 @@ The implemented command surface is:
 
 ```sh
 brerc-load initial --config /controlled/path/loader.configuration.yaml
+brerc-load refresh --config /controlled/path/loader.configuration.yaml
 brerc-load incremental --config /controlled/path/loader.configuration.yaml
 ```
 
-`incremental` is intentionally blocked before configuration parsing or either
-database connection. The approved 39-column BRERC source contract does not yet
-contain the evidence required for a correct incremental load. This is a safety
-control, not an unfinished command-line check.
+The three names have deliberately different meanings:
 
-An initial load is allowed only when the destination has no active release. It
-is not a full-refresh mechanism for replacing an existing release. A future
-replacement or incremental protocol must preserve the reviewed base-release,
-deletion and watermark semantics.
+| Mode | When it is allowed | What it reads and publishes |
+|---|---|---|
+| `initial` | Only when the destination has no active release. | One complete, locked source snapshot becomes the first active release. |
+| `refresh` | Only when the same source already has an active release. | One newer, complete, locked source snapshot becomes a fresh candidate and, after validation, replaces the previous release atomically. |
+| `incremental` | Not currently allowed. | It exits before configuration parsing and before either database is contacted. |
+
+`refresh` is a full replacement, not a renamed incremental load. It deliberately
+uses the approved complete-snapshot source protocol and carries no modification
+watermark. Every source row in that snapshot receives one inventory,
+disposition and non-delete delta entry. A record removed from the source is
+therefore absent from the complete candidate and disappears when that candidate
+is activated; the loader does not need a tombstone or infer a per-row delete.
+Lookup changes are likewise reflected because the complete reviewed view is
+read again.
+
+`incremental` remains intentionally blocked because the approved 39-column
+BRERC source contract does not yet contain the evidence required for a correct
+change-window load. This is a safety control, not an unfinished command-line
+check. The implemented full-snapshot refresh is the supported scheduled-update
+mechanism until a later incremental contract is approved and implemented.
 
 ## Why loading is release-based
 
 The public application must never see a half-written update. Every candidate
 therefore receives its own `release_id`. Inserts, suppression and aggregates are
 created under that inactive ID while the `serve.*` views continue to read the old
-active release. The database-owned activation function validates the candidate
-and changes the active pointer, watermark and job state in one transaction.
+active release. The database-owned dispatcher validates the candidate and
+changes the active pointer, source-snapshot evidence and job state in one
+transaction. Refreshes leave the incremental watermark fields null.
 
 If extraction, transformation, staging, aggregation or validation fails, the
 active pointer does not change. If a worker process disappears, the next worker
@@ -52,6 +67,36 @@ do not inherit the remainder of a potentially hours-long workload deadline.
 If the activation response is lost after commit, the coordinator
 reconciles the known job/release identifiers and treats an already-committed
 matching activation as success; it must not try to fail an active release.
+
+A refresh is bound to the active release that existed when the candidate began.
+Activation rejects a stale base or a source-snapshot timestamp that does not
+strictly advance the last accepted evidence. If the fully validated candidate is
+exactly identical to the active payload, the database keeps the current active
+release, records the refresh job as succeeded with `reused_active_release=true`,
+advances the source-snapshot evidence, and discards the duplicate candidate with
+durable cleanup debt. The coordinator immediately attempts its purge; if that
+best-effort cleanup cannot finish, the successful result remains authoritative
+and the next source-lock owner must clear the debt before new work. The public
+`releaseId` remains unchanged in this no-change case.
+
+## API release consistency
+
+FastAPI never reads a candidate or a publication table directly. Its dedicated
+`brerc_api` role can read only the active `serve.*` views. Every request uses a
+transaction-read-only, `REPEATABLE READ` connection, and the live session is
+checked for that isolation plus absence of loader, Martin, monitor or broad write
+roles before a router query runs. If activation commits between two SQL
+statements in one request, both statements still see the same release snapshot.
+
+Every public data response returns the active release's UUID as `releaseId` and
+the non-blank publication `datasetVersion`; the database-independent health
+response is the only exception. The frontend contract rejects a data response
+without either field. It pins the first pair observed across the whole page and
+rejects a mismatch before it can enter the query cache. During recovery it hides
+the page, cancels and clears old query fragments, fetches fresh provenance as
+the authority, then remounts and refetches. This is not polling: a browser that
+makes no further request remains consistently on its cached release until its
+next fetch or reload.
 
 ## Privacy boundary
 
@@ -84,12 +129,13 @@ cannot change whether a cohort is published.
 ## Destination schemas
 
 The destination schema consists of ordered migrations
-`db/migrations/0001_publication_store.sql` and
-`db/migrations/0002_sensitive_record_action.sql`.
+`db/migrations/0001_publication_store.sql`,
+`db/migrations/0002_sensitive_record_action.sql` and
+`db/migrations/0003_full_snapshot_refresh.sql`.
 This implementation is pinned to PostgreSQL major version 16 and PostGIS 3.5;
 the target preflight reads both server-side and fails before loading if either
 version family differs or the migration history is not exactly the expected
-ordered pair. Migration 0001 also generates a single destination
+ordered sequence of three. Migration 0001 also generates a single destination
 environment UUID in `loader_control.deployment_identity`. Operations must copy
 that UUID into the protected loader configuration through a trusted channel;
 the loader compares it, the database name and the execution role before it
@@ -111,6 +157,8 @@ psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0001_publication_store.sql "$CONTROLLED_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0002_sensitive_record_action.sql "$CONTROLLED_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 \
+  -f db/migrations/0003_full_snapshot_refresh.sql "$CONTROLLED_ADMIN_DSN"
 ```
 
 The variable is illustrative. Do not place a DSN or password in source control,
@@ -127,6 +175,13 @@ that refuses a committed mismatch. Existing pre-v2 development rows are
 truthfully backfilled as `generalise`, the only action artifact v1 supported;
 this backfill is historical labelling, not evidence of safe-v1 activation.
 
+Migration 0003 adds the explicit `refresh` lifecycle, immutable refresh
+threshold evidence and the database-owned
+`loader_control.activate_release_candidate(uuid)` dispatcher. The migration
+refuses reapplication and refuses to run while non-terminal ETL jobs exist. It
+must be reviewed and applied during a controlled deployment window; it is not a
+routine command for every scheduled refresh.
+
 ## Database authority
 
 The destination migration/owner account is a trusted deployment boundary. The
@@ -140,9 +195,15 @@ the active pointer or successful watermark. It invokes narrowly reviewed
 `SECURITY DEFINER` functions:
 
 - `loader_control.recover_orphaned_job(text)`;
-- `loader_control.activate_validated_release(uuid)`;
+- `loader_control.activate_release_candidate(uuid)`;
 - `loader_control.fail_candidate(uuid, text)`; and
 - `loader_control.discard_inactive_candidate(uuid)`.
+
+The earlier `loader_control.activate_validated_release(uuid)` function remains
+an internal implementation used by the dispatcher, but migration 0003 revokes
+its execution from both `PUBLIC` and `brerc_loader`. Operators and loader code
+must not call it directly: doing so would bypass refresh-specific base,
+freshness, completeness and comparative-threshold checks.
 
 Finalisation authorises exactly one candidate release in its database
 transaction. A `BEFORE INSERT ... FOR EACH STATEMENT` guard on every durable
@@ -175,7 +236,7 @@ repository. The tracked template is deliberately not runnable. It references:
 - exact bytes and raw SHA-256 of the controlled species-dictionary CSV, whose
   normalised semantic digest must also match the approved policy;
 - an independent public-record HMAC secret;
-- initial source-count activation bounds;
+- initial source-count activation bounds and all required refresh thresholds;
 - the expected target database, role and independently recorded environment UUID;
 - a TLS `verify-full` target service/direct connection; and
 - an independent reconciliation HMAC secret.
@@ -184,6 +245,26 @@ Configuration parsing rejects duplicate/unknown keys, unsafe YAML coercions,
 inline passwords/DSNs, ambient `PGPASSWORD`, non-TLS target settings, arbitrary
 source queries and bypass switches. Resolved credentials and secrets are redacted
 from representations and operator errors.
+
+The tracked template is configuration version `brerc-loader-v3`. A v3 runtime
+must bind all eight refresh values; there are no unattended defaults:
+
+| Setting | Meaning | Accepted range |
+|---|---|---:|
+| `refresh_min_source_rows` | Absolute minimum rows in the new complete snapshot. | 1–1,000,000,000 |
+| `refresh_max_source_rows` | Absolute maximum rows in the new complete snapshot. | minimum–1,000,000,000 |
+| `refresh_max_source_row_drop_bps` | Maximum source-row decrease from the active base. | 0–10,000 bps |
+| `refresh_max_source_row_growth_bps` | Maximum source-row increase from the active base. | 0–1,000,000,000 bps |
+| `refresh_max_publication_basis_drop_bps` | Maximum decrease in otherwise publishable rows. | 0–10,000 bps |
+| `refresh_max_species_drop_bps` | Maximum published-species decrease. | 0–10,000 bps |
+| `refresh_max_cell_drop_bps` | Maximum published-cell decrease. | 0–10,000 bps |
+| `refresh_max_species_year_drop_bps` | Maximum species/year aggregate decrease. | 0–10,000 bps |
+
+One basis point is 0.01% (`100` is 1%; `10,000` is 100%). These values are
+persisted in the immutable candidate manifest and rechecked with exact integer
+inequalities in PostgreSQL. They must be approved from BRERC's production data
+and operating expectations; copying the deliberately permissive synthetic-test
+values into production would defeat the gate.
 
 Artifact v2 binds `sensitiveRecordAction` and the approval-authority basis into
 the digest. A direct approval identifies the BRERC approver. A delegated approval
@@ -216,8 +297,18 @@ IDs, structural counts and a digest. A failure contains a stable code and no SQL
 row, hostname, credential or raw exception text. Examples:
 
 ```json
-{"activated":true,"candidateSha256":"<sha256>","distributionCells":123,"mode":"initial","publicRecords":0,"releaseId":"<uuid>","runId":"<uuid>","sourceRows":5000000,"state":"succeeded","status":"ok"}
+{"activated":true,"candidateSha256":"<sha256>","distributionCells":123,"mode":"initial","publicRecords":0,"releaseId":"<uuid>","reusedActiveRelease":false,"runId":"<uuid>","sourceRows":5000000,"state":"succeeded","status":"ok"}
 ```
+
+```json
+{"activated":true,"candidateSha256":"<sha256>","distributionCells":124,"mode":"refresh","publicRecords":0,"releaseId":"<uuid>","reusedActiveRelease":false,"runId":"<uuid>","sourceRows":5000010,"state":"succeeded","status":"ok"}
+```
+
+For a no-change refresh, `releaseId` is the reused active release ID even though
+the refresh candidate had a different internal ID and `reusedActiveRelease` is
+`true`. `activated:true` means the loader successfully established the
+authoritative active result; it does not promise that the public release ID
+changed.
 
 ```json
 {"code":"LOADER_CANDIDATE_INVALID","status":"failed"}
@@ -250,13 +341,20 @@ python -m ruff format --check .
 
 CI also executes the migration and lifecycle against a fully synthetic pinned
 PostgreSQL 16 + PostGIS service. That integration must be green before merge. It
-contains no BRERC data and does not replace a live BRERC-network preflight or a
-realistic, BRERC-approved scale/runtime test.
+performs an initial load, modifies and removes rows in the synthetic source,
+runs a complete refresh, and then exercises FastAPI and the mocks-disabled
+browser against the refreshed active release. The focused procedure and its
+expected evidence are in
+[`FULL_SNAPSHOT_REFRESH.md`](FULL_SNAPSHOT_REFRESH.md). It contains no BRERC data
+and does not replace a live BRERC-network preflight or a realistic,
+BRERC-approved scale/runtime test.
 
 The separate manual five-million-row gate and its evidence rules are documented
-in `docs/POSTGRES_LOADER_SCALE_ACCEPTANCE.md`. The harness being present is not a
-passing result; retain and review a green evidence artifact before closing the
-scale blocker.
+in `docs/POSTGRES_LOADER_SCALE_ACCEPTANCE.md`. Existing evidence covers an
+initial publication only. A changed full-snapshot refresh must also be run from
+the exact protected-`main` merge SHA, with a retained and reviewed green
+artifact, before the refresh path is accepted at BRERC scale. A workflow or
+harness merely being present is not a passing result.
 
 ## Production evidence and inputs still required
 
@@ -273,12 +371,16 @@ evidence is real and the named authority is verified through the agreed channel:
 - digest-bound species dictionary and corrected approved record-type vocabulary;
 - controlled real sensitive-row examples and the real BRERC candidate acceptance
   report proving each sensitivity axis was withheld;
-- approved initial count/drop thresholds;
+- approved initial bounds and all eight production refresh thresholds;
 - BRERC scheduling and operational limits for the approximately five-million-row
   source snapshot;
 - production PostgreSQL/PostGIS provisioning, verify-full TLS identity, secrets,
   service ownership and retained deployment evidence; and
-- the missing incremental contract below.
+- a reviewed schedule and outer job timeout for complete-snapshot refreshes.
+
+The missing incremental contract below is **not** a blocker to scheduled
+updates now that full-snapshot refresh exists. It is required only before the
+separate `incremental` command can be enabled.
 
 The confirmed source view includes `taxa_nb`, but the current safe projection and
 disposition do not yet carry an approved taxon-group mapping. Consequently the

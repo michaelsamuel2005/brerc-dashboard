@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app import config
 from app.db import assert_serving_relation, serving_connection
 from app.models import Summary, YearCount, YearRange
-from app.release import load_active_release
+from app.release import load_active_release, release_identity
 
 router = APIRouter(prefix="/api", tags=["summary"])
 
@@ -52,7 +52,7 @@ COVERAGE_CAVEAT = (
 def summary(species: str | None = Query(None, max_length=120)) -> Summary:
     parameters: list[object] = [species, species]
     with serving_connection() as connection:
-        load_active_release(connection)
+        release = load_active_release(connection)
         with connection.cursor() as cursor:
             if species is not None:
                 cursor.execute(_SPECIES_EXISTS_SQL, [species])
@@ -74,6 +74,7 @@ def summary(species: str | None = Query(None, max_length=120)) -> Summary:
         else None
     )
     return Summary(
+        **release_identity(release),
         totalRecords=total_records,
         totalSpecies=total_species,
         yearRange=year_range,

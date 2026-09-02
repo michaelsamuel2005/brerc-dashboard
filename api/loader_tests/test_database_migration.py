@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = ROOT / "db" / "migrations" / "0001_publication_store.sql"
 SENSITIVE_ACTION_MIGRATION_PATH = ROOT / "db" / "migrations" / "0002_sensitive_record_action.sql"
+FULL_SNAPSHOT_REFRESH_MIGRATION_PATH = ROOT / "db" / "migrations" / "0003_full_snapshot_refresh.sql"
 ROLES_PATH = ROOT / "db" / "roles.sql"
 README_PATH = ROOT / "db" / "README.md"
 
@@ -45,6 +46,9 @@ class DestinationMigrationContract(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.sql = MIGRATION_PATH.read_text(encoding="utf-8")
         cls.sensitive_action_sql = SENSITIVE_ACTION_MIGRATION_PATH.read_text(encoding="utf-8")
+        cls.full_snapshot_refresh_sql = FULL_SNAPSHOT_REFRESH_MIGRATION_PATH.read_text(
+            encoding="utf-8"
+        )
         cls.roles = ROLES_PATH.read_text(encoding="utf-8")
         cls.readme = README_PATH.read_text(encoding="utf-8")
 
@@ -161,6 +165,200 @@ class DestinationMigrationContract(unittest.TestCase):
             r"migration_version,\s*migration_key,\s*migration_name\s*"
             r"\) VALUES \(\s*2,\s*'0002_sensitive_record_action',\s*"
             r"'Approval-bound sensitive-record action and serving evidence'\s*\);",
+        )
+
+    def test_full_snapshot_refresh_migration_is_exactly_ordered_and_quiescent(self):
+        sql = self.full_snapshot_refresh_sql
+        self.assertRegex(sql, r"(?m)^BEGIN;$")
+        self.assertRegex(sql, r"(?m)^COMMIT;$")
+        self.assertIn("migration history is not exactly 0001 plus 0002", sql)
+        self.assertIn("migration_version = 1", sql)
+        self.assertIn("migration_key = '0001_publication_store'", sql)
+        self.assertIn("migration_version = 2", sql)
+        self.assertIn("migration_key = '0002_sensitive_record_action'", sql)
+        self.assertIn("migration_version = 3", sql)
+        self.assertIn("migration_key = '0003_full_snapshot_refresh'", sql)
+        self.assertIn("status NOT IN ('succeeded', 'failed', 'cancelled')", sql)
+        self.assertIn("pg_try_advisory_xact_lock", sql)
+        self.assertIn("'dashboard.main_data_dash'::text AS source_id", sql)
+        self.assertIn(
+            "LOCK TABLE loader_control.source_state IN SHARE MODE NOWAIT",
+            sql,
+        )
+        self.assertLess(
+            sql.index("DO $source_locks$"),
+            sql.index("LOCK TABLE loader_control.source_state IN ACCESS EXCLUSIVE MODE"),
+        )
+        for table in (
+            "loader_control.source_state",
+            "loader_control.etl_job",
+            "loader_control.release",
+            "loader_control.release_manifest",
+        ):
+            self.assertIn(f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE", sql)
+
+    def test_refresh_mode_requires_a_nonnull_base_on_job_and_release(self):
+        sql = self.full_snapshot_refresh_sql
+        for table, prefix in (
+            ("loader_control.etl_job", "etl_job"),
+            ("loader_control.release", "release"),
+        ):
+            with self.subTest(table=table):
+                start = sql.index(f"ALTER TABLE {table}")
+                end = sql.index(";", start)
+                constraint = sql[start:end]
+                self.assertIn("load_mode IN ('initial', 'incremental', 'refresh')", constraint)
+                self.assertIn("load_mode = 'initial' AND base_release_id IS NULL", constraint)
+                self.assertIn("load_mode IN ('incremental', 'refresh')", constraint)
+                self.assertIn("AND base_release_id IS NOT NULL", constraint)
+                self.assertIn(f"DROP CONSTRAINT {prefix}_load_mode", constraint)
+                self.assertIn(f"DROP CONSTRAINT {prefix}_base_matches_mode", constraint)
+
+    def test_refresh_migration_exposes_no_change_reuse_to_the_monitor_role(self):
+        sql = self.full_snapshot_refresh_sql
+        start = sql.index(
+            "CREATE OR REPLACE VIEW serve.etl_job_status WITH (security_barrier = true) AS"
+        )
+        end = sql.index(";", start)
+        view = sql[start:end]
+        self.assertIn("reused_active_release", view)
+        self.assertLess(view.index("created_at"), view.index("reused_active_release"))
+
+    def test_refresh_thresholds_are_immutable_complete_and_have_no_defaults(self):
+        sql = self.full_snapshot_refresh_sql
+        fields = (
+            "refresh_min_source_rows",
+            "refresh_max_source_rows",
+            "refresh_max_source_row_drop_bps",
+            "refresh_max_source_row_growth_bps",
+            "refresh_max_publication_basis_drop_bps",
+            "refresh_max_species_drop_bps",
+            "refresh_max_cell_drop_bps",
+            "refresh_max_species_year_drop_bps",
+        )
+        for field in fields:
+            with self.subTest(field=field):
+                self.assertRegex(sql, rf"ADD COLUMN {field} (?:bigint|integer),")
+                self.assertNotRegex(sql, rf"ADD COLUMN {field} .*DEFAULT")
+                self.assertIn(f"{field} IS NOT NULL", sql)
+        self.assertIn("refresh_min_source_rows BETWEEN 1 AND 1000000000", sql)
+        self.assertIn("refresh_max_source_rows BETWEEN refresh_min_source_rows", sql)
+        self.assertIn("refresh_max_source_row_growth_bps BETWEEN 0 AND 1000000000", sql)
+        for field in fields[2:]:
+            if field != "refresh_max_source_row_growth_bps":
+                self.assertIn(f"{field} BETWEEN 0 AND 10000", sql)
+        self.assertIn("CREATE FUNCTION loader_control.enforce_refresh_manifest_mode()", sql)
+        self.assertIn("BEFORE INSERT ON loader_control.release_manifest", sql)
+        self.assertIn("refresh manifest must bind all refresh thresholds and no watermarks", sql)
+        self.assertIn("non-refresh manifest must not bind refresh thresholds", sql)
+
+    def test_no_change_refresh_exposes_the_latest_checked_source_snapshot(self):
+        sql = self.full_snapshot_refresh_sql
+        start = sql.index(
+            "CREATE OR REPLACE VIEW serve.public_release WITH (security_barrier = true)"
+        )
+        end = sql.index(";", start)
+        serving_view = sql[start:end]
+        self.assertIn("s.last_source_snapshot_at AS source_data_as_of", serving_view)
+        self.assertIn("s.active_release_id = r.release_id", serving_view)
+        self.assertNotIn("p.source_data_as_of", serving_view)
+
+    def test_refresh_activation_proves_a_complete_no_delete_snapshot(self):
+        sql = self.full_snapshot_refresh_sql
+        start = sql.index(
+            "CREATE FUNCTION loader_control.activate_release_candidate(candidate_release_id uuid)"
+        )
+        end = sql.index("$activate_release_candidate$;", start)
+        activation = sql[start:end]
+        for evidence in (
+            "manifest.lower_modified_date IS NOT NULL",
+            "manifest.lower_modified_key_token IS NOT NULL",
+            "manifest.upper_modified_date IS NOT NULL",
+            "manifest.upper_modified_key_token IS NOT NULL",
+            "observed_modified_date IS NOT NULL",
+            "action = 'delete'",
+            "delta_count <> inventory_count",
+            "disposition_count <> inventory_count",
+            "AS inventory_difference",
+            "AS delta_difference",
+            "WHEN 'eligible' THEN 'upsert'",
+            "WHEN 'withheld' THEN 'withhold'",
+            "WHEN 'suppressed' THEN 'suppress'",
+            "refresh candidate is not one complete no-delete source snapshot",
+        ):
+            with self.subTest(evidence=evidence):
+                self.assertIn(evidence, activation)
+
+    def test_refresh_activation_enforces_freshness_and_comparative_thresholds(self):
+        sql = self.full_snapshot_refresh_sql
+        self.assertIn("r.status IN ('active', 'retired')", sql)
+        self.assertIn("current_source_snapshot_at IS NULL", sql)
+        self.assertIn("manifest.source_snapshot_at <= base_manifest.source_snapshot_at", sql)
+        self.assertIn("manifest.source_snapshot_at <= active_manifest.source_snapshot_at", sql)
+        self.assertIn("manifest.source_snapshot_at <= current_source_snapshot_at", sql)
+        self.assertIn("manifest.source_row_count NOT BETWEEN", sql)
+        self.assertIn("* (10000 - manifest.refresh_max_source_row_drop_bps)", sql)
+        self.assertIn("* (10000 + manifest.refresh_max_source_row_growth_bps)", sql)
+        for field in (
+            "refresh_max_publication_basis_drop_bps",
+            "refresh_max_species_drop_bps",
+            "refresh_max_cell_drop_bps",
+            "refresh_max_species_year_drop_bps",
+        ):
+            self.assertIn(f"* (10000 - manifest.{field})", sql)
+        self.assertIn("refresh candidate exceeds its immutable comparative thresholds", sql)
+
+    def test_identical_refresh_reuses_active_only_after_legacy_validation(self):
+        sql = self.full_snapshot_refresh_sql
+        self.assertIn("CREATE FUNCTION loader_control.release_payload_is_identical(", sql)
+        for table in (
+            "loader_control.source_disposition",
+            "loader_control.withheld_summary",
+            "publication.public_release",
+            "publication.public_species",
+            "publication.public_distribution_cell",
+            "publication.public_species_year",
+            "publication.public_record",
+        ):
+            self.assertIn(table, sql)
+        self.assertIn("active release changed after the refresh candidate began", sql)
+        validation = sql.index(
+            "PERFORM loader_control.activate_validated_release(candidate_release_id);"
+        )
+        discard = sql.index("MESSAGE = 'validated identical refresh sentinel'")
+        self.assertLess(validation, discard)
+        self.assertIn("WHEN SQLSTATE 'BR001'", sql)
+        self.assertIn("SET status = 'discarded',\n            cleanup_pending = true", sql)
+        self.assertIn("reused_active_release = true", sql)
+        self.assertIn("last_successful_modified_date = NULL", sql)
+        self.assertIn("last_successful_modified_key_token = NULL", sql)
+        reuse_start = sql.index("IF identical_to_active THEN")
+        reuse_end = sql.index("RETURN current_active_release_id;", reuse_start)
+        reuse = sql[reuse_start:reuse_end]
+        self.assertNotIn("DELETE FROM publication.", reuse)
+        self.assertNotIn("DELETE FROM loader_control.release_manifest", reuse)
+
+    def test_loader_can_only_execute_the_refresh_dispatcher(self):
+        sql = self.full_snapshot_refresh_sql
+        self.assertIn("SECURITY DEFINER\nSET search_path = pg_catalog", sql)
+        self.assertIn(
+            "REVOKE EXECUTE ON FUNCTION loader_control.activate_validated_release(uuid) "
+            "FROM brerc_loader",
+            sql,
+        )
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION loader_control.activate_release_candidate(uuid) FROM PUBLIC",
+            sql,
+        )
+        self.assertIn(
+            "GRANT EXECUTE ON FUNCTION loader_control.activate_release_candidate(uuid) "
+            "TO brerc_loader",
+            sql,
+        )
+        self.assertNotIn(
+            "GRANT EXECUTE ON FUNCTION loader_control.activate_validated_release(uuid) "
+            "TO brerc_loader",
+            sql[sql.index("REVOKE ALL ON FUNCTION loader_control.enforce_refresh_manifest_mode") :],
         )
 
     def test_postgis_and_four_schemas_are_explicit(self):

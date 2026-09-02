@@ -52,9 +52,16 @@ The information you see on the dashboard comes from **BRERC's own records databa
 - When BRERC's records change, the dashboard is designed to **reflect those changes**.
 - You do **not** update the dashboard by hand. There is no typing in numbers or editing maps.
 
-> ⚙️ **How and when the dashboard refreshes its data:** **[TO BE CONFIRMED]** — the exact update mechanism and schedule (for example, whether it updates automatically, or on a set day each week or month) have not been finalised yet. This section will be completed once that decision is made.
+> ⚙️ **How the dashboard refreshes its data:** the technical mechanism is now a
+> complete, automatic replacement. Each run safely prepares a whole new public
+> dataset in the background. People continue to see the previous good dataset
+> until the new one has passed its checks, then the dashboard changes over in
+> one step. If a run fails, the previous dataset stays visible. **The calendar
+> schedule and the person or service that starts each run are still
+> [TO BE CONFIRMED].**
 
-So for now, the simple version is: **the data comes from BRERC, and the dashboard shows it.** The details of *how often* it refreshes will be filled in here later.
+After a successful data run, reload the page to see the newly active dataset.
+There is no need to edit a map or enter records into the dashboard by hand.
 
 ---
 

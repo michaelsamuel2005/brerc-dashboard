@@ -1,4 +1,4 @@
-"""Redacted operator CLI for initial and future incremental release loads."""
+"""Redacted operator CLI for full-snapshot and future incremental loads."""
 
 from __future__ import annotations
 
@@ -51,6 +51,10 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (
         ("initial", "build a complete candidate from the reviewed source view"),
+        (
+            "refresh",
+            "replace the active release from one complete reviewed source snapshot",
+        ),
         ("incremental", "blocked until BRERC approves an incremental source contract"),
     ):
         command = commands.add_parser(name, help=help_text)
@@ -100,6 +104,7 @@ def _safe_success(report: LoaderRunReport) -> dict[str, object]:
         "distributionCells": report.distribution_cells,
         "candidateSha256": report.candidate_sha256,
         "activated": report.activated,
+        "reusedActiveRelease": report.reused_active_release,
     }
 
 

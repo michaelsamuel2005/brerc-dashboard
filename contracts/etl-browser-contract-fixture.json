@@ -10,9 +10,12 @@
           "verifiedCount": 1
         }
       ],
+      "datasetVersion": "synthetic-etl-contract-v1",
+      "releaseId": "00000000-0000-4000-8000-000000000099",
       "verificationAvailable": true
     },
     "records": {
+      "datasetVersion": "synthetic-etl-contract-v1",
       "items": [
         {
           "abundance": "1",
@@ -52,6 +55,7 @@
         },
         "mode": "individual-records"
       },
+      "releaseId": "00000000-0000-4000-8000-000000000099",
       "total": 2
     },
     "verificationAvailable": true
@@ -65,9 +69,12 @@
           "recordCount": 2
         }
       ],
+      "datasetVersion": "synthetic-etl-contract-v1",
+      "releaseId": "00000000-0000-4000-8000-000000000099",
       "verificationAvailable": false
     },
     "records": {
+      "datasetVersion": "synthetic-etl-contract-v1",
       "items": [
         {
           "abundance": "1",
@@ -105,6 +112,7 @@
         },
         "mode": "individual-records"
       },
+      "releaseId": "00000000-0000-4000-8000-000000000099",
       "total": 2
     },
     "verificationAvailable": false

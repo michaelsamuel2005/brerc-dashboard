@@ -134,6 +134,7 @@ git push -u origin <your-name>/<short-topic>
 | **[docs/GETTING_STARTED_GITHUB.md](docs/GETTING_STARTED_GITHUB.md)** | New to GitHub? Start here — a zero‑prior‑knowledge walkthrough. |
 | **[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** | How the repository is organised and what each folder does. |
 | **[docs/MAINTAINER_GUIDE.md](docs/MAINTAINER_GUIDE.md)** | For the BRERC staff member who maintains the dashboard after handover. |
+| **[docs/FULL_SNAPSHOT_REFRESH.md](docs/FULL_SNAPSHOT_REFRESH.md)** | How the first load and safe atomic full-snapshot updates reach the API and dashboard. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How we branch, review, and merge. |
 
 More documentation lives in **[docs/](docs/)**.

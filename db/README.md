@@ -1,7 +1,8 @@
 # BRERC destination PostgreSQL/PostGIS store
 
-**Status:** destination schema implemented for synthetic integration and review. It is not a
-production release approval, a live BRERC connection, or an incremental-source contract.
+**Status:** destination schema, initial publication and atomic complete-snapshot refresh are
+implemented for synthetic integration and review. This is not a production release approval, a live
+BRERC connection, or an incremental-source contract.
 
 This directory defines the database that will hold publication-safe BRERC releases. It contains
 schema only: no client rows, credentials, hostnames, email addresses or private keys.
@@ -13,6 +14,7 @@ schema only: no client rows, credentials, hostnames, email addresses or private 
 | `roles.sql` | Creates or verifies four non-login, least-privilege group roles. |
 | `migrations/0001_publication_store.sql` | Installs the versioned schemas, tables, constraints, indexes, PostGIS geometry and serving views. |
 | `migrations/0002_sensitive_record_action.sql` | Adds approval-bound sensitive-record action evidence to manifests, releases and the serving view. |
+| `migrations/0003_full_snapshot_refresh.sql` | Adds full-snapshot refresh, immutable comparative thresholds and the loader-facing activation dispatcher. |
 
 Apply each file with a migration/administrator account and `ON_ERROR_STOP`:
 
@@ -21,6 +23,8 @@ psql -X -v ON_ERROR_STOP=1 -f db/roles.sql "$BRERC_DESTINATION_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 -f db/migrations/0001_publication_store.sql \
   "$BRERC_DESTINATION_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 -f db/migrations/0002_sensitive_record_action.sql \
+  "$BRERC_DESTINATION_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 -f db/migrations/0003_full_snapshot_refresh.sql \
   "$BRERC_DESTINATION_ADMIN_DSN"
 ```
 
@@ -37,6 +41,13 @@ Migration `0002` is also transactional and must follow exactly `0001`. It record
 approved action generalises or withholds sensitive records in both the immutable manifest and
 public-release capabilities. Its deferred database check refuses a committed mismatch. Retained v1
 development releases are labelled `generalise`, the only action supported by policy artifact v1.
+
+Migration `0003` is transactional and must follow exactly `0002`. It adds the `refresh` lifecycle,
+requires every refresh manifest to bind all eight comparative thresholds, and exposes
+`loader_control.activate_release_candidate(uuid)` as the only activation function executable by
+`brerc_loader`. It revokes direct loader execution of the older activation function. Its
+pre-migration lock audit refuses to proceed while non-terminal ETL work exists; reapplication is
+also refused.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS
@@ -117,18 +128,20 @@ janitor; a new job cannot begin until every pending inactive payload for the sou
 keeps the terminal failure/outbox transition quick even when the candidate contains millions of
 rows. No wall-clock timeout guesses that a live worker died.
 
-The loader then invokes `loader_control.activate_validated_release(uuid)`, which performs one atomic
-target-database validation-and-activation transaction:
+The loader invokes `loader_control.activate_release_candidate(uuid)`, which dispatches both initial
+and refresh candidates through one atomic target-database validation-and-activation transaction:
 
 1. take the per-source advisory lock and lock `source_state` `FOR UPDATE`;
-2. confirm the expected base release is still active;
-3. validate the manifest, policy capabilities and approval-bound suppression threshold;
+2. for refresh, confirm the expected base release is still active and the complete snapshot is
+   newer than all accepted source evidence;
+3. validate the manifest, policy capabilities, approval-bound suppression threshold and all
+   mode-specific source/comparative thresholds;
 4. independently compare the complete source inventory token set, immutable disposition ledger,
    every cell/year/species aggregate and optional public row—loader-supplied pass flags alone do
    not authorise activation;
 5. retire the old release and mark the candidate active;
 6. change `active_release_id`;
-7. advance the successful watermark and source counts;
+7. advance source-snapshot evidence and counts (refresh watermark fields remain null);
 8. mark the job successful and insert the notification outbox item;
 9. delete job-scoped staging rows;
 10. commit once.
@@ -139,7 +152,8 @@ row workload before production; “atomic” does not imply “instantaneous”.
 
 The serving views require the pointer **and** `release.status = 'active'` to agree. An incomplete or
 inconsistent activation returns no candidate rows. Any activation failure rolls back the pointer,
-watermark, private state and job-success transition together, leaving the previous release visible.
+source evidence, private state and job-success transition together, leaving the previous release
+visible.
 
 The loader has only `SELECT` and constrained column-level `INSERT` on source/release state, plus
 `SELECT` and `INSERT` on publication rows and release-scoped dispositions. It cannot insert an
@@ -158,11 +172,12 @@ Open jobs expose bounded progress updates. Once a job is `succeeded`, `failed` o
 database trigger makes its status, counts and timestamps immutable. The loader has no insert access
 to the reserved typed event ledger, so future event-writing semantics require a reviewed migration.
 
-A lost activation acknowledgement is idempotent. Reinvoking the same active release returns its ID;
-a separately rebuilt, fully validated candidate with the same stable source/policy/code identity is
-marked `discarded`, its job points to the already-active release, and the release-level outbox
-constraint prevents a duplicate success email. Its unused payload is marked `cleanup_pending` and
-is purged best-effort immediately or obligatorily by the next source-lock owner.
+A lost activation acknowledgement is idempotent. Reinvoking the same active release returns its ID.
+For a no-change refresh, matching digests are only a prefilter: exact stored-row equality and all
+normal validation must also pass. The duplicate candidate is then marked `discarded`, its job points
+to the already-active release with `reused_active_release=true`, and the source-snapshot evidence
+advances. Its unused payload is marked `cleanup_pending` and is purged best-effort immediately or
+obligatorily by the next source-lock owner.
 
 Do not update active publication rows in place, rename tables during a release, or commit the
 watermark separately. The BRERC source transaction is read-only and separate; distributed two-phase
@@ -170,7 +185,7 @@ commit is neither required nor desired.
 
 ## Watermarks and reconciliation
 
-The successful watermark is represented by:
+The incremental watermark, which is currently unused and blocked, is represented by:
 
 - `last_successful_modified_date`; and
 - `last_successful_modified_key_token` (an HMAC audit token, not a resumable source key).
@@ -183,9 +198,11 @@ read-only source snapshot is open, but raw source keys are not persisted here. A
 snapshot is restarted; it is never resumed from the token.
 
 Raw-source and public-table counts are not comparable: licensing, withholding, suppression and
-aggregation intentionally change them. Deletions require an approved tombstone feed or a complete
-source-key inventory from the same source snapshot. A count difference is only an alarm and cannot
-identify a deletion; a deletion and insertion can also cancel numerically.
+aggregation intentionally change them. The implemented refresh uses a complete source inventory
+from one snapshot, so absence means the row is absent from the complete replacement; it does not
+claim a row-level tombstone. Any future incremental mode still requires an approved tombstone feed
+or equivalent deletion signal. A count difference alone is only an alarm and cannot identify a
+deletion; a deletion and insertion can also cancel numerically.
 
 The manifest and database constraints support these exact equations:
 
@@ -235,10 +252,9 @@ Python and TypeScript grid-reference implementations.
   publication-safe/generalised state. `eligible`, transform-`withheld`, and `suppressed` are
   distinct. Suppressed rows retain only the safe species/year/cell cohort evidence needed for the
   database to prove the approved threshold; they carry no public row ID or optional row fields.
-  Incremental candidates build a complete new ledger from the
-  active base plus their validated delta before pointer activation. This deliberately costs more
-  storage in exchange for rollback-safe visibility; retention must keep the active and required
-  rollback releases.
+  Refresh candidates build a complete new ledger directly from the newer complete source snapshot
+  before pointer activation. This deliberately costs more storage in exchange for rollback-safe
+  visibility; retention must keep the active and required rollback releases.
 
 Serving views enforce the capability flags in `public_release`: individual rows disappear when
 disabled, optional place/abundance/record-type fields are masked independently, and verification
@@ -251,16 +267,21 @@ to drift between tables.
 
 ## Deliberately unresolved external prerequisites
 
-The schema does not make these client decisions true. Live incremental activation remains blocked
-until BRERC supplies or approves:
+The schema does not make these client decisions true. Production initial/refresh activation still
+requires approved live source identity, policy artifacts and mode-specific thresholds. The
+separate incremental activation remains blocked until BRERC supplies or approves:
 
 - a versioned source view containing `date_mdb_modified`, including type/nullability/semantics;
 - `unique_no` as non-null, unique, stable and never reused;
 - a deletion/withdrawal signal or permission for complete inventory reconciliation;
 - handling of publication-affecting lookup changes that may not update the record marker;
-- catastrophic-empty and large-count-drop thresholds;
 - live source/view/service/role identity evidence;
 - precision, licensing, suppression, record-type and row-level publication policy.
+
+For refresh, BRERC must additionally approve all eight production threshold values and operating
+limits, and the team must retain a green changed five-million-row refresh run from the exact
+protected-`main` merge SHA plus a comparable run on the intended BRERC infrastructure. See
+[`../docs/FULL_SNAPSHOT_REFRESH.md`](../docs/FULL_SNAPSHOT_REFRESH.md).
 
 The current frontend policy is aggregate-only, so `publication.public_record` must remain empty
 unless a future approved policy explicitly enables individual rows and their exact fields.

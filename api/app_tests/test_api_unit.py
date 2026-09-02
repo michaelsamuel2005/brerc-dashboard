@@ -72,6 +72,8 @@ class ScriptedConnection:
         self.transcript: list[tuple[str, object]] = []
         self.rollback_called = False
         self.close_called = False
+        self.isolation_level = None
+        self.read_only = False
 
     def cursor(self) -> ScriptedCursor:
         return ScriptedCursor(self)
@@ -118,6 +120,7 @@ def _patch_router(module, connection: ScriptedConnection, release: ActiveRelease
 def _api_session(**overrides: object) -> dict[str, object]:
     session: dict[str, object] = {
         "read_only": "on",
+        "isolation_level": "repeatable read",
         "is_api": True,
         "is_loader": False,
         "is_martin": False,
@@ -153,6 +156,32 @@ class TestDatabaseBoundary:
         assert connection.rollback_called
         assert connection.close_called
         assert "transaction_read_only" in connection.transcript[0][0]
+        assert "transaction_isolation" in connection.transcript[0][0]
+
+    def test_connection_sets_repeatable_read_before_the_first_query(self) -> None:
+        connection = ScriptedConnection()
+        with (
+            patch.object(db, "get_database_url", return_value="postgresql://reader:test@db/app"),
+            patch.object(db.psycopg, "connect", return_value=connection) as connect,
+        ):
+            result = db.get_connection()
+
+        assert result is connection
+        assert connection.read_only is True
+        assert connection.isolation_level is db.IsolationLevel.REPEATABLE_READ
+        connect.assert_called_once()
+
+    def test_serving_connection_rejects_read_committed_before_yield(self) -> None:
+        connection = ScriptedConnection([_api_session(isolation_level="read committed")])
+        with (
+            patch.object(db, "get_connection", return_value=connection),
+            pytest.raises(RuntimeError, match="not repeatable-read"),
+            db.serving_connection(),
+        ):
+            raise AssertionError("a read-committed connection was yielded")
+
+        assert connection.rollback_called
+        assert connection.close_called
 
     def test_serving_connection_rejects_a_write_capable_role_before_yield(self) -> None:
         connection = ScriptedConnection([_api_session(read_only="off")])
@@ -313,6 +342,26 @@ class TestReleaseSelection:
         assert release.source_label == "BRERC"
         assert release.sensitive_record_action == "withhold"
 
+    def test_missing_dataset_identity_is_unavailable_for_every_data_route(self) -> None:
+        row = {
+            "release_id": "00000000-0000-0000-0000-000000000001",
+            "published_at": None,
+            "source_data_as_of": None,
+            "publication_policy_version": "v1",
+            "dataset_version": None,
+            "public_source_label": "BRERC",
+            "verification_available": False,
+            "individual_records_available": False,
+            "record_verification_available": False,
+            "place_available": False,
+            "abundance_available": False,
+            "record_type_available": False,
+            "sensitive_record_action": "withhold",
+        }
+        with pytest.raises(HTTPException, match="dataset identity") as error:
+            load_active_release(ScriptedConnection([[row]]))
+        assert error.value.status_code == 503
+
     @pytest.mark.parametrize("rows", [[], [{"release_id": "one"}, {"release_id": "two"}]])
     def test_missing_or_ambiguous_release_is_unavailable(self, rows: list[dict]) -> None:
         with pytest.raises(HTTPException) as error:
@@ -384,9 +433,29 @@ class TestProvenance:
 
         assert result.sensitivityPolicy.protectedRecordsMode == public_mode
         assert result.sensitivityPolicy.publishedLocationTiersMetres == [1000, 10000]
+        assert result.releaseId == release.release_id
+        assert result.datasetVersion == release.dataset_version
         assert note_fragment in result.sensitivityPolicy.note
         if action == "withhold":
             assert "generalis" not in result.sensitivityPolicy.note.casefold()
+
+    def test_missing_dataset_identity_is_unavailable(self) -> None:
+        connection = ScriptedConnection(
+            [
+                {"record_total": 3},
+                [{"precision_metres": 1000}],
+            ]
+        )
+        serving_patch, release_patch = _patch_router(
+            provenance,
+            connection,
+            _release(dataset_version=None),
+        )
+        with serving_patch, release_patch, pytest.raises(HTTPException) as error:
+            provenance.provenance()
+
+        assert error.value.status_code == 503
+        assert "dataset identity" in str(error.value.detail)
 
 
 class TestSummary:
@@ -409,6 +478,8 @@ class TestSummary:
             result = summary.summary(species=species_id)
 
         assert result.totalRecords == 3
+        assert result.releaseId == release.release_id
+        assert result.datasetVersion == release.dataset_version
         assert result.totalSpecies == 1
         assert result.yearRange is not None
         assert (result.yearRange.min, result.yearRange.max) == (2020, 2021)
@@ -453,6 +524,7 @@ class TestRecords:
 
         assert result.items == []
         assert result.total == 0
+        assert result.releaseId == _release().release_id
         assert connection.transcript == []
 
     def test_aggregate_only_release_is_empty_even_with_a_species(self) -> None:
@@ -510,6 +582,7 @@ class TestRecords:
             )
 
         assert result.total == 1
+        assert result.datasetVersion == "dataset-v1"
         assert result.items[0].year == 2024
         assert connection.transcript[0][1] == [species_id, 2024, 2024, 10, 10]
         assert connection.transcript[1][1] == [species_id, 2024, 2024]
@@ -525,6 +598,7 @@ class TestDistribution:
             result = distribution.distribution_cells(species=None, year=None)
 
         assert result.cells == []
+        assert result.datasetVersion == "dataset-v1"
         assert connection.transcript == []
 
     def test_species_and_year_are_bound_and_geometry_is_not_selected(self) -> None:
@@ -550,6 +624,7 @@ class TestDistribution:
         assert species_id not in query
         assert "geom" not in query.casefold()
         assert result.cells[0].verifiedCount == 3
+        assert result.releaseId == "00000000-0000-0000-0000-000000000001"
 
     def test_over_limit_distribution_fails_instead_of_returning_a_partial_map(
         self, monkeypatch: pytest.MonkeyPatch
@@ -615,6 +690,7 @@ class TestSpecies:
             )
 
         assert result.total == 1
+        assert result.datasetVersion == "dataset-v1"
         expected_pattern = r"%\%\_\\\\' OR TRUE --%"
         assert connection.transcript[0][1] == [
             None,
@@ -676,6 +752,8 @@ class TestStrictModelsAndSurface:
         )
         with pytest.raises(ValidationError, match="aggregate-only"):
             RecordPage(
+                releaseId="00000000-0000-0000-0000-000000000001",
+                datasetVersion="dataset-v1",
                 publication=publication,
                 items=[row],
                 page=1,
@@ -695,6 +773,8 @@ class TestStrictModelsAndSurface:
         )
         with pytest.raises(ValidationError, match="cannot advertise record fields"):
             RecordPage(
+                releaseId="00000000-0000-0000-0000-000000000001",
+                datasetVersion="dataset-v1",
                 publication=publication,
                 items=[],
                 page=1,

@@ -14,7 +14,7 @@ import json
 import os
 import unittest
 from contextlib import suppress
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -35,6 +35,7 @@ from brerc_loader.errors import (
     LoaderError,
     LoaderTargetProtocolError,
 )
+from brerc_loader.models import LoadMode as DestinationLoadMode
 from brerc_loader.postgres import (
     SOURCE_ID,
     _CandidateHandle,
@@ -181,6 +182,14 @@ def _loader_config(policy: object) -> LoaderConfig:
         batch_size=100,
         initial_min_source_rows=1,
         initial_max_source_rows=10_000,
+        refresh_min_source_rows=1,
+        refresh_max_source_rows=10_000,
+        refresh_max_source_row_drop_bps=10_000,
+        refresh_max_source_row_growth_bps=1_000_000_000,
+        refresh_max_publication_basis_drop_bps=10_000,
+        refresh_max_species_drop_bps=10_000,
+        refresh_max_cell_drop_bps=10_000,
+        refresh_max_species_year_drop_bps=10_000,
         connect_timeout_seconds=5,
         lock_timeout_ms=2_000,
         statement_timeout_ms=60_000,
@@ -291,14 +300,19 @@ def _withheld(number: int, *, reason: str = "licence-not-approved") -> SafeDispo
     )
 
 
-def _evidence(policy: object, rows: tuple[SafeDisposition, ...]) -> SafeSourceSnapshotEvidence:
+def _evidence(
+    policy: object,
+    rows: tuple[SafeDisposition, ...],
+    *,
+    captured_at_utc: str = "2026-08-14T12:00:00.000000Z",
+) -> SafeSourceSnapshotEvidence:
     contract = approved_contract()
     approval = contract.view_approval
     if approval is None or policy.approval_digest is None:
         raise AssertionError("synthetic approval fixture is incomplete")
     withheld = sum(item.record is None for item in rows)
     return SafeSourceSnapshotEvidence(
-        captured_at_utc="2026-08-14T12:00:00.000000Z",
+        captured_at_utc=captured_at_utc,
         contract_version=contract.version,
         contract_sha256=contract.digest(),
         policy_version=policy.version,
@@ -525,19 +539,29 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         *,
         policy: object,
         batches: tuple[tuple[SafeDisposition, ...], ...] | None = None,
+        mode: DestinationLoadMode = DestinationLoadMode.INITIAL,
+        config: LoaderConfig | None = None,
+        captured_at_utc: str = "2026-08-14T12:00:00.000000Z",
     ):
-        store = self._store(policy)
+        store = self._store(policy, config=config)
         store.acquire(SOURCE_ID)
-        handle = store.begin_initial(
-            SOURCE_ID,
-            _CandidateHandle(job_id=uuid4(), release_id=uuid4(), base_release_id=None),
+        attempt = _CandidateHandle(
+            job_id=uuid4(),
+            release_id=uuid4(),
+            base_release_id=None,
+            mode=mode,
+        )
+        handle = (
+            store.begin_initial(SOURCE_ID, attempt)
+            if mode is DestinationLoadMode.INITIAL
+            else store.begin_refresh(SOURCE_ID, attempt)
         )
         for batch in batches or (rows,):
             store.stage_batch(handle, batch)
         contract = approved_contract()
         summary = store.finalize(
             handle,
-            evidence=_evidence(policy, rows),
+            evidence=_evidence(policy, rows, captured_at_utc=captured_at_utc),
             policy=policy,
             source_contract=contract,
             projection=PROJECTION,
@@ -555,11 +579,17 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         *,
         policy: object,
         batches: tuple[tuple[SafeDisposition, ...], ...] | None = None,
+        mode: DestinationLoadMode = DestinationLoadMode.INITIAL,
+        config: LoaderConfig | None = None,
+        captured_at_utc: str = "2026-08-14T12:00:00.000000Z",
     ):
         store, handle, summary = self._finalized(
             rows,
             policy=policy,
             batches=batches,
+            mode=mode,
+            config=config,
+            captured_at_utc=captured_at_utc,
         )
         activation = store.activate(handle, summary)
         return store, handle, summary, activation
@@ -583,6 +613,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             job_id=uuid4(),
             release_id=uuid4(),
             base_release_id=base_release,
+            mode=DestinationLoadMode.INCREMENTAL,
         )
         lower_date = date(2026, 8, 13)
         upper_date = date(2026, 8, 14)
@@ -907,6 +938,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                         "migration_version": 2,
                         "migration_key": "0002_sensitive_record_action",
                     },
+                    {
+                        "migration_version": 3,
+                        "migration_key": "0003_full_snapshot_refresh",
+                    },
                 ],
             )
 
@@ -1069,6 +1104,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "migration_version": 2,
                     "migration_key": "0002_sensitive_record_action",
                 },
+                {
+                    "migration_version": 3,
+                    "migration_key": "0003_full_snapshot_refresh",
+                },
             ],
         )
 
@@ -1102,6 +1141,46 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 {
                     "migration_version": 2,
                     "migration_key": "0002_sensitive_record_action",
+                },
+                {
+                    "migration_version": 3,
+                    "migration_key": "0003_full_snapshot_refresh",
+                },
+            ],
+        )
+
+    def test_full_snapshot_refresh_migration_refuses_reapplication(self) -> None:
+        migration = (REPO_ROOT / "db/migrations/0003_full_snapshot_refresh.sql").read_text(
+            encoding="utf-8"
+        )
+        connection = self._admin_connection()
+        try:
+            with self.assertRaises(self.psycopg.errors.RaiseException) as raised:
+                self.ClientCursor(connection).execute(migration)
+            connection.rollback()
+        finally:
+            connection.close()
+        self.assertEqual(raised.exception.sqlstate, "P0001")
+        self.assertIn(
+            "migration 0003_full_snapshot_refresh is already applied",
+            raised.exception.diag.message_primary,
+        )
+        with self._connection("loader") as connection:
+            history = connection.execute(
+                "SELECT migration_version, migration_key "
+                "FROM loader_control.schema_migration ORDER BY migration_version"
+            ).fetchall()
+        self.assertEqual(
+            history,
+            [
+                {"migration_version": 1, "migration_key": "0001_publication_store"},
+                {
+                    "migration_version": 2,
+                    "migration_key": "0002_sensitive_record_action",
+                },
+                {
+                    "migration_version": 3,
+                    "migration_key": "0003_full_snapshot_refresh",
                 },
             ],
         )
@@ -1473,6 +1552,300 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             "9001.00",
         ):
             self.assertNotIn(private_value, rendered)
+
+    def test_real_source_full_snapshot_refresh_applies_updates_and_deletions(
+        self,
+    ) -> None:
+        """Prove the production-shaped initial -> changed snapshot -> refresh path."""
+        policy = _policy(
+            allowed_licence_values=frozenset({"y"}),
+            sensitive_record_action="withhold",
+            ordinary_resolution_metres=1_000,
+        )
+        config = _loader_config(policy)
+        initial = loader_coordinator._run_initial_with_inputs(
+            config,
+            mode=DestinationLoadMode.INITIAL,
+            source_config=self.e2e_source_config,
+            source_contract=self.e2e_source_contract,
+            columns=VIEW_COLUMNS,
+            policy=policy,
+            dictionary=_species_dictionary(),
+            species_dictionary_artifact_sha256=_species_dictionary_artifact_sha256(),
+        )
+        initial_release = UUID(initial.release_id)
+        self.assertEqual(initial.source_rows, 3)
+
+        source_admin = self._source_admin_connection()
+        try:
+            # Keep the deleted row only in this administrator session so the
+            # complete source snapshot genuinely cannot see it. No client row
+            # or precise location ever enters a destination assertion/log.
+            source_admin.execute(
+                "CREATE TEMP TABLE refresh_deleted_row ON COMMIT PRESERVE ROWS AS "
+                "SELECT * FROM dashboard.synthetic_records WHERE unique_no = 9002.00"
+            )
+            deleted = source_admin.execute(
+                "DELETE FROM dashboard.synthetic_records WHERE unique_no = 9002.00"
+            ).rowcount
+            newly_permitted = source_admin.execute(
+                "UPDATE dashboard.synthetic_records SET licence = 'y' WHERE unique_no = 9003.00"
+            ).rowcount
+            self.assertEqual((deleted, newly_permitted), (1, 1))
+
+            refreshed = loader_coordinator._run_initial_with_inputs(
+                config,
+                mode=DestinationLoadMode.REFRESH,
+                source_config=self.e2e_source_config,
+                source_contract=self.e2e_source_contract,
+                columns=VIEW_COLUMNS,
+                policy=policy,
+                dictionary=_species_dictionary(),
+                species_dictionary_artifact_sha256=(_species_dictionary_artifact_sha256()),
+            )
+        finally:
+            # Restore the shared synthetic source even when the refresh fails,
+            # so every later integration test starts from the reviewed fixture.
+            source_admin.execute(
+                "DELETE FROM dashboard.synthetic_records WHERE unique_no = 9002.00"
+            )
+            source_admin.execute(
+                "INSERT INTO dashboard.synthetic_records SELECT * FROM refresh_deleted_row"
+            )
+            source_admin.execute(
+                "UPDATE dashboard.synthetic_records SET licence = 'n' WHERE unique_no = 9003.00"
+            )
+            source_admin.close()
+
+        refreshed_release = UUID(refreshed.release_id)
+        self.assertNotEqual(refreshed_release, initial_release)
+        self.assertEqual(refreshed.mode, DestinationLoadMode.REFRESH)
+        self.assertEqual(refreshed.source_rows, 2)
+        self.assertEqual(refreshed.public_records, 0)
+        self.assertEqual(refreshed.distribution_cells, 1)
+
+        with self._connection("api") as connection:
+            releases = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
+            species = connection.execute(
+                "SELECT species_id, total_records, first_year, last_year FROM serve.public_species"
+            ).fetchall()
+            cells = connection.execute(
+                "SELECT species_id, cell_id, record_year, precision_metres, record_count "
+                "FROM serve.public_distribution_cell"
+            ).fetchall()
+        self.assertEqual(releases, [{"release_id": refreshed_release}])
+        self.assertEqual(
+            species,
+            [
+                {
+                    "species_id": "SYNTH-E2E-3",
+                    "total_records": 1,
+                    "first_year": 2022,
+                    "last_year": 2022,
+                }
+            ],
+        )
+        self.assertEqual(
+            cells,
+            [
+                {
+                    "species_id": "SYNTH-E2E-3",
+                    "cell_id": "ST5872",
+                    "record_year": 2022,
+                    "precision_metres": 1_000,
+                    "record_count": 1,
+                }
+            ],
+        )
+
+        with self._connection("loader") as connection:
+            lifecycle = connection.execute(
+                """
+                SELECT active.release_id AS active_release_id,
+                       active.status AS active_status,
+                       previous.status AS previous_status,
+                       current_job.load_mode,
+                       current_release.base_release_id,
+                       manifest.lower_modified_date,
+                       manifest.lower_modified_key_token,
+                       manifest.upper_modified_date,
+                       manifest.upper_modified_key_token,
+                       manifest.source_row_count,
+                       manifest.source_inventory_count,
+                       manifest.delta_row_count
+                FROM loader_control.source_state AS state
+                JOIN loader_control.release AS active
+                  ON active.release_id = state.active_release_id
+                JOIN loader_control.release AS previous
+                  ON previous.release_id = %s
+                JOIN loader_control.release AS current_release
+                  ON current_release.release_id = active.release_id
+                JOIN loader_control.etl_job AS current_job
+                  ON current_job.job_id = current_release.job_id
+                JOIN loader_control.release_manifest AS manifest
+                  ON manifest.release_id = current_release.release_id
+                WHERE state.source_id = %s
+                """,
+                (initial_release, SOURCE_ID),
+            ).fetchone()
+        self.assertEqual(
+            lifecycle,
+            {
+                "active_release_id": refreshed_release,
+                "active_status": "active",
+                "previous_status": "retired",
+                "load_mode": "refresh",
+                "base_release_id": initial_release,
+                "lower_modified_date": None,
+                "lower_modified_key_token": None,
+                "upper_modified_date": None,
+                "upper_modified_key_token": None,
+                "source_row_count": 2,
+                "source_inventory_count": 2,
+                "delta_row_count": 2,
+            },
+        )
+
+    def test_real_source_refresh_withdraws_a_same_key_disallowed_record(self) -> None:
+        """A retained source key must disappear publicly when its licence is withdrawn."""
+        policy = _policy(
+            allowed_licence_values=frozenset({"y"}),
+            sensitive_record_action="withhold",
+            ordinary_resolution_metres=1_000,
+        )
+        config = _loader_config(policy)
+        initial = loader_coordinator._run_initial_with_inputs(
+            config,
+            mode=DestinationLoadMode.INITIAL,
+            source_config=self.e2e_source_config,
+            source_contract=self.e2e_source_contract,
+            columns=VIEW_COLUMNS,
+            policy=policy,
+            dictionary=_species_dictionary(),
+            species_dictionary_artifact_sha256=_species_dictionary_artifact_sha256(),
+        )
+        initial_release = UUID(initial.release_id)
+
+        # Retain only the opaque reconciliation token in memory. It is passed
+        # back to PostgreSQL but never encoded, rendered or included in an
+        # assertion, so a failing test cannot disclose the source identity.
+        with self._connection("loader") as connection:
+            initial_token_row = connection.execute(
+                """
+                SELECT source_key_token
+                FROM loader_control.source_disposition
+                WHERE release_id = %s
+                  AND species_id = 'SYNTH-E2E-2'
+                  AND disposition = 'eligible'
+                """,
+                (initial_release,),
+            ).fetchone()
+        self.assertIsNotNone(initial_token_row)
+        initial_token = initial_token_row["source_key_token"]
+
+        source_admin = self._source_admin_connection()
+        try:
+            changed = source_admin.execute(
+                "UPDATE dashboard.synthetic_records SET licence = CASE unique_no "
+                "WHEN 9002.00 THEN 'n' WHEN 9003.00 THEN 'y' END "
+                "WHERE unique_no IN (9002.00, 9003.00)"
+            ).rowcount
+            self.assertEqual(changed, 2)
+
+            refreshed = loader_coordinator._run_initial_with_inputs(
+                config,
+                mode=DestinationLoadMode.REFRESH,
+                source_config=self.e2e_source_config,
+                source_contract=self.e2e_source_contract,
+                columns=VIEW_COLUMNS,
+                policy=policy,
+                dictionary=_species_dictionary(),
+                species_dictionary_artifact_sha256=(_species_dictionary_artifact_sha256()),
+            )
+        finally:
+            # The mutation and restoration are each one autocommitted statement,
+            # so neither can leave only half of the shared fixture changed.
+            # Always close the administrator connection, even if restoration
+            # itself fails; a missing row also fails loudly via the row count.
+            try:
+                restored = source_admin.execute(
+                    "UPDATE dashboard.synthetic_records SET licence = CASE unique_no "
+                    "WHEN 9002.00 THEN 'y' WHEN 9003.00 THEN 'n' END "
+                    "WHERE unique_no IN (9002.00, 9003.00)"
+                ).rowcount
+                self.assertEqual(restored, 2)
+            finally:
+                source_admin.close()
+
+        refreshed_release = UUID(refreshed.release_id)
+        self.assertNotEqual(refreshed_release, initial_release)
+        with self._connection("loader") as connection:
+            withdrawal = connection.execute(
+                """
+                SELECT
+                    count(*) AS matching_rows,
+                    count(*) FILTER (
+                        WHERE disposition = 'withheld'
+                          AND withheld_reason = 'licence-not-permitted'
+                    ) AS correctly_withheld,
+                    count(*) FILTER (
+                        WHERE species_id IS NOT NULL
+                           OR scientific_name IS NOT NULL
+                           OR common_name IS NOT NULL
+                           OR record_grid_ref IS NOT NULL
+                           OR record_precision_metres IS NOT NULL
+                           OR cell_id IS NOT NULL
+                           OR public_record_id IS NOT NULL
+                           OR place IS NOT NULL
+                           OR abundance IS NOT NULL
+                           OR record_type IS NOT NULL
+                           OR verified_status IS NOT NULL
+                           OR source_label IS NOT NULL
+                    ) AS public_fields_retained
+                FROM loader_control.source_disposition
+                WHERE release_id = %s
+                  AND source_key_token = %s
+                """,
+                (refreshed_release, initial_token),
+            ).fetchone()
+            withheld_count = connection.execute(
+                """
+                SELECT COALESCE(sum(row_count), 0) AS n
+                FROM loader_control.withheld_summary
+                WHERE release_id = %s
+                  AND reason_code = 'licence-not-permitted'
+                """,
+                (refreshed_release,),
+            ).fetchone()["n"]
+        self.assertEqual(
+            withdrawal,
+            {
+                "matching_rows": 1,
+                "correctly_withheld": 1,
+                "public_fields_retained": 0,
+            },
+        )
+        self.assertEqual(withheld_count, 1)
+
+        with self._connection("api") as connection:
+            visible_species = connection.execute(
+                "SELECT species_id FROM serve.public_species ORDER BY species_id"
+            ).fetchall()
+            withdrawn_public_rows = connection.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM serve.public_species
+                     WHERE species_id = 'SYNTH-E2E-2')
+                    + (SELECT count(*) FROM serve.public_distribution_cell
+                       WHERE species_id = 'SYNTH-E2E-2')
+                    + (SELECT count(*) FROM serve.public_species_year
+                       WHERE species_id = 'SYNTH-E2E-2')
+                    + (SELECT count(*) FROM serve.public_record
+                       WHERE species_id = 'SYNTH-E2E-2') AS n
+                """
+            ).fetchone()["n"]
+        self.assertEqual(visible_species, [{"species_id": "SYNTH-E2E-3"}])
+        self.assertEqual(withdrawn_public_rows, 0)
 
     def test_real_source_failure_never_creates_a_visible_release(self) -> None:
         """A duplicate source identity fails terminally after candidate creation."""
@@ -2011,49 +2384,25 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             ],
         )
 
-    def test_identical_stale_candidate_reuses_active_then_discards_pending_payload(
-        self,
-    ) -> None:
+    def test_identical_refresh_reuses_active_and_purges_duplicate_payload(self) -> None:
         policy = _policy()
         rows = (_disposition(1), _disposition(2), _withheld(3))
-        store, base_handle, _summary, activation = self._activate_rows(rows, policy=policy)
+        base_store, base_handle, _summary, activation = self._activate_rows(
+            rows,
+            policy=policy,
+        )
         base_release = activation.release_id
-        with self._connection("loader") as connection:
-            maximum_token = connection.execute(
-                """
-                SELECT source_key_token
-                FROM loader_control.source_disposition
-                WHERE release_id = %s
-                ORDER BY source_key_token DESC
-                LIMIT 1
-                """,
-                (base_release,),
-            ).fetchone()["source_key_token"]
+        base_store.close()
 
-        active = self._install_incremental_clone(
-            store=store,
-            base_release=base_release,
-            upper_token=maximum_token,
+        store, duplicate, summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
         )
-        activated = store._cursor.execute(
-            "SELECT loader_control.activate_validated_release(%s) AS release_id",
-            (active.release_id,),
-        ).fetchone()
-        self.assertEqual(activated, {"release_id": active.release_id})
-
-        # This candidate was constructed against the now-retired base, but has
-        # exactly the same complete identity as the release activated above. It
-        # represents a whole-run retry whose successful response was lost.
-        stale_retry = self._install_incremental_clone(
-            store=store,
-            base_release=base_handle.release_id,
-            upper_token=maximum_token,
-        )
-        reused = store._cursor.execute(
-            "SELECT loader_control.activate_validated_release(%s) AS release_id",
-            (stale_retry.release_id,),
-        ).fetchone()
-        self.assertEqual(reused, {"release_id": active.release_id})
+        self.assertEqual(duplicate.base_release_id, base_release)
+        reused = store.activate(duplicate, summary)
+        self.assertEqual(reused.release_id, base_release)
 
         with self._connection("loader") as connection:
             lifecycle = connection.execute(
@@ -2065,7 +2414,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 JOIN loader_control.etl_job AS j USING (job_id)
                 WHERE r.release_id = %s
                 """,
-                (stale_retry.release_id,),
+                (duplicate.release_id,),
             ).fetchone()
             payload = connection.execute(
                 """
@@ -2083,7 +2432,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     + (SELECT count(*) FROM publication.public_record
                        WHERE release_id = %s) AS n
                 """,
-                (stale_retry.release_id,) * 6,
+                (duplicate.release_id,) * 6,
             ).fetchone()["n"]
             retained_withheld_audit = connection.execute(
                 """
@@ -2091,7 +2440,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 FROM loader_control.withheld_summary
                 WHERE release_id = %s
                 """,
-                (stale_retry.release_id,),
+                (duplicate.release_id,),
             ).fetchone()["n"]
             stage = connection.execute(
                 """
@@ -2103,56 +2452,216 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     + (SELECT count(*) FROM loader_stage.reconciliation_result
                        WHERE job_id = %s) AS n
                 """,
-                (stale_retry.job_id,) * 3,
+                (duplicate.job_id,) * 3,
             ).fetchone()["n"]
         self.assertEqual(
             lifecycle,
             {
                 "release_status": "discarded",
                 "job_status": "succeeded",
-                "result_release_id": active.release_id,
+                "result_release_id": base_release,
                 "reused_active_release": True,
-                "cleanup_pending": True,
+                "cleanup_pending": False,
             },
         )
-        self.assertGreater(payload, 0)
+        self.assertEqual(payload, 0)
+        # Compact aggregate audit evidence is intentionally retained even when
+        # the duplicate publication payload is discarded.
         self.assertEqual(retained_withheld_audit, 1)
-        self.assertGreater(stage, 0)
+        self.assertEqual(stage, 0)
+
+        with self._connection("api") as connection:
+            visible = connection.execute(
+                "SELECT release_id, source_data_as_of FROM serve.public_release"
+            ).fetchall()
+        self.assertEqual(
+            visible,
+            [
+                {
+                    "release_id": base_handle.release_id,
+                    "source_data_as_of": datetime.fromisoformat("2026-08-14T13:00:00.000000+00:00"),
+                }
+            ],
+        )
+
+        with self._connection("loader") as connection:
+            retained_evidence = connection.execute(
+                """
+                SELECT m.refresh_min_source_rows,
+                       m.refresh_max_source_rows,
+                       m.refresh_max_source_row_drop_bps,
+                       m.refresh_max_source_row_growth_bps,
+                       m.refresh_max_publication_basis_drop_bps,
+                       m.refresh_max_species_drop_bps,
+                       m.refresh_max_cell_drop_bps,
+                       m.refresh_max_species_year_drop_bps,
+                       m.source_snapshot_at = s.last_source_snapshot_at
+                           AS snapshot_advanced
+                FROM loader_control.release_manifest AS m
+                JOIN loader_control.release AS r USING (release_id)
+                JOIN loader_control.source_state AS s USING (source_id)
+                WHERE m.release_id = %s
+                """,
+                (duplicate.release_id,),
+            ).fetchone()
+        self.assertEqual(
+            retained_evidence,
+            {
+                "refresh_min_source_rows": 1,
+                "refresh_max_source_rows": 10_000,
+                "refresh_max_source_row_drop_bps": 10_000,
+                "refresh_max_source_row_growth_bps": 1_000_000_000,
+                "refresh_max_publication_basis_drop_bps": 10_000,
+                "refresh_max_species_drop_bps": 10_000,
+                "refresh_max_cell_drop_bps": 10_000,
+                "refresh_max_species_year_drop_bps": 10_000,
+                "snapshot_advanced": True,
+            },
+        )
+
+    def test_changed_refresh_stays_invisible_until_one_atomic_switch(self) -> None:
+        policy = _policy()
+        base_rows = (
+            _disposition(1),
+            _withheld(2),
+        )
+        base_store, base_handle, _summary, activation = self._activate_rows(
+            base_rows,
+            policy=policy,
+        )
+        base_store.close()
+
+        replacement_rows = (
+            _disposition(
+                3,
+                species_id="5088",
+                scientific_name="Anguis fragilis",
+                common_name="Slow-worm",
+                year=2025,
+                cell_id="ST5972",
+            ),
+            _withheld(2),
+        )
+        store, candidate, summary = self._finalized(
+            replacement_rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
+        )
+
+        with self._connection("api") as connection:
+            before = connection.execute(
+                "SELECT release_id, species_id FROM serve.public_species"
+            ).fetchall()
+        self.assertEqual(
+            before,
+            [{"release_id": base_handle.release_id, "species_id": "SYNTH-1"}],
+        )
+
+        refreshed = store.activate(candidate, summary)
+        self.assertEqual(refreshed.release_id, candidate.release_id)
+        self.assertNotEqual(refreshed.release_id, activation.release_id)
+        with self._connection("api") as connection:
+            after = connection.execute(
+                "SELECT release_id, species_id FROM serve.public_species"
+            ).fetchall()
+        self.assertEqual(
+            after,
+            [{"release_id": candidate.release_id, "species_id": "5088"}],
+        )
+        with self._connection("loader") as connection:
+            previous = connection.execute(
+                "SELECT status FROM loader_control.release WHERE release_id = %s",
+                (base_handle.release_id,),
+            ).fetchone()
+        self.assertEqual(previous, {"status": "retired"})
+
+    def test_refresh_cannot_regress_snapshot_after_an_identical_no_op(self) -> None:
+        policy = _policy()
+        rows = (_disposition(1), _withheld(2))
+        base_store, base_handle, _summary, _activation = self._activate_rows(
+            rows,
+            policy=policy,
+            captured_at_utc="2026-08-14T12:00:00.000000Z",
+        )
+        base_store.close()
+
+        newest_store, newest, newest_summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T14:00:00.000000Z",
+        )
+        reused = newest_store.activate(newest, newest_summary)
+        self.assertEqual(reused.release_id, base_handle.release_id)
+        newest_store.close()
+        with self._connection("loader") as connection:
+            newest_snapshot = connection.execute(
+                "SELECT last_source_snapshot_at FROM loader_control.source_state "
+                "WHERE source_id = %s",
+                (SOURCE_ID,),
+            ).fetchone()["last_source_snapshot_at"]
+
+        stale_store, stale, _stale_summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
+        )
+        with self.assertRaises(self.psycopg.errors.CheckViolation):
+            stale_store._cursor.execute(
+                "SELECT loader_control.activate_release_candidate(%s)",
+                (stale.release_id,),
+            )
+        with self._connection("loader") as connection:
+            state = connection.execute(
+                "SELECT active_release_id, last_source_snapshot_at "
+                "FROM loader_control.source_state WHERE source_id = %s",
+                (SOURCE_ID,),
+            ).fetchone()
+        self.assertEqual(
+            state,
+            {
+                "active_release_id": base_handle.release_id,
+                "last_source_snapshot_at": newest_snapshot,
+            },
+        )
+        stale_store.fail(stale, "LOADER_CANDIDATE_INVALID")
+
+    def test_refresh_threshold_failure_keeps_the_previous_release_active(self) -> None:
+        policy = _policy()
+        base_rows = (_disposition(1), _withheld(2))
+        base_store, base_handle, _summary, _activation = self._activate_rows(
+            base_rows,
+            policy=policy,
+        )
+        base_store.close()
+
+        strict = _loader_config(policy)
+        strict = dataclasses.replace(
+            strict,
+            runtime=dataclasses.replace(
+                strict.runtime,
+                refresh_max_source_row_drop_bps=0,
+            ),
+        )
+        store, candidate, _summary = self._finalized(
+            (_disposition(1),),
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            config=strict,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
+        )
+        with self.assertRaises(self.psycopg.errors.CheckViolation):
+            store._cursor.execute(
+                "SELECT loader_control.activate_release_candidate(%s)",
+                (candidate.release_id,),
+            )
 
         with self._connection("api") as connection:
             visible = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
-        self.assertEqual(visible, [{"release_id": active.release_id}])
-
-        removed = store._cursor.execute(
-            "SELECT loader_control.discard_inactive_candidate(%s) AS removed_rows",
-            (stale_retry.release_id,),
-        ).fetchone()["removed_rows"]
-        self.assertGreater(removed, 0)
-        second = store._cursor.execute(
-            "SELECT loader_control.discard_inactive_candidate(%s) AS removed_rows",
-            (stale_retry.release_id,),
-        ).fetchone()["removed_rows"]
-        self.assertEqual(second, 0)
-        with self._connection("loader") as connection:
-            cleaned = connection.execute(
-                """
-                SELECT r.cleanup_pending,
-                    (SELECT count(*) FROM loader_control.source_disposition
-                     WHERE release_id = r.release_id)
-                    + (SELECT count(*) FROM publication.public_release
-                       WHERE release_id = r.release_id) AS payload,
-                    (SELECT count(*) FROM loader_stage.source_inventory
-                     WHERE job_id = r.job_id)
-                    + (SELECT count(*) FROM loader_stage.disposition_delta
-                       WHERE job_id = r.job_id)
-                    + (SELECT count(*) FROM loader_stage.reconciliation_result
-                       WHERE job_id = r.job_id) AS stage
-                FROM loader_control.release AS r
-                WHERE r.release_id = %s
-                """,
-                (stale_retry.release_id,),
-            ).fetchone()
-        self.assertEqual(cleaned, {"cleanup_pending": False, "payload": 0, "stage": 0})
+        self.assertEqual(visible, [{"release_id": base_handle.release_id}])
+        store.fail(candidate, "LOADER_CANDIDATE_INVALID")
 
     def test_duplicate_source_token_fails_closed_and_cleans_stage(self) -> None:
         policy = _policy()
@@ -2461,37 +2970,23 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
     ) -> None:
         policy = _policy()
         rows = (_disposition(1), _disposition(2), _withheld(3))
-        owner, base_handle, _summary, activation = self._activate_rows(rows, policy=policy)
+        base_store, base_handle, _summary, activation = self._activate_rows(
+            rows,
+            policy=policy,
+        )
         base_release = activation.release_id
-        with self._connection("loader") as connection:
-            maximum_token = connection.execute(
-                """
-                SELECT source_key_token
-                FROM loader_control.source_disposition
-                WHERE release_id = %s
-                ORDER BY source_key_token DESC
-                LIMIT 1
-                """,
-                (base_release,),
-            ).fetchone()["source_key_token"]
-        active = self._install_incremental_clone(
-            store=owner,
-            base_release=base_release,
-            upper_token=maximum_token,
+        base_store.close()
+        owner, pending, _summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
         )
-        owner._cursor.execute(
-            "SELECT loader_control.activate_validated_release(%s)",
-            (active.release_id,),
-        ).fetchone()
-        pending = self._install_incremental_clone(
-            store=owner,
-            base_release=base_handle.release_id,
-            upper_token=maximum_token,
-        )
-        owner._cursor.execute(
-            "SELECT loader_control.activate_validated_release(%s)",
+        reused = owner._cursor.execute(
+            "SELECT loader_control.activate_release_candidate(%s) AS release_id",
             (pending.release_id,),
         ).fetchone()
+        self.assertEqual(reused, {"release_id": base_release})
         owner.close()
 
         # Hold a row lock that the atomic purge must acquire. A deliberately
@@ -2546,7 +3041,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 visible = connection.execute(
                     "SELECT release_id FROM serve.public_release"
                 ).fetchall()
-            self.assertEqual(visible, [{"release_id": active.release_id}])
+            self.assertEqual(visible, [{"release_id": base_release}])
         finally:
             blocker.rollback()
             blocker.close()
@@ -2576,7 +3071,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         self.assertEqual(cleaned, {"cleanup_pending": False, "payload": 0, "stage": 0})
         with self._connection("api") as connection:
             visible = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
-        self.assertEqual(visible, [{"release_id": active.release_id}])
+        self.assertEqual(visible, [{"release_id": base_release}])
 
     def test_public_id_collision_is_rejected_during_finalization(self) -> None:
         policy = _policy()
@@ -2970,7 +3465,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         with self._connection("loader") as unlocked:
             for query, parameters in (
                 (
-                    "SELECT loader_control.activate_validated_release(%s)",
+                    "SELECT loader_control.activate_release_candidate(%s)",
                     (handle.release_id,),
                 ),
                 (
@@ -3177,23 +3672,17 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
     def test_corrupt_candidate_rolls_back_atomically_and_keeps_old_release_visible(self) -> None:
         policy = _policy()
         rows = (_disposition(1), _disposition(2))
-        store, base_handle, _summary, activation = self._activate_rows(rows, policy=policy)
+        base_store, base_handle, _summary, activation = self._activate_rows(
+            rows,
+            policy=policy,
+        )
         base_release = activation.release_id
-        with self._connection("loader") as connection:
-            maximum_token = connection.execute(
-                """
-                SELECT source_key_token
-                FROM loader_control.source_disposition
-                WHERE release_id = %s
-                ORDER BY source_key_token DESC
-                LIMIT 1
-                """,
-                (base_release,),
-            ).fetchone()["source_key_token"]
-        candidate = self._install_incremental_clone(
-            store=store,
-            base_release=base_release,
-            upper_token=maximum_token,
+        base_store.close()
+        store, candidate, _summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T13:00:00.000000Z",
         )
         with self._admin_connection() as admin:
             admin.execute(
@@ -3207,7 +3696,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
 
         with self.assertRaises(self.psycopg.errors.CheckViolation):
             store._cursor.execute(
-                "SELECT loader_control.activate_validated_release(%s)",
+                "SELECT loader_control.activate_release_candidate(%s)",
                 (candidate.release_id,),
             )
 
@@ -3251,7 +3740,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             ).fetchone()["n"]
         self.assertEqual(candidate_rows, 0)
 
-    def test_nonmaximum_upper_token_is_rejected_for_a_dated_inventory(self) -> None:
+    def test_incremental_activation_is_unreachable_through_the_loader_role(self) -> None:
         policy = _policy()
         rows = (_disposition(1), _disposition(2))
         store, base_handle, _summary, activation = self._activate_rows(rows, policy=policy)
@@ -3269,45 +3758,33 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     (base_release,),
                 ).fetchall()
             ]
-        self.assertGreaterEqual(len(tokens), 2)
-        nonmaximum_upper_token = tokens[0]
-        self.assertLess(nonmaximum_upper_token, tokens[-1])
+        self.assertGreaterEqual(len(tokens), 1)
         candidate = self._install_incremental_clone(
-            store=store,
-            base_release=base_release,
-            upper_token=nonmaximum_upper_token,
-        )
-
-        # The candidate otherwise has a complete, unchanged replacement ledger
-        # and empty change set.  The only adversarial defect is choosing the
-        # lower of two tokens on the maximum date as its watermark.
-        with self.assertRaises(self.psycopg.errors.CheckViolation):
-            store._cursor.execute(
-                "SELECT loader_control.activate_validated_release(%s)",
-                (candidate.release_id,),
-            )
-        store.fail(candidate, "LOADER_CANDIDATE_INVALID")
-
-        with self._connection("api") as connection:
-            visible = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
-        self.assertEqual(visible, [{"release_id": base_handle.release_id}])
-
-        # Mutation-proof control: rebuilding the same complete candidate with
-        # the greatest token must activate.  Therefore the rejection above is
-        # specifically the nonmaximum watermark, not a missing aggregate/check.
-        maximum_candidate = self._install_incremental_clone(
             store=store,
             base_release=base_release,
             upper_token=tokens[-1],
         )
-        result = store._cursor.execute(
-            "SELECT loader_control.activate_validated_release(%s) AS release_id",
-            (maximum_candidate.release_id,),
-        ).fetchone()
-        self.assertEqual(result, {"release_id": maximum_candidate.release_id})
+
+        # Migration 0003 leaves the previously audited validator in place only
+        # as an internal implementation detail. The loader cannot invoke it and
+        # therefore cannot bypass the refresh wrapper's complete-snapshot
+        # checks. The sole public dispatcher rejects incremental candidates
+        # independently of the CLI's earlier source-contract refusal.
+        with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+            store._cursor.execute(
+                "SELECT loader_control.activate_validated_release(%s)",
+                (candidate.release_id,),
+            )
+        with self.assertRaises(self.psycopg.errors.ObjectNotInPrerequisiteState):
+            store._cursor.execute(
+                "SELECT loader_control.activate_release_candidate(%s)",
+                (candidate.release_id,),
+            )
+
         with self._connection("api") as connection:
             visible = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
-        self.assertEqual(visible, [{"release_id": maximum_candidate.release_id}])
+        self.assertEqual(visible, [{"release_id": base_handle.release_id}])
+        store.fail(candidate, "LOADER_CANDIDATE_INVALID")
 
 
 if __name__ == "__main__":

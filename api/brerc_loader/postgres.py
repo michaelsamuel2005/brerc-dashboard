@@ -1,4 +1,4 @@
-"""PostgreSQL release coordinator for bounded, atomic BRERC initial loads.
+"""PostgreSQL release coordinator for bounded, atomic BRERC snapshot loads.
 
 Raw source rows never enter this module. The trusted source connector yields
 only HMAC-keyed :class:`etl.streaming.SafeDisposition` batches. They are staged
@@ -71,7 +71,7 @@ from .models import LoaderRunReport, LoadMode, RunState
 from .policy_artifact import parse_publication_policy_artifact
 from .species_dictionary import parse_species_dictionary_artifact
 
-LOADER_VERSION = "brerc-postgres-loader-v2"
+LOADER_VERSION = "brerc-postgres-loader-v3"
 PROJECTION_VERSION = "brerc-main-data-dash-safe-projection-v1"
 SOURCE_RESULT_EVIDENCE_PROFILE = "brerc-source-result-evidence-v2"
 SOURCE_ID = "dashboard.main_data_dash"
@@ -211,6 +211,7 @@ class _CandidateHandle:
     job_id: UUID
     release_id: UUID
     base_release_id: UUID | None
+    mode: LoadMode = LoadMode.INITIAL
 
 
 @dataclass(frozen=True)
@@ -229,6 +230,7 @@ class _ActivationResult:
     published_records: int
     distribution_cells: int
     candidate_sha256: str
+    reused_active_release: bool
 
 
 @dataclass(frozen=True)
@@ -249,6 +251,12 @@ class _TargetStore(Protocol):
     def acquire(self, source_id: str) -> None: ...
 
     def begin_initial(
+        self,
+        source_id: str,
+        attempt: _CandidateHandle,
+    ) -> _CandidateHandle: ...
+
+    def begin_refresh(
         self,
         source_id: str,
         attempt: _CandidateHandle,
@@ -418,6 +426,27 @@ def _check_deadline(deadline: float, target: _TargetStore | None = None) -> None
     raise LoaderExecutionFailed()
 
 
+def _source_count_bounds(config: LoaderConfig, mode: LoadMode) -> tuple[int, int]:
+    if mode is LoadMode.INITIAL:
+        return (
+            config.runtime.initial_min_source_rows,
+            config.runtime.initial_max_source_rows,
+        )
+    if mode is LoadMode.REFRESH:
+        return (
+            config.runtime.refresh_min_source_rows,
+            config.runtime.refresh_max_source_rows,
+        )
+    raise LoaderConfigurationError()
+
+
+def _valid_snapshot_handle(handle: object) -> bool:
+    return isinstance(handle, _CandidateHandle) and (
+        (handle.mode is LoadMode.INITIAL and handle.base_release_id is None)
+        or (handle.mode is LoadMode.REFRESH and handle.base_release_id is not None)
+    )
+
+
 def run_load(config: LoaderConfig, mode: LoadMode) -> LoaderRunReport:
     """Run the configured load without exposing policy/source injection hooks."""
     if not isinstance(config, LoaderConfig) or not isinstance(mode, LoadMode):
@@ -461,6 +490,7 @@ def run_load(config: LoaderConfig, mode: LoadMode) -> LoaderRunReport:
         raise _sanitise(LoaderConfigurationError()) from None
     return _run_initial_with_inputs(
         config,
+        mode=mode,
         source_config=source_config,
         source_contract=BRERC_MAIN_DATA_DASH,
         columns=source_config.column_map,
@@ -473,6 +503,7 @@ def run_load(config: LoaderConfig, mode: LoadMode) -> LoaderRunReport:
 def _run_initial_with_inputs(
     config: LoaderConfig,
     *,
+    mode: LoadMode = LoadMode.INITIAL,
     source_config: SourceConnectorConfig,
     source_contract: SourceContract,
     columns: ColumnMap,
@@ -480,8 +511,14 @@ def _run_initial_with_inputs(
     dictionary: SpeciesDictionary | None = None,
     species_dictionary_artifact_sha256: str | None = None,
 ) -> LoaderRunReport:
-    """Private synthetic-testable orchestration; production inputs stay fixed."""
-    if not isinstance(policy, PublicationPolicy):
+    """Private synthetic-testable full-snapshot orchestration.
+
+    ``refresh`` is a destination lifecycle mode.  Source extraction deliberately
+    remains the approval-bound complete ``INITIAL`` snapshot protocol.
+    """
+    if mode not in (LoadMode.INITIAL, LoadMode.REFRESH) or not isinstance(
+        policy, PublicationPolicy
+    ):
         raise _sanitise(LoaderPolicyInvalid())
     dictionary_sha256 = dictionary.digest() if isinstance(dictionary, SpeciesDictionary) else None
     if (
@@ -518,14 +555,25 @@ def _run_initial_with_inputs(
         _check_deadline(deadline, target)
         target.acquire(SOURCE_ID)
         _check_deadline(deadline, target)
-        attempt = _CandidateHandle(job_id=uuid4(), release_id=uuid4(), base_release_id=None)
+        attempt = _CandidateHandle(
+            job_id=uuid4(),
+            release_id=uuid4(),
+            base_release_id=None,
+            mode=mode,
+        )
         handle = attempt
-        begun = target.begin_initial(SOURCE_ID, attempt)
+        begun = (
+            target.begin_initial(SOURCE_ID, attempt)
+            if mode is LoadMode.INITIAL
+            else target.begin_refresh(SOURCE_ID, attempt)
+        )
         if (
             not isinstance(begun, _CandidateHandle)
             or begun.job_id != attempt.job_id
             or begun.release_id != attempt.release_id
-            or begun.base_release_id is not None
+            or begun.mode is not mode
+            or (mode is LoadMode.INITIAL and begun.base_release_id is not None)
+            or (mode is LoadMode.REFRESH and begun.base_release_id is None)
         ):
             raise LoaderCandidateInvalid()
         handle = begun
@@ -540,7 +588,7 @@ def _run_initial_with_inputs(
             absolute_deadline=deadline,
         )
         staged_rows = 0
-        approved_maximum = config.runtime.initial_max_source_rows
+        approved_minimum, approved_maximum = _source_count_bounds(config, mode)
         with snapshot_context as snapshot:
             for batch in snapshot:
                 _check_deadline(deadline, target)
@@ -558,9 +606,10 @@ def _run_initial_with_inputs(
 
         _check_deadline(deadline, target)
 
-        minimum = config.runtime.initial_min_source_rows
-        maximum = config.runtime.initial_max_source_rows
-        if staged_rows != evidence.rows_seen or not minimum <= evidence.rows_seen <= maximum:
+        if (
+            staged_rows != evidence.rows_seen
+            or not approved_minimum <= evidence.rows_seen <= approved_maximum
+        ):
             raise LoaderSourceCountRejected()
         if not _is_sha256(evidence.observed_species_dictionary_sha256) or not hmac.compare_digest(
             evidence.observed_species_dictionary_sha256,
@@ -586,13 +635,14 @@ def _run_initial_with_inputs(
         result = LoaderRunReport(
             run_id=str(activation.run_id),
             release_id=str(activation.release_id),
-            mode=LoadMode.INITIAL,
+            mode=mode,
             state=RunState.SUCCEEDED,
             source_rows=activation.source_rows,
             public_records=activation.published_records,
             distribution_cells=activation.distribution_cells,
             candidate_sha256=activation.candidate_sha256,
             activated=True,
+            reused_active_release=activation.reused_active_release,
         )
     except LoaderError as exc:
         failure = exc
@@ -750,7 +800,7 @@ class _PostgreSQLTargetStore:
             if row is None:
                 break
             migrations.append(row)
-        if len(migrations) != 2:
+        if len(migrations) != 3:
             raise LoaderTargetProtocolError()
         observed_migrations = tuple(
             mapping_row(migration, TARGET_MIGRATION_HEADER) for migration in migrations
@@ -758,6 +808,7 @@ class _PostgreSQLTargetStore:
         if observed_migrations != (
             {"migration_version": 1, "migration_key": "0001_publication_store"},
             {"migration_version": 2, "migration_key": "0002_sensitive_record_action"},
+            {"migration_version": 3, "migration_key": "0003_full_snapshot_refresh"},
         ):
             raise LoaderTargetProtocolError()
         self._set_statement_budget(cursor)
@@ -883,11 +934,26 @@ class _PostgreSQLTargetStore:
             self._locked_source != source_id
             or not isinstance(attempt, _CandidateHandle)
             or attempt.base_release_id is not None
+            or attempt.mode is not LoadMode.INITIAL
         ):
             raise LoaderTargetProtocolError()
-        return self._begin_initial_once(source_id, attempt, allow_ack_retry=True)
+        return self._begin_snapshot_once(source_id, attempt, allow_ack_retry=True)
 
-    def _begin_initial_once(
+    def begin_refresh(
+        self,
+        source_id: str,
+        attempt: _CandidateHandle,
+    ) -> _CandidateHandle:
+        if (
+            self._locked_source != source_id
+            or not isinstance(attempt, _CandidateHandle)
+            or attempt.base_release_id is not None
+            or attempt.mode is not LoadMode.REFRESH
+        ):
+            raise LoaderTargetProtocolError()
+        return self._begin_snapshot_once(source_id, attempt, allow_ack_retry=True)
+
+    def _begin_snapshot_once(
         self,
         source_id: str,
         attempt: _CandidateHandle,
@@ -905,11 +971,11 @@ class _PostgreSQLTargetStore:
                 (source_id,),
             )
             # Deliberately an unlocked read.  Two loaders cannot reach this
-            # point concurrently: begin_initial refuses unless acquire() already
+            # point concurrently: a snapshot begin refuses unless acquire() already
             # took the session-level advisory lock for this source
             # (TARGET_LOCK_SQL / pg_try_advisory_lock), which is held across
             # commits for the whole run, and active_release_id is only ever
-            # written by loader_control.activate_validated_release, a SECURITY
+            # written by loader_control.activate_release_candidate, a SECURITY
             # DEFINER function whose EXECUTE right is granted to this same role.
             #
             # A FOR UPDATE row lock here would additionally require the UPDATE
@@ -926,8 +992,16 @@ class _PostgreSQLTargetStore:
             )
             state = _one(cursor, ("active_release_id",))
             raw_base = state["active_release_id"]
-            if raw_base is not None:
+            if attempt.mode is LoadMode.INITIAL and raw_base is not None:
                 raise LoaderReleaseBlocked()
+            if attempt.mode is LoadMode.REFRESH and raw_base is None:
+                raise LoaderReleaseBlocked()
+            if attempt.mode not in (LoadMode.INITIAL, LoadMode.REFRESH):
+                raise LoaderTargetProtocolError()
+            try:
+                base_release_id = None if raw_base is None else UUID(str(raw_base))
+            except (TypeError, ValueError):
+                raise LoaderTargetProtocolError() from None
             self._tx_execute(
                 cursor,
                 "SELECT EXISTS (SELECT 1 FROM loader_control.release "
@@ -943,8 +1017,8 @@ class _PostgreSQLTargetStore:
                 cursor,
                 "INSERT INTO loader_control.etl_job "
                 "(job_id, source_id, load_mode, base_release_id, started_at, heartbeat_at) "
-                "VALUES (%s, %s, 'initial', NULL, transaction_timestamp(), transaction_timestamp())",
-                (attempt.job_id, source_id),
+                "VALUES (%s, %s, %s, %s, transaction_timestamp(), transaction_timestamp())",
+                (attempt.job_id, source_id, attempt.mode.value, base_release_id),
             )
             self._require_rowcount(cursor, 1)
             self._tx_execute(
@@ -958,8 +1032,14 @@ class _PostgreSQLTargetStore:
                 cursor,
                 "INSERT INTO loader_control.release "
                 "(release_id, source_id, job_id, base_release_id, load_mode) "
-                "VALUES (%s, %s, %s, NULL, 'initial')",
-                (attempt.release_id, source_id, attempt.job_id),
+                "VALUES (%s, %s, %s, %s, %s)",
+                (
+                    attempt.release_id,
+                    source_id,
+                    attempt.job_id,
+                    base_release_id,
+                    attempt.mode.value,
+                ),
             )
             self._require_rowcount(cursor, 1)
             self._set_statement_budget(cursor, local=True)
@@ -968,7 +1048,8 @@ class _PostgreSQLTargetStore:
             return _CandidateHandle(
                 job_id=attempt.job_id,
                 release_id=attempt.release_id,
-                base_release_id=None,
+                base_release_id=base_release_id,
+                mode=attempt.mode,
             )
         except (LoaderReleaseBlocked, LoaderCleanupPending):
             with suppress(Exception):
@@ -985,11 +1066,18 @@ class _PostgreSQLTargetStore:
                 )
             raise LoaderCandidateInvalid() from None
 
-    def _read_known_begin(self, attempt: _CandidateHandle) -> _CandidateHandle | None:
+    def _read_known_begin(
+        self,
+        source_id: str,
+        attempt: _CandidateHandle,
+    ) -> _CandidateHandle | None:
         self._set_statement_budget(self._cursor)
         _execute(
             self._cursor,
-            "SELECT j.job_id, r.release_id, r.base_release_id, j.status AS job_status, "
+            "SELECT j.job_id, r.release_id, j.source_id AS job_source_id, "
+            "r.source_id AS release_source_id, j.load_mode AS job_load_mode, "
+            "r.load_mode AS release_load_mode, j.base_release_id AS job_base_release_id, "
+            "r.base_release_id AS release_base_release_id, j.status AS job_status, "
             "r.status AS release_status, s.active_release_id "
             "FROM loader_control.etl_job AS j "
             "FULL JOIN loader_control.release AS r ON r.job_id = j.job_id "
@@ -1000,7 +1088,12 @@ class _PostgreSQLTargetStore:
         header = (
             "job_id",
             "release_id",
-            "base_release_id",
+            "job_source_id",
+            "release_source_id",
+            "job_load_mode",
+            "release_load_mode",
+            "job_base_release_id",
+            "release_base_release_id",
             "job_status",
             "release_status",
             "active_release_id",
@@ -1013,16 +1106,37 @@ class _PostgreSQLTargetStore:
         if self._cursor.fetchone() is not None:
             raise LoaderCandidateInvalid()
         row = mapping_row(first, header)
+        try:
+            job_id = UUID(str(row["job_id"]))
+            release_id = UUID(str(row["release_id"]))
+            raw_job_base = row["job_base_release_id"]
+            raw_release_base = row["release_base_release_id"]
+            job_base = None if raw_job_base is None else UUID(str(raw_job_base))
+            release_base = None if raw_release_base is None else UUID(str(raw_release_base))
+            raw_active = row["active_release_id"]
+            active = None if raw_active is None else UUID(str(raw_active))
+        except (TypeError, ValueError):
+            raise LoaderCandidateInvalid() from None
         if (
-            UUID(str(row["job_id"])) != attempt.job_id
-            or UUID(str(row["release_id"])) != attempt.release_id
-            or row["base_release_id"] is not None
+            job_id != attempt.job_id
+            or release_id != attempt.release_id
+            or row["job_source_id"] != source_id
+            or row["release_source_id"] != source_id
+            or row["job_load_mode"] != attempt.mode.value
+            or row["release_load_mode"] != attempt.mode.value
+            or job_base != release_base
             or row["job_status"] != "extracting"
             or row["release_status"] != "candidate"
-            or row["active_release_id"] is not None
+            or (attempt.mode is LoadMode.INITIAL and (job_base is not None or active is not None))
+            or (attempt.mode is LoadMode.REFRESH and (job_base is None or active != job_base))
         ):
             raise LoaderCandidateInvalid()
-        return _CandidateHandle(attempt.job_id, attempt.release_id, None)
+        return _CandidateHandle(
+            attempt.job_id,
+            attempt.release_id,
+            job_base,
+            mode=attempt.mode,
+        )
 
     def _recover_begin_ack(
         self,
@@ -1034,10 +1148,10 @@ class _PostgreSQLTargetStore:
         original_deadline = self._extend_for_recovery()
         try:
             try:
-                known = self._read_known_begin(attempt)
+                known = self._read_known_begin(source_id, attempt)
             except Exception:
                 self._replace_connection_and_lock(source_id)
-                known = self._read_known_begin(attempt)
+                known = self._read_known_begin(source_id, attempt)
         finally:
             self._absolute_deadline = original_deadline
         if known is not None:
@@ -1053,7 +1167,7 @@ class _PostgreSQLTargetStore:
         recovered = _one(self._cursor, ("recovered",))["recovered"]
         if type(recovered) is not int or recovered not in (0, 1):
             raise LoaderTargetProtocolError()
-        return self._begin_initial_once(source_id, attempt, allow_ack_retry=False)
+        return self._begin_snapshot_once(source_id, attempt, allow_ack_retry=False)
 
     @staticmethod
     def _stage_values(
@@ -1093,7 +1207,11 @@ class _PostgreSQLTargetStore:
         handle: _CandidateHandle,
         batch: tuple[SafeDisposition, ...],
     ) -> None:
-        if not batch or len(batch) > self._config.runtime.batch_size:
+        if (
+            not _valid_snapshot_handle(handle)
+            or not batch
+            or len(batch) > self._config.runtime.batch_size
+        ):
             raise LoaderCandidateInvalid()
         values = [self._stage_values(handle, disposition) for disposition in batch]
         inventory = [(row[0], row[1], row[3]) for row in values]
@@ -1382,7 +1500,7 @@ class _PostgreSQLTargetStore:
         species_dictionary_sha256: str,
     ) -> _CandidateSummary:
         if (
-            not isinstance(handle, _CandidateHandle)
+            not _valid_snapshot_handle(handle)
             or not isinstance(evidence, SafeSourceSnapshotEvidence)
             or not isinstance(policy, PublicationPolicy)
             or not isinstance(source_contract, SourceContract)
@@ -1390,7 +1508,6 @@ class _PostgreSQLTargetStore:
             or not isinstance(policy_artifact_sha256, str)
             or not isinstance(species_dictionary_artifact_sha256, str)
             or not isinstance(species_dictionary_sha256, str)
-            or handle.base_release_id is not None
         ):
             raise LoaderCandidateInvalid()
         snapshot_at = self._validate_finalization_inputs(
@@ -1428,6 +1545,21 @@ class _PostgreSQLTargetStore:
         # It deliberately stays stable when only source rows/timestamps change;
         # release/source/public digests carry the snapshot-specific identities.
         capabilities = self._capabilities(policy)
+        refresh_thresholds: tuple[int | None, ...]
+        if handle.mode is LoadMode.REFRESH:
+            runtime = self._config.runtime
+            refresh_thresholds = (
+                runtime.refresh_min_source_rows,
+                runtime.refresh_max_source_rows,
+                runtime.refresh_max_source_row_drop_bps,
+                runtime.refresh_max_source_row_growth_bps,
+                runtime.refresh_max_publication_basis_drop_bps,
+                runtime.refresh_max_species_drop_bps,
+                runtime.refresh_max_cell_drop_bps,
+                runtime.refresh_max_species_year_drop_bps,
+            )
+        else:
+            refresh_thresholds = (None,) * 8
         cursor = self._cursor
         commit_sent = False
         try:
@@ -1436,9 +1568,14 @@ class _PostgreSQLTargetStore:
                 cursor,
                 "UPDATE loader_control.etl_job SET status = 'reconciling', "
                 "heartbeat_at = transaction_timestamp() "
-                "WHERE job_id = %s AND source_id = %s AND load_mode = 'initial' "
-                "AND base_release_id IS NULL AND status = 'extracting'",
-                (handle.job_id, SOURCE_ID),
+                "WHERE job_id = %s AND source_id = %s AND load_mode = %s "
+                "AND base_release_id IS NOT DISTINCT FROM %s AND status = 'extracting'",
+                (
+                    handle.job_id,
+                    SOURCE_ID,
+                    handle.mode.value,
+                    handle.base_release_id,
+                ),
             )
             self._require_rowcount(cursor, 1)
             self._tx_execute(
@@ -1512,6 +1649,10 @@ class _PostgreSQLTargetStore:
                 "observed_view_definition_sha256, observed_view_identity_sha256, "
                 "projection_version, projection_sha256, publication_policy_version, "
                 "publication_policy_sha256, policy_approval_sha256, sensitive_record_action, "
+                "refresh_min_source_rows, refresh_max_source_rows, "
+                "refresh_max_source_row_drop_bps, refresh_max_source_row_growth_bps, "
+                "refresh_max_publication_basis_drop_bps, refresh_max_species_drop_bps, "
+                "refresh_max_cell_drop_bps, refresh_max_species_year_drop_bps, "
                 "suppression_mode, min_records_per_cell, etl_version, compatibility_sha256, "
                 "species_dictionary_artifact_sha256, species_dictionary_sha256, "
                 "sensitivity_snapshot_sha256, source_row_count, "
@@ -1522,7 +1663,7 @@ class _PostgreSQLTargetStore:
                 ") VALUES ("
                 "%s, %s, NULL, NULL, NULL, NULL, %s, %s, %s, %s, %s, %s, %s, %s, "
                 "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-                "%s, %s, %s, %s, %s, %s, %s"
+                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s"
                 ")",
                 (
                     handle.release_id,
@@ -1537,6 +1678,14 @@ class _PostgreSQLTargetStore:
                     policy_artifact_sha256,
                     approval_sha256,
                     policy.sensitive_record_action,
+                    refresh_thresholds[0],
+                    refresh_thresholds[1],
+                    refresh_thresholds[2],
+                    refresh_thresholds[3],
+                    refresh_thresholds[4],
+                    refresh_thresholds[5],
+                    refresh_thresholds[6],
+                    refresh_thresholds[7],
                     policy.suppression_mode,
                     policy.min_records_per_cell,
                     LOADER_VERSION,
@@ -2331,7 +2480,10 @@ class _PostgreSQLTargetStore:
             self._cursor,
             "SELECT m.source_row_count, m.public_record_count, m.cell_count, "
             "m.candidate_sha256, j.status AS job_status, r.status AS release_status, "
-            "r.base_release_id FROM loader_control.release AS r "
+            "j.load_mode AS job_load_mode, r.load_mode AS release_load_mode, "
+            "j.base_release_id AS job_base_release_id, "
+            "r.base_release_id AS release_base_release_id "
+            "FROM loader_control.release AS r "
             "JOIN loader_control.etl_job AS j ON j.job_id = r.job_id "
             "JOIN loader_control.release_manifest AS m ON m.release_id = r.release_id "
             "WHERE r.release_id = %s AND r.job_id = %s",
@@ -2344,7 +2496,10 @@ class _PostgreSQLTargetStore:
             "candidate_sha256",
             "job_status",
             "release_status",
-            "base_release_id",
+            "job_load_mode",
+            "release_load_mode",
+            "job_base_release_id",
+            "release_base_release_id",
         )
         if cursor_column_names(self._cursor.description) != header:
             raise LoaderTargetProtocolError()
@@ -2354,10 +2509,20 @@ class _PostgreSQLTargetStore:
         if self._cursor.fetchone() is not None:
             raise LoaderCandidateInvalid()
         row = mapping_row(first, header)
+        try:
+            raw_job_base = row["job_base_release_id"]
+            raw_release_base = row["release_base_release_id"]
+            job_base = None if raw_job_base is None else UUID(str(raw_job_base))
+            release_base = None if raw_release_base is None else UUID(str(raw_release_base))
+        except (TypeError, ValueError):
+            raise LoaderCandidateInvalid() from None
         if (
             row["job_status"] != "activating"
             or row["release_status"] not in ("candidate", "validated")
-            or row["base_release_id"] is not None
+            or row["job_load_mode"] != handle.mode.value
+            or row["release_load_mode"] != handle.mode.value
+            or job_base != handle.base_release_id
+            or release_base != handle.base_release_id
         ):
             raise LoaderCandidateInvalid()
         try:
@@ -2376,7 +2541,7 @@ class _PostgreSQLTargetStore:
         summary: _CandidateSummary,
     ) -> _ActivationResult:
         if (
-            handle.base_release_id is not None
+            not _valid_snapshot_handle(handle)
             or summary.source_rows < 1
             or summary.distribution_cells < 1
             or len(summary.candidate_sha256) != 64
@@ -2391,7 +2556,7 @@ class _PostgreSQLTargetStore:
             activation_sent = True
             _execute(
                 self._cursor,
-                "SELECT loader_control.activate_validated_release(%s) AS release_id",
+                "SELECT loader_control.activate_release_candidate(%s) AS release_id",
                 (handle.release_id,),
             )
             raw_release = _one(self._cursor, ("release_id",))["release_id"]
@@ -2416,7 +2581,7 @@ class _PostgreSQLTargetStore:
             self._set_statement_budget(self._cursor)
             _execute(
                 self._cursor,
-                "SELECT loader_control.activate_validated_release(%s) AS release_id",
+                "SELECT loader_control.activate_release_candidate(%s) AS release_id",
                 (handle.release_id,),
             )
             raw_release = _one(self._cursor, ("release_id",))["release_id"]
@@ -2478,15 +2643,60 @@ class _PostgreSQLTargetStore:
         self._set_statement_budget(self._cursor)
         _execute(
             self._cursor,
+            "WITH RECURSIVE active_lineage (release_id, base_release_id, source_id) AS ("
+            "SELECT ar.release_id, ar.base_release_id, ar.source_id "
+            "FROM loader_control.release AS ar "
+            "JOIN loader_control.source_state AS ast "
+            "ON ast.active_release_id = ar.release_id AND ast.source_id = ar.source_id "
+            "WHERE ast.source_id = %s UNION "
+            "SELECT parent.release_id, parent.base_release_id, parent.source_id "
+            "FROM loader_control.release AS parent "
+            "JOIN active_lineage AS child ON child.base_release_id = parent.release_id "
+            "AND child.source_id = parent.source_id) "
             "SELECT j.status AS job_status, j.result_release_id, j.reused_active_release, "
             "s.active_release_id, r.status AS result_release_status, m.source_row_count, "
-            "m.public_record_count, m.cell_count, m.candidate_sha256 "
+            "m.public_record_count, m.cell_count, m.candidate_sha256, "
+            "(r.status = 'active' AND r.release_id = s.active_release_id "
+            "AND a.status = 'active' AND a.activated_at IS NOT NULL) AS result_is_current, "
+            "(r.status = 'retired' AND r.release_id <> s.active_release_id "
+            "AND r.retired_at IS NOT NULL AND a.status = 'active' "
+            "AND a.activated_at IS NOT NULL AND a.activated_at >= r.retired_at "
+            "AND EXISTS (SELECT 1 FROM active_lineage AS al "
+            "WHERE al.release_id = r.release_id)) AS result_was_superseded, "
+            "j.load_mode AS job_load_mode, j.base_release_id AS job_base_release_id, "
+            "c.release_id AS candidate_release_id, c.load_mode AS candidate_load_mode, "
+            "c.base_release_id AS candidate_base_release_id, "
+            "c.status AS candidate_release_status, c.cleanup_pending AS candidate_cleanup_pending, "
+            "CASE WHEN c.status = 'discarded' AND NOT c.cleanup_pending THEN NOT ("
+            "EXISTS (SELECT 1 FROM loader_control.source_disposition AS sd "
+            "WHERE sd.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM publication.public_release AS pr "
+            "WHERE pr.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM publication.public_species AS ps "
+            "WHERE ps.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM publication.public_distribution_cell AS pc "
+            "WHERE pc.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM publication.public_species_year AS py "
+            "WHERE py.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM publication.public_record AS po "
+            "WHERE po.release_id = c.release_id) OR "
+            "EXISTS (SELECT 1 FROM loader_stage.source_inventory AS si "
+            "WHERE si.job_id = j.job_id) OR "
+            "EXISTS (SELECT 1 FROM loader_stage.disposition_delta AS dd "
+            "WHERE dd.job_id = j.job_id) OR "
+            "EXISTS (SELECT 1 FROM loader_stage.reconciliation_result AS rr "
+            "WHERE rr.job_id = j.job_id)) ELSE NULL END AS candidate_cleanup_complete "
             "FROM loader_control.etl_job AS j "
             "JOIN loader_control.source_state AS s ON s.source_id = j.source_id "
+            "JOIN loader_control.release AS c ON c.job_id = j.job_id "
+            "AND c.source_id = j.source_id "
+            "JOIN loader_control.release AS a ON a.release_id = s.active_release_id "
+            "AND a.source_id = j.source_id "
             "LEFT JOIN loader_control.release AS r ON r.release_id = j.result_release_id "
+            "AND r.source_id = j.source_id "
             "LEFT JOIN loader_control.release_manifest AS m ON m.release_id = j.result_release_id "
             "WHERE j.job_id = %s AND j.source_id = %s",
-            (handle.job_id, SOURCE_ID),
+            (SOURCE_ID, handle.job_id, SOURCE_ID),
         )
         header = (
             "job_status",
@@ -2498,6 +2708,16 @@ class _PostgreSQLTargetStore:
             "public_record_count",
             "cell_count",
             "candidate_sha256",
+            "result_is_current",
+            "result_was_superseded",
+            "job_load_mode",
+            "job_base_release_id",
+            "candidate_release_id",
+            "candidate_load_mode",
+            "candidate_base_release_id",
+            "candidate_release_status",
+            "candidate_cleanup_pending",
+            "candidate_cleanup_complete",
         )
         if cursor_column_names(self._cursor.description) != header:
             raise LoaderTargetProtocolError()
@@ -2515,17 +2735,56 @@ class _PostgreSQLTargetStore:
             source_rows = int(row["source_row_count"])
             public_records = int(row["public_record_count"])
             distribution_cells = int(row["cell_count"])
+            candidate_release_id = UUID(str(row["candidate_release_id"]))
+            raw_job_base = row["job_base_release_id"]
+            raw_candidate_base = row["candidate_base_release_id"]
+            job_base = None if raw_job_base is None else UUID(str(raw_job_base))
+            candidate_base = None if raw_candidate_base is None else UUID(str(raw_candidate_base))
         except (TypeError, ValueError):
             raise LoaderCandidateInvalid() from None
+        reused = row["reused_active_release"]
+        cleanup_pending = row["candidate_cleanup_pending"]
+        cleanup_complete = row["candidate_cleanup_complete"]
+        result_is_current = row["result_is_current"]
+        result_was_superseded = row["result_was_superseded"]
+        result_lifecycle_valid = (result_is_current is True) != (result_was_superseded is True)
+        reused_shape_valid = (
+            reused is True
+            and result_release_id != handle.release_id
+            and row["candidate_release_status"] == "discarded"
+            and (
+                (cleanup_pending is True and cleanup_complete is None)
+                or (cleanup_pending is False and cleanup_complete is True)
+            )
+        )
+        activated_shape_valid = (
+            reused is False
+            and result_release_id == handle.release_id
+            and row["candidate_release_status"] == row["result_release_status"]
+            and row["candidate_release_status"] in ("active", "retired")
+            and cleanup_pending is False
+            and cleanup_complete is None
+        )
         if (
-            result_release_id != active_release_id
-            or row["result_release_status"] != "active"
-            or (returned_release is not None and returned_release != result_release_id)
+            (returned_release is not None and returned_release != result_release_id)
             or source_rows != summary.source_rows
             or public_records != summary.published_records
             or distribution_cells != summary.distribution_cells
             or row["candidate_sha256"] != summary.candidate_sha256
-            or type(row["reused_active_release"]) is not bool
+            or type(reused) is not bool
+            or type(cleanup_pending) is not bool
+            or (cleanup_complete is not None and type(cleanup_complete) is not bool)
+            or type(result_is_current) is not bool
+            or type(result_was_superseded) is not bool
+            or not result_lifecycle_valid
+            or (result_is_current and result_release_id != active_release_id)
+            or (result_was_superseded and result_release_id == active_release_id)
+            or candidate_release_id != handle.release_id
+            or row["job_load_mode"] != handle.mode.value
+            or row["candidate_load_mode"] != handle.mode.value
+            or job_base != handle.base_release_id
+            or candidate_base != handle.base_release_id
+            or not (reused_shape_valid or activated_shape_valid)
         ):
             raise LoaderCandidateInvalid()
         return _ActivationResult(
@@ -2535,4 +2794,5 @@ class _PostgreSQLTargetStore:
             published_records=public_records,
             distribution_cells=distribution_cells,
             candidate_sha256=summary.candidate_sha256,
+            reused_active_release=reused,
         )

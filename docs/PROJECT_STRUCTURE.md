@@ -44,11 +44,13 @@ Each area will have its own README with the detail. This table is the quick summ
 | Folder | What it's for | Owner | Status |
 | --- | --- | --- | --- |
 | [`web/`](../web/README.md) | The **public dashboard** — the interactive, accessible website that shows BRERC's species and environmental records to the public. React + TypeScript, built with Vite. **This is our primary deliverable.** | **Michael** | 🟢 In progress |
-| [`api/`](../api/README.md) | The **back-end API**. It connects to the database, keeps sensitive data safe, and serves only clean, public-safe data to `web/` over HTTPS/JSON. | **[TO BE CONFIRMED]** (a teammate) | 🟡 Folder exists — early / not yet started |
-| [`internal-web/`](../internal-web/README.md) | The **internal data-quality tool** for BRERC staff. Helps them monitor the content and quality of their database. **Secondary** — only built if time allows. | **[TO BE CONFIRMED]** | 🟡 Folder exists — early / not yet started |
-| [`db/`](../db/README.md) | The **database definitions** — schema and migrations for the PostgreSQL / PostGIS database. (*Schema* = the shape of the data; *migrations* = tracked, ordered changes to that shape.) | **[TO BE CONFIRMED]** | 🔵 Planned — folder not created yet |
+| [`api/`](../api/README.md) | The **back-end API and ETL**. The loader builds publication-safe releases, while the read-only API serves only the active `serve.*` views to `web/` over HTTPS/JSON. | **Team** | 🟢 Implemented for synthetic integration; production acceptance remains |
+| [`internal-web/`](../internal-web/README.md) | The **internal data-quality tool** for BRERC staff. Helps them monitor the content and quality of their database. | **Team** | 🟡 Separate secondary tool; production operation remains |
+| [`db/`](../db/README.md) | The **database definitions** — roles and ordered PostgreSQL/PostGIS migrations for atomic publication releases. (*Schema* = the shape of the data; *migrations* = tracked, ordered changes to that shape.) | **Team** | 🟢 Initial and full-snapshot refresh store implemented |
 
-> 📝 **A note on status.** Right now, `api/` and `internal-web/` exist but are essentially empty, and `db/` and `data/` haven't been created yet — that's all expected at this stage. If you pick up one of these areas, create the folder (if it isn't there yet), add a short `README.md` describing it, and let the team know on your branch's pull request (see [How we work](#-a-reminder-on-how-we-work)).
+> 📝 **A note on status.** “Implemented for synthetic integration” does not mean deployed with
+> BRERC data. Live view approval, production credentials/infrastructure, production thresholds and
+> retained acceptance evidence remain separate gates.
 
 ---
 
@@ -68,7 +70,10 @@ The three code areas talk to each other in a deliberate, one-directional chain �
 ```
 
 - **`web/` (front-end)** runs in the public's browser. It asks `api/` for data over **HTTPS/JSON** — that is, over a secure web connection, in a simple text format both sides understand — and draws the maps, species pages, and charts.
-- **`api/` (back-end)** is the *only* part that connects to the database. It runs **parameterised queries** (a safe way of asking the database for data that blocks a common form of attack), strips out anything sensitive (personal data, precise locations of protected species), and returns only public-safe data.
+- **`api/` (back-end)** contains two separate database boundaries. The ETL reads the controlled
+  source and writes a fully reconciled inactive candidate; the public API connects with a different,
+  read-only role and reads only the active publication views. Sensitive/private fields are withheld
+  or generalised by the ETL before they can enter the public publication tables.
 - **`db/`** holds the database's schema and migrations — the definition of how the data is stored.
 
 > 🔒 **Critical boundary:** the public front-end (`web/`) **never connects to the database directly** and holds **no credentials and no real data**. (*Credentials* = the passwords/keys that unlock the database.) Everything sensitive is filtered out on the back-end, inside `api/`, before it ever reaches a visitor's browser. This is not optional: data protection is a legal duty, and accessibility (**WCAG 2.2 AA** — the legally required accessibility standard for UK public-sector websites) applies to everything we ship in `web/`.
