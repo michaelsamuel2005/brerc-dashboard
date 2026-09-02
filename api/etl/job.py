@@ -5,11 +5,13 @@ Manages logging configuration, config caching, source/dictionary data ingestion
 and nightly batch job execution.
 """
 
-from functools import lru_cache
 import logging
+import os
+from functools import lru_cache
+
+import pandas as pd
 
 # Imports database connections and pipeline components
-
 from etl.db import (
     check_table_exists,
     check_table_has_rows,
@@ -28,8 +30,6 @@ from etl.safety_gate.rules import (
     load_sensitive_species,
 )
 
-import pandas as pd
-
 # Logging setup
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +39,32 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+_LEGACY_NIGHTLY_ENABLE_ENV = "BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS"
+_LEGACY_NIGHTLY_ALLOWED_ENVIRONMENTS = frozenset({"dev", "test"})
+
+
+class LegacyNightlyJobBlocked(RuntimeError):
+    """The superseded table-writing pipeline was invoked outside a test/dev rehearsal."""
+
+
+def _assert_legacy_nightly_job_allowed() -> None:
+    """Keep the superseded writer out of every production refresh path.
+
+    ``nightly_job`` writes the legacy ``occurrence_public``/``species``/
+    ``distribution_cell`` tables; it does not build the atomic ``serve.*``
+    release consumed by the current dashboard.  Retain it only for its existing
+    development and test coverage, behind an explicit acknowledgement.  Missing
+    or unfamiliar deployment metadata is treated as production and blocked.
+    """
+    environment = os.environ.get("APP_ENV")
+    enabled = os.environ.get(_LEGACY_NIGHTLY_ENABLE_ENV)
+    if environment not in _LEGACY_NIGHTLY_ALLOWED_ENVIRONMENTS or enabled != "1":
+        raise LegacyNightlyJobBlocked(
+            "The legacy nightly ETL is disabled; use 'brerc-load refresh' "
+            "for the production publication path."
+        )
 
 
 @lru_cache(maxsize=1)
@@ -69,9 +95,7 @@ def load_source_data(source_connection=None, watermark_date=None):
 
     elif mode == "database":
         if source_connection is None:
-            raise ValueError(
-                "source_connection is required when source.mode is 'database'"
-            )
+            raise ValueError("source_connection is required when source.mode is 'database'")
 
         query = config["source"]["records_query"]
 
@@ -113,9 +137,7 @@ def load_species_dictionary(source_connection=None):
 
     if mode == "database":
         if source_connection is None:
-            raise ValueError(
-                "source_connection is required when source.mode is 'database'"
-            )
+            raise ValueError("source_connection is required when source.mode is 'database'")
 
         return pd.read_sql(
             config["source"]["dictionary_query"],
@@ -170,7 +192,11 @@ def describe_failure(error: Exception) -> str:
 
 
 def nightly_job():
-    """Orchestrates the nightly ETL pipeline run."""
+    """Run the superseded ETL only for an explicitly enabled test/dev rehearsal."""
+    # This is deliberately outside the try/run-history block: a blocked legacy
+    # invocation must not parse configuration, open either database, or create a
+    # misleading run-history row.
+    _assert_legacy_nightly_job_allowed()
     logger.info("Starting nightly ETL job pipeline.")
 
     run_number = None
@@ -183,11 +209,7 @@ def nightly_job():
             table_name = config["destination"]["table"]
 
             table_exists = check_table_exists(connection, table_name)
-            table_has_rows = (
-                check_table_has_rows(connection, table_name)
-                if table_exists
-                else False
-            )
+            table_has_rows = check_table_has_rows(connection, table_name) if table_exists else False
 
             run_initial = should_run_initial_load(table_exists, table_has_rows)
             load_mode = "initial" if run_initial else "incremental"
@@ -229,9 +251,7 @@ def nightly_job():
                         source_connection,
                         watermark_date=watermark_date,
                     )
-                    dictionary_df = load_species_dictionary(
-                        source_connection
-                    )
+                    dictionary_df = load_species_dictionary(source_connection)
             else:
                 source_df = load_source_data(watermark_date=None)
                 dictionary_df = load_species_dictionary()

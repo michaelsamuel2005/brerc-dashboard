@@ -26,11 +26,23 @@ It is fully exercised with synthetic PostgreSQL 16/TLS fixtures; a real BRERC
 acceptance run remains a controlled production activity.
 
 The atomic destination loader lives in `api/brerc_loader`; its PostgreSQL/PostGIS
-schema is `db/migrations/0001_publication_store.sql`, and its operator runbook is
+schema is the ordered `db/migrations/0001_publication_store.sql` through
+`0003_full_snapshot_refresh.sql` sequence, and its operator runbook is
 [`docs/POSTGRES_RELEASE_LOADER.md`](../docs/POSTGRES_RELEASE_LOADER.md). The
-installed command is `brerc-load`. It will not contact either database unless
-the approved policy, controlled species dictionary, source contract and target
+installed command is `brerc-load`: use `initial` for the first release and
+`refresh` for an atomic replacement from one newer complete source snapshot.
+`incremental` remains blocked. It will not contact either database unless the
+approved policy, controlled species dictionary, source contract and target
 identity all pass their fail-closed preflight checks.
+
+FastAPI reads only the active `serve.*` views with the dedicated `brerc_api`
+role. Each route uses a read-only, repeatable-read transaction so one response
+cannot combine two releases during an atomic switch. Every data response carries
+the active `releaseId` and `datasetVersion`. The frontend pins that pair across
+all requests used to assemble a page; if a switch is observed, it rejects the
+mismatching response before caching, hides the page, clears in-flight/cached
+fragments, and refetches only after fresh provenance establishes the new active
+release. The database-independent health response is intentionally excluded.
 
 Run the source-connector checks from this directory:
 
@@ -41,9 +53,10 @@ python -m unittest discover -s connector_tests -t . -p 'test_*.py'
 
 `pyproject.toml` builds one combined repository distribution. It includes the
 standard-library-only publication modules, the trusted connector, and the
-coexisting dependency-bearing nightly ETL subpackages; it is not described or
-deployed as a connector-only wheel. CI separately guards and smoke-tests the
-publication import boundary.
+coexisting dependency-bearing legacy ETL subpackages; it is not described or
+deployed as a connector-only wheel. The legacy `nightly_job()` is fail-closed
+outside explicit development/test rehearsals and is not a production fallback.
+CI separately guards and smoke-tests the publication import boundary.
 
 ## What does **not** go here
 
@@ -93,9 +106,11 @@ it there and drop the suffix.
 
 - 🗂️ [Project structure](../docs/PROJECT_STRUCTURE.md) — what every folder is for.
 - 🔐 [BRERC source-view contract](../docs/SOURCE_CONTRACT.md) — the reviewed
-  source schema, safety mapping and incremental-load blockers.
+  source schema, full-snapshot refresh semantics and incremental-load blockers.
 - 🔏 [Live view approval](../docs/VIEW_DEFINITION_APPROVAL.md) — the secure
   capture, digest and named approval procedure.
 - 🔌 [Trusted PostgreSQL connector](../docs/POSTGRES_SOURCE_CONNECTOR.md) —
   least-privilege deployment, safe operation and scale limitations.
+- 🔄 [Full-snapshot refresh](../docs/FULL_SNAPSHOT_REFRESH.md) — first load,
+  changed refresh, API/browser verification and external acceptance gates.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).

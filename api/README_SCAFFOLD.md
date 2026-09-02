@@ -1,4 +1,9 @@
-# BRERC API — FastAPI scaffold (B0)
+# BRERC API — historical FastAPI scaffold (B0)
+
+> **Superseded; do not use for deployment or handover.** This file records the
+> early mock-only plan. The implemented API reads the active PostgreSQL
+> `serve.*` release and is documented in [`README.md`](README.md). Response
+> contracts, production commands and architecture claims below are historical.
 
 Read-only API for the public dashboard. Every endpoint currently returns
 **fake data in the exact shape of the agreed contract (§10)** so the front end

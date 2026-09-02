@@ -1,9 +1,10 @@
 # BRERC source-view contract
 
-**Status:** The initial-load source contract, trusted connector, publication safety core and
-inactive destination loader are implemented in this integrated codebase. Safe-v1 production
-activation still requires the strict version-2 policy artifact, approved live-view identity,
-exact controlled inputs and live acceptance evidence. Incremental loading remains blocked.
+**Status:** The initial-load source contract, trusted connector, publication safety core,
+inactive destination loader and atomic complete-snapshot refresh are implemented in this
+integrated codebase. Safe-v1 production activation still requires the strict version-2 policy
+artifact, approved live-view identity, exact controlled inputs and live acceptance evidence.
+Incremental loading remains a separate blocked optimisation.
 
 **Contract version:** `brerc-main-data-dash-2026-07-31`
 
@@ -95,12 +96,14 @@ substituted for the trusted connector's locked snapshot, live preflight and evid
 integrated destination writer accepts that trusted result; it does not turn caller-supplied test
 rows into production evidence.
 
-Before any activation, the loader must compare the complete initial source count with approved
-bounds, reject an empty public candidate, and independently reconcile the safe ledger,
-suppression cohorts, aggregates, geometry, optional rows and manifest. Migration
+Before any activation, the loader must compare the complete source count with the approved
+mode-specific absolute bounds, reject an empty public candidate, and independently reconcile the
+safe ledger, suppression cohorts, aggregates, geometry, optional rows and manifest. Migration
 `0002_sensitive_record_action` also requires the immutable manifest and public-release row to
-carry the same approval-bound action. BRERC must approve the count bounds; they must not be
-guessed from the small development samples.
+carry the same approval-bound action. Migration `0003_full_snapshot_refresh` additionally binds
+the active base, a newer source-snapshot time and eight immutable refresh thresholds. BRERC must
+approve the initial bounds and the production refresh thresholds; they must not be guessed from
+the small development samples.
 
 ## Confirmed schema
 
@@ -150,6 +153,28 @@ The view SQL uses an inner join to `lookups.distinct_species` on scientific name
 changes can therefore change, add or remove view output even when the underlying record's
 own modification date does not change.
 
+## Full-snapshot refresh is supported
+
+The supported update mechanism is `brerc-load refresh`. It reuses this contract's trusted,
+locked, read-only complete-snapshot extraction; `INITIAL` at the source boundary describes the
+shape of that extraction, not whether the destination already contains a release. At the
+destination boundary, `refresh` must bind the currently active base release and a source snapshot
+strictly newer than every previously accepted snapshot for that source.
+
+The complete candidate is authoritative for that point in time. Every observed source row must
+have one inventory row, one safe disposition and one non-delete delta entry. Rows that no longer
+exist in the view are absent from the candidate, so their public aggregates disappear only when
+the complete candidate is atomically activated. The loader does not claim that it discovered a
+row-level deletion and does not synthesize tombstones. A changed lookup result is handled in the
+same way because the entire reviewed view is evaluated again.
+
+The old active release remains the only release visible through `serve.*` while extraction,
+transformation, finalisation and validation run. A failed or threshold-rejected refresh leaves it
+active. An exactly identical, fully validated refresh advances source-snapshot evidence while
+reusing the existing active release; the duplicate candidate is discarded and its durable cleanup
+debt is purged immediately when possible or obligatorily before the next job. These properties
+allow safe scheduled updates without inventing the missing incremental semantics.
+
 ## Incremental loading is deliberately unavailable
 
 `date_mdb_modified` was mentioned in later correspondence, but it is absent from the
@@ -164,8 +189,8 @@ The incremental mode currently exits before row extraction with all blockers lis
 - `unique_no` is not yet confirmed non-null, unique, stable and never reused.
 - Deletions, withdrawals and source-key changes have no confirmed signal.
 - Lookup-table changes may bypass the main-data modification marker.
-- The incremental coordinator does not yet build a complete replacement candidate from an
-  approved change window and deletion signal.
+- The incremental coordinator does not build a candidate from an approved change window and
+  deletion signal; the implemented complete-snapshot refresh is intentionally not that path.
 - Inclusive-watermark, affected-aggregate and deletion semantics have not been approved or
   validated against a revised live BRERC view.
 
@@ -204,16 +229,21 @@ Those are reviewed safety controls, not deployment switches.
 
 This integrated codebase validates the confirmed BRERC view contract, canonicalises its source
 key, reads through the trusted locked connector, transforms through the fail-closed boundary,
-stages an inactive destination candidate and can switch a fully reconciled release atomically.
-Those mechanisms have synthetic and PostgreSQL integration coverage; they have not been run
-against BRERC's live production source or an approved production destination.
+stages an inactive destination candidate and can switch a fully reconciled initial or refresh
+release atomically. Synthetic PostgreSQL integration coverage changes and removes source rows,
+refreshes the publication store, and reads the result through FastAPI and the mocks-disabled
+browser. Those mechanisms have not been run against BRERC's live production source or an
+approved production destination.
 
 BRERC has not supplied an approved species dictionary artifact or digest. Until it does, a
 releasable run cannot treat a syntactically valid source species identifier as a known ordinary
 taxon. An absent runtime dictionary is never an implicit allow-list.
 
-It also does **not** supply an approved incremental window or deletion reconciliation, the live
-view capture, a retained production policy artifact, real BRERC credentials/data, or production
-acceptance evidence. FastAPI serving code being present does not make its inputs live. Martin (or
-an approved alternative), deployment monitoring/notifications and production infrastructure are
+It also does **not** supply the live-view capture, a retained production policy artifact, real
+BRERC credentials/data, approved production refresh thresholds, or production acceptance
+evidence. The changed-refresh path still requires a retained five-million-row run from the exact
+protected-`main` merge SHA and a comparable run on the intended BRERC infrastructure. An approved
+incremental window and deletion signal are required only if the separate incremental optimisation
+is later enabled. FastAPI serving code being present does not make its inputs live. Martin (or an
+approved alternative), deployment monitoring/notifications and production infrastructure are
 separate operational decisions. No production publication is claimed.

@@ -1,5 +1,6 @@
 """
-Helper for run_e2e.py — runs one ETL pass against the two throwaway databases.
+Helper for the explicitly acknowledged legacy run_e2e.py harness. It is not a
+current publication command and must never be called by a scheduler.
 
 Run as a separate process on purpose. The ETL reads its configuration at import
 time, so a fresh process is the only reliable way to run it twice (initial load,

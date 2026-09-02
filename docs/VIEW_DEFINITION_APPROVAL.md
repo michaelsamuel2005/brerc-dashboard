@@ -7,7 +7,8 @@ authorise the result.
 
 **Source object:** `dashboard.main_data_dash`
 
-**Current contract:** `brerc-main-data-dash-2026-07-31` (initial load only)
+**Current contract:** `brerc-main-data-dash-2026-07-31` (complete-snapshot
+initial and refresh; not incremental)
 
 ## Why three identities must remain separate
 
@@ -191,8 +192,9 @@ This item becomes **BRERC-approved** only when all three events have occurred:
 Until then the code intentionally reports `BLOCKED_SOURCE_RELEASE`. This is a safety result, not a
 failed implementation.
 
-Even after view approval, the current 39-column contract supports initial loading only.
-`date_mdb_modified` is absent, so incremental loading remains a separate blocked contract change.
+After view approval, the current 39-column contract supports the first initial load and later
+complete-snapshot refreshes. `date_mdb_modified` is absent, so incremental loading remains a
+separate blocked contract change; it is not required for the implemented refresh mode.
 
 ## Completion checklist
 

@@ -20,7 +20,7 @@ from uuid import UUID
 
 from .errors import LoaderConfigurationError
 
-LOADER_CONFIG_VERSION = "brerc-loader-v2"
+LOADER_CONFIG_VERSION = "brerc-loader-v3"
 BRERC_TARGET_APPLICATION_NAME = "brerc-dashboard-release-loader"
 MAX_CONFIG_BYTES = 128 * 1024
 MAX_ENV_VALUE_BYTES = 4096
@@ -51,6 +51,14 @@ _RUNTIME_KEYS = frozenset(
         "connect_timeout_seconds",
         "initial_max_source_rows",
         "initial_min_source_rows",
+        "refresh_max_source_rows",
+        "refresh_min_source_rows",
+        "refresh_max_source_row_drop_bps",
+        "refresh_max_source_row_growth_bps",
+        "refresh_max_publication_basis_drop_bps",
+        "refresh_max_species_drop_bps",
+        "refresh_max_cell_drop_bps",
+        "refresh_max_species_year_drop_bps",
         "lock_timeout_ms",
         "statement_timeout_ms",
         "total_timeout_seconds",
@@ -277,6 +285,14 @@ class LoaderRuntimeConfig:
     batch_size: int
     initial_min_source_rows: int
     initial_max_source_rows: int
+    refresh_min_source_rows: int
+    refresh_max_source_rows: int
+    refresh_max_source_row_drop_bps: int
+    refresh_max_source_row_growth_bps: int
+    refresh_max_publication_basis_drop_bps: int
+    refresh_max_species_drop_bps: int
+    refresh_max_cell_drop_bps: int
+    refresh_max_species_year_drop_bps: int
     connect_timeout_seconds: int
     lock_timeout_ms: int
     statement_timeout_ms: int
@@ -295,6 +311,16 @@ class LoaderRuntimeConfig:
         _integer(self.initial_max_source_rows, 1, 1_000_000_000)
         if self.initial_min_source_rows > self.initial_max_source_rows:
             raise _invalid()
+        _integer(self.refresh_min_source_rows, 1, 1_000_000_000)
+        _integer(self.refresh_max_source_rows, 1, 1_000_000_000)
+        if self.refresh_min_source_rows > self.refresh_max_source_rows:
+            raise _invalid()
+        _integer(self.refresh_max_source_row_drop_bps, 0, 10_000)
+        _integer(self.refresh_max_source_row_growth_bps, 0, 1_000_000_000)
+        _integer(self.refresh_max_publication_basis_drop_bps, 0, 10_000)
+        _integer(self.refresh_max_species_drop_bps, 0, 10_000)
+        _integer(self.refresh_max_cell_drop_bps, 0, 10_000)
+        _integer(self.refresh_max_species_year_drop_bps, 0, 10_000)
         _integer(self.connect_timeout_seconds, 1, 60)
         _integer(self.lock_timeout_ms, 100, 60_000)
         _integer(self.statement_timeout_ms, 1_000, 3_600_000)
@@ -588,6 +614,20 @@ def _parse_runtime(value: object) -> LoaderRuntimeConfig:
         batch_size=_integer(raw["batch_size"], 100, 100_000),
         initial_min_source_rows=_integer(raw["initial_min_source_rows"], 1, 1_000_000_000),
         initial_max_source_rows=_integer(raw["initial_max_source_rows"], 1, 1_000_000_000),
+        refresh_min_source_rows=_integer(raw["refresh_min_source_rows"], 1, 1_000_000_000),
+        refresh_max_source_rows=_integer(raw["refresh_max_source_rows"], 1, 1_000_000_000),
+        refresh_max_source_row_drop_bps=_integer(raw["refresh_max_source_row_drop_bps"], 0, 10_000),
+        refresh_max_source_row_growth_bps=_integer(
+            raw["refresh_max_source_row_growth_bps"], 0, 1_000_000_000
+        ),
+        refresh_max_publication_basis_drop_bps=_integer(
+            raw["refresh_max_publication_basis_drop_bps"], 0, 10_000
+        ),
+        refresh_max_species_drop_bps=_integer(raw["refresh_max_species_drop_bps"], 0, 10_000),
+        refresh_max_cell_drop_bps=_integer(raw["refresh_max_cell_drop_bps"], 0, 10_000),
+        refresh_max_species_year_drop_bps=_integer(
+            raw["refresh_max_species_year_drop_bps"], 0, 10_000
+        ),
         connect_timeout_seconds=_integer(raw["connect_timeout_seconds"], 1, 60),
         lock_timeout_ms=_integer(raw["lock_timeout_ms"], 100, 60_000),
         statement_timeout_ms=_integer(raw["statement_timeout_ms"], 1_000, 3_600_000),

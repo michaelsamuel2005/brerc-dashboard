@@ -15,6 +15,7 @@ import {
   cellsForSpecies,
   overallRecordsByYear,
   provenanceFixture,
+  fixtureReleaseIdentity,
   recordsByYear,
   recordsByYearForSpecies,
   recordsFixture,
@@ -70,6 +71,7 @@ describe("fixture coherence (single source of truth)", () => {
       const detail = SpeciesDetailSchema.parse(detailInput);
       const summary = SummarySchema.parse(summaryInput);
       const cells = CellDistributionSchema.parse({
+        ...fixtureReleaseIdentity,
         verificationAvailable: true,
         cells: cellsForSpecies(listed.speciesId),
       });

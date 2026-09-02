@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 const SENSITIVE_SPECIES_ID = "SYNTH-E2E-1";
-const ORDINARY_SPECIES_ID = "SYNTH-E2E-2";
+const REMOVED_SPECIES_ID = "SYNTH-E2E-2";
+const PUBLISHED_SPECIES_ID = "SYNTH-E2E-3";
 const SENSITIVE_NAME = "Synthetic safety species";
-const ORDINARY_NAME = "Synthetic ordinary species";
+const REMOVED_NAME = "Synthetic ordinary species";
+const PUBLISHED_NAME = "Synthetic unlicensed species";
 const MOCK_SPECIES = ["Adder", "Common lizard", "Slow-worm", "West European hedgehog"];
 
 // A valid transparent PNG keeps MapLibre's raster source healthy without allowing a
@@ -48,6 +50,8 @@ interface RecordPageResponse {
 }
 
 interface ProvenanceResponse {
+  readonly releaseId: string;
+  readonly datasetVersion: string;
   readonly recordTotal: number;
   readonly sensitivityPolicy: {
     readonly protectedRecordsMode: string;
@@ -111,18 +115,18 @@ test("the production build uses the protected live release, never browser mocks"
     "/api/meta/provenance",
     "/api/summary",
     "/api/species?sort=name-asc&page=1&pageSize=24",
-    "/api/species?q=Synthetic%20ordinary&sort=name-asc&page=1&pageSize=24",
+    "/api/species?q=Synthetic%20unlicensed&sort=name-asc&page=1&pageSize=24",
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2024`,
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2023`,
     `/api/records?species=${SENSITIVE_SPECIES_ID}`,
     `/api/records?species=${SENSITIVE_SPECIES_ID}&year=2024`,
-    `/api/summary?species=${ORDINARY_SPECIES_ID}`,
-    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}`,
-    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2023`,
-    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2024`,
-    `/api/records?species=${ORDINARY_SPECIES_ID}`,
-    `/api/records?species=${ORDINARY_SPECIES_ID}&year=2023`,
+    `/api/summary?species=${PUBLISHED_SPECIES_ID}`,
+    `/api/distribution/cells?species=${PUBLISHED_SPECIES_ID}`,
+    `/api/distribution/cells?species=${PUBLISHED_SPECIES_ID}&year=2022`,
+    `/api/distribution/cells?species=${PUBLISHED_SPECIES_ID}&year=2024`,
+    `/api/records?species=${PUBLISHED_SPECIES_ID}`,
+    `/api/records?species=${PUBLISHED_SPECIES_ID}&year=2022`,
   ];
   const probes = await page.evaluate<ApiProbeResult[], string[]>(
     async (paths) =>
@@ -150,6 +154,10 @@ test("the production build uses the protected live release, never browser mocks"
   expect(summary).toMatchObject({ totalRecords: 1, totalSpecies: 1 });
 
   const provenance = bodyFor<ProvenanceResponse>(probes, "/api/meta/provenance");
+  expect(provenance.releaseId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  expect(provenance.datasetVersion).not.toHaveLength(0);
   expect(provenance).toMatchObject({
     recordTotal: 1,
     sensitivityPolicy: {
@@ -165,17 +173,18 @@ test("the production build uses the protected live release, never browser mocks"
   );
   expect(species.total).toBe(1);
   expect(species.items).toEqual([
-    expect.objectContaining({ speciesId: ORDINARY_SPECIES_ID, commonName: ORDINARY_NAME }),
+    expect.objectContaining({ speciesId: PUBLISHED_SPECIES_ID, commonName: PUBLISHED_NAME }),
   ]);
   expect(species.items.map(({ speciesId }) => speciesId)).not.toContain(SENSITIVE_SPECIES_ID);
+  expect(species.items.map(({ speciesId }) => speciesId)).not.toContain(REMOVED_SPECIES_ID);
 
   const searchedSpecies = bodyFor<SpeciesListResponse>(
     probes,
-    "/api/species?q=Synthetic%20ordinary&sort=name-asc&page=1&pageSize=24",
+    "/api/species?q=Synthetic%20unlicensed&sort=name-asc&page=1&pageSize=24",
   );
   expect(searchedSpecies).toMatchObject({
     total: 1,
-    items: [{ speciesId: ORDINARY_SPECIES_ID, commonName: ORDINARY_NAME }],
+    items: [{ speciesId: PUBLISHED_SPECIES_ID, commonName: PUBLISHED_NAME }],
   });
 
   const sensitiveCells = bodyFor<CellDistributionResponse>(
@@ -185,21 +194,21 @@ test("the production build uses the protected live release, never browser mocks"
   expect(sensitiveCells.cells).toEqual([]);
   const ordinaryCells = bodyFor<CellDistributionResponse>(
     probes,
-    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2023`,
+    `/api/distribution/cells?species=${PUBLISHED_SPECIES_ID}&year=2022`,
   );
   expect(ordinaryCells.cells).toEqual([
-    { cellId: "ST5972", precisionMetres: 1_000, recordCount: 1 },
+    { cellId: "ST5872", precisionMetres: 1_000, recordCount: 1 },
   ]);
   for (const path of [
     `/api/distribution/cells?species=${SENSITIVE_SPECIES_ID}&year=2023`,
-    `/api/distribution/cells?species=${ORDINARY_SPECIES_ID}&year=2024`,
+    `/api/distribution/cells?species=${PUBLISHED_SPECIES_ID}&year=2024`,
   ]) {
     expect(bodyFor<CellDistributionResponse>(probes, path).cells).toEqual([]);
   }
 
   for (const path of [
     `/api/records?species=${SENSITIVE_SPECIES_ID}&year=2024`,
-    `/api/records?species=${ORDINARY_SPECIES_ID}&year=2023`,
+    `/api/records?species=${PUBLISHED_SPECIES_ID}&year=2022`,
   ]) {
     const records = bodyFor<RecordPageResponse>(probes, path);
     expect(records).toMatchObject({
@@ -212,15 +221,16 @@ test("the production build uses the protected live release, never browser mocks"
   await page.goto("/#/species");
   await expect(page.getByRole("heading", { name: "Species directory" })).toBeVisible();
   await expect(page.getByText(SENSITIVE_NAME, { exact: true })).toHaveCount(0);
-  await expect(page.getByText(ORDINARY_NAME, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(REMOVED_NAME, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(PUBLISHED_NAME, { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/public demonstration catalogue/i)).toHaveCount(0);
   for (const name of MOCK_SPECIES) {
     await expect(page.getByText(name, { exact: true })).toHaveCount(0);
   }
 
-  await page.getByRole("link", { name: `Explore ${ORDINARY_NAME}` }).click();
-  await expect(page.getByRole("heading", { name: ORDINARY_NAME })).toBeVisible();
-  const ordinaryRow = page.locator("tbody tr").filter({ hasText: "ST5972" }).first();
+  await page.getByRole("link", { name: `Explore ${PUBLISHED_NAME}` }).click();
+  await expect(page.getByRole("heading", { name: PUBLISHED_NAME })).toBeVisible();
+  const ordinaryRow = page.locator("tbody tr").filter({ hasText: "ST5872" }).first();
   await expect(ordinaryRow).toContainText("1 km square");
 
   const serviceWorkerState = await page.evaluate(async () => {

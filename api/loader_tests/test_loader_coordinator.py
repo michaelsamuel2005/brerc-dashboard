@@ -106,13 +106,19 @@ class TestConcreteInsertParameterShapes(unittest.TestCase):
         self.assertEqual(
             observed,
             {
-                "loader_control.release_manifest": (33, 33),
+                "loader_control.release_manifest": (41, 41),
                 "publication.public_release": (14, 14),
             },
         )
 
 
-def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
+def loader_config(
+    *,
+    minimum: int = 1,
+    maximum: int = 100,
+    refresh_minimum: int = 1,
+    refresh_maximum: int = 100,
+) -> LoaderConfig:
     """Construct a fully validated, filesystem-independent test config."""
     runtime = LoaderRuntimeConfig(
         expected_target_database="brerc_ui_test",
@@ -121,6 +127,14 @@ def loader_config(*, minimum: int = 1, maximum: int = 100) -> LoaderConfig:
         batch_size=100,
         initial_min_source_rows=minimum,
         initial_max_source_rows=maximum,
+        refresh_min_source_rows=refresh_minimum,
+        refresh_max_source_rows=refresh_maximum,
+        refresh_max_source_row_drop_bps=1_000,
+        refresh_max_source_row_growth_bps=20_000,
+        refresh_max_publication_basis_drop_bps=1_000,
+        refresh_max_species_drop_bps=1_000,
+        refresh_max_cell_drop_bps=1_000,
+        refresh_max_species_year_drop_bps=1_000,
         connect_timeout_seconds=5,
         lock_timeout_ms=1_000,
         statement_timeout_ms=60_000,
@@ -341,6 +355,21 @@ class FakeSourceConnector:
         return self.snapshot
 
 
+class SingleRowCursor:
+    """Minimal DB-API cursor for strict activation-ACK row-shape tests."""
+
+    def __init__(self, row: dict[str, object]) -> None:
+        self.description = tuple((name,) for name in row)
+        self.rows = [row]
+        self.query = ""
+
+    def execute(self, query: object, _params: object = None) -> None:
+        self.query = str(query)
+
+    def fetchone(self):
+        return self.rows.pop(0) if self.rows else None
+
+
 def _walk_strings(value: object):
     if isinstance(value, str):
         yield value
@@ -369,6 +398,7 @@ class FakeTargetStore:
         maximum_batch_size: int = 100,
         begin_failure_after_commit: bool = False,
         close_failure: BaseException | None = None,
+        reuse_active_on_activation: bool = False,
     ) -> None:
         self.module = coordinator_module
         self.active_release = active_release
@@ -377,6 +407,7 @@ class FakeTargetStore:
         self.maximum_batch_size = maximum_batch_size
         self.begin_failure_after_commit = begin_failure_after_commit
         self.close_failure = close_failure
+        self.reuse_active_on_activation = reuse_active_on_activation
         self.calls: list[str] = []
         self.staged: list[SafeDisposition] = []
         self.stage_sizes: list[int] = []
@@ -398,6 +429,21 @@ class FakeTargetStore:
 
     def begin_initial(self, source_id: str, attempt: object):
         self.calls.append("begin_initial")
+        self._assert_source(source_id)
+        if not isinstance(attempt, self.module._CandidateHandle):
+            raise AssertionError("coordinator did not retain a typed attempt handle")
+        self.open_candidate = True
+        if self.begin_failure_after_commit:
+            raise RuntimeError("COMMIT succeeded but private connection acknowledgement was lost")
+        return dataclasses.replace(
+            attempt,
+            base_release_id=(
+                None if self.active_release is None else self.module.UUID(self.active_release)
+            ),
+        )
+
+    def begin_refresh(self, source_id: str, attempt: object):
+        self.calls.append("begin_refresh")
         self._assert_source(source_id)
         if not isinstance(attempt, self.module._CandidateHandle):
             raise AssertionError("coordinator did not retain a typed attempt handle")
@@ -485,16 +531,22 @@ class FakeTargetStore:
 
     def activate(self, handle: object, summary: object):
         self.calls.append("activate")
-        self.active_release = handle.release_id
+        result_release_id = (
+            self.module.UUID(str(self.active_release))
+            if self.reuse_active_on_activation and self.active_release is not None
+            else handle.release_id
+        )
+        self.active_release = result_release_id
         self.activated = True
         self.open_candidate = False
         return self.module._ActivationResult(
             run_id=handle.job_id,
-            release_id=handle.release_id,
+            release_id=result_release_id,
             source_rows=summary.source_rows,
             published_records=summary.published_records,
             distribution_cells=summary.distribution_cells,
             candidate_sha256=summary.candidate_sha256,
+            reused_active_release=self.reuse_active_on_activation,
         )
 
     def fail(self, _handle: object, fixed_code: str) -> None:
@@ -583,6 +635,65 @@ class CoordinatorCase(unittest.TestCase):
         ):
             report = self.coordinator._run_initial_with_inputs(
                 loader_config() if config is None else config,
+                source_config=source_config,
+                source_contract=contract,
+                columns=source_config.column_map,
+                policy=approved_policy() if policy is None else policy,
+                dictionary=dictionary,
+                species_dictionary_artifact_sha256=(species_dictionary_artifact_sha256),
+            )
+        return report, source, snapshot, target
+
+    def run_refresh(
+        self,
+        batches: list[tuple[SafeDisposition, ...]],
+        *,
+        config: LoaderConfig | None = None,
+        policy: object | None = None,
+        target: FakeTargetStore | None = None,
+        fail_after_batches: int | None = None,
+        source_batch_size: int | None = None,
+        dictionary: SpeciesDictionary | None = CONNECTOR_DICTIONARY,
+        species_dictionary_artifact_sha256: str = SPECIES_DICTIONARY_ARTIFACT_SHA256,
+        observed_dictionary_sha256: str | None = None,
+    ):
+        contract = approved_contract()
+        source_config = connector_config(contract)
+        if source_batch_size is not None:
+            source_config = dataclasses.replace(
+                source_config,
+                runtime=dataclasses.replace(
+                    source_config.runtime,
+                    batch_size=source_batch_size,
+                ),
+            )
+        snapshot = FakeSafeSnapshot(batches, fail_after_batches=fail_after_batches)
+        if observed_dictionary_sha256 is not None:
+            snapshot._evidence = dataclasses.replace(
+                snapshot._evidence,
+                observed_species_dictionary_sha256=observed_dictionary_sha256,
+            )
+        source = FakeSourceConnector(snapshot)
+        if target is None:
+            target = FakeTargetStore(self.coordinator, active_release=OLD_RELEASE_ID)
+        self.last_source = source
+        self.last_snapshot = snapshot
+        self.last_target = target
+        with (
+            mock.patch.object(
+                self.coordinator,
+                "_source_connector_factory",
+                return_value=source,
+            ),
+            mock.patch.object(
+                self.coordinator,
+                "_target_store_factory",
+                return_value=target,
+            ),
+        ):
+            report = self.coordinator._run_initial_with_inputs(
+                loader_config() if config is None else config,
+                mode=LoadMode.REFRESH,
                 source_config=source_config,
                 source_contract=contract,
                 columns=source_config.column_map,
@@ -751,6 +862,15 @@ class TestPreSocketGates(CoordinatorCase):
         self.assertFalse(self.last_snapshot.entered)
         self.assertEqual(target.failed_codes, ["LOADER_CANDIDATE_INVALID"])
 
+    def test_refresh_requires_an_existing_active_release_before_source(self) -> None:
+        target = FakeTargetStore(self.coordinator)
+        with self.assertRaises(LoaderCandidateInvalid):
+            self.run_refresh([(disposition(1),)], target=target)
+        self.assertIsNone(target.active_release)
+        self.assertEqual(self.last_source.open_calls, [])
+        self.assertFalse(self.last_snapshot.entered)
+        self.assertEqual(target.failed_codes, ["LOADER_CANDIDATE_INVALID"])
+
 
 class TestCompatibilityIdentity(CoordinatorCase):
     def test_target_preflight_binds_versions_environment_and_login_posture(self) -> None:
@@ -890,6 +1010,7 @@ class TestCompatibilityIdentity(CoordinatorCase):
             published_records=0,
             distribution_cells=1,
             candidate_sha256="a" * 64,
+            reused_active_release=True,
         )
         store._activate_candidate = lambda _handle, _summary: result
         observed_deadlines: list[float] = []
@@ -906,6 +1027,196 @@ class TestCompatibilityIdentity(CoordinatorCase):
         self.assertEqual(observed_deadlines, [105.0])
         self.assertEqual(store._absolute_deadline, 7_300.0)
 
+    def test_activation_ack_accepts_only_pending_or_proven_clean_reuse(self) -> None:
+        base_release_id = self.coordinator.uuid4()
+        handle = self.coordinator._CandidateHandle(
+            job_id=self.coordinator.uuid4(),
+            release_id=self.coordinator.uuid4(),
+            base_release_id=base_release_id,
+            mode=LoadMode.REFRESH,
+        )
+        summary = self.coordinator._CandidateSummary(
+            source_rows=5,
+            published_records=0,
+            distribution_cells=1,
+            candidate_sha256="a" * 64,
+        )
+
+        def result_row(
+            *, cleanup_pending: bool, cleanup_complete: bool | None
+        ) -> dict[str, object]:
+            return {
+                "job_status": "succeeded",
+                "result_release_id": base_release_id,
+                "reused_active_release": True,
+                "active_release_id": base_release_id,
+                "result_release_status": "active",
+                "source_row_count": summary.source_rows,
+                "public_record_count": summary.published_records,
+                "cell_count": summary.distribution_cells,
+                "candidate_sha256": summary.candidate_sha256,
+                "result_is_current": True,
+                "result_was_superseded": False,
+                "job_load_mode": "refresh",
+                "job_base_release_id": base_release_id,
+                "candidate_release_id": handle.release_id,
+                "candidate_load_mode": "refresh",
+                "candidate_base_release_id": base_release_id,
+                "candidate_release_status": "discarded",
+                "candidate_cleanup_pending": cleanup_pending,
+                "candidate_cleanup_complete": cleanup_complete,
+            }
+
+        for cleanup_pending, cleanup_complete in ((True, None), (False, True)):
+            with self.subTest(
+                cleanup_pending=cleanup_pending,
+                cleanup_complete=cleanup_complete,
+            ):
+                store = object.__new__(self.coordinator._PostgreSQLTargetStore)
+                store._control = SingleRowCursor(
+                    result_row(
+                        cleanup_pending=cleanup_pending,
+                        cleanup_complete=cleanup_complete,
+                    )
+                )
+                store._closed = False
+                store._set_statement_budget = lambda _cursor: None
+                result = store._read_activation_result(
+                    handle,
+                    summary,
+                    returned_release=base_release_id,
+                )
+                self.assertIsNotNone(result)
+                self.assertEqual(result.release_id, base_release_id)
+
+        store = object.__new__(self.coordinator._PostgreSQLTargetStore)
+        store._control = SingleRowCursor(result_row(cleanup_pending=False, cleanup_complete=False))
+        store._closed = False
+        store._set_statement_budget = lambda _cursor: None
+        with self.assertRaises(LoaderCandidateInvalid):
+            store._read_activation_result(
+                handle,
+                summary,
+                returned_release=base_release_id,
+            )
+        for table in (
+            "loader_control.source_disposition",
+            "publication.public_release",
+            "publication.public_species",
+            "publication.public_distribution_cell",
+            "publication.public_species_year",
+            "publication.public_record",
+            "loader_stage.source_inventory",
+            "loader_stage.disposition_delta",
+            "loader_stage.reconciliation_result",
+        ):
+            self.assertIn(table, store._control.query)
+
+    def test_activation_ack_accepts_a_result_retired_by_a_later_release(self) -> None:
+        retired_release_id = self.coordinator.uuid4()
+        successor_release_id = self.coordinator.uuid4()
+        original_base_id = self.coordinator.uuid4()
+        summary = self.coordinator._CandidateSummary(
+            source_rows=5,
+            published_records=0,
+            distribution_cells=1,
+            candidate_sha256="a" * 64,
+        )
+
+        cases = []
+        activated_handle = self.coordinator._CandidateHandle(
+            job_id=self.coordinator.uuid4(),
+            release_id=retired_release_id,
+            base_release_id=original_base_id,
+            mode=LoadMode.REFRESH,
+        )
+        cases.append(
+            (
+                "activated",
+                activated_handle,
+                False,
+                retired_release_id,
+                "retired",
+                False,
+                None,
+            )
+        )
+        reused_handle = self.coordinator._CandidateHandle(
+            job_id=self.coordinator.uuid4(),
+            release_id=self.coordinator.uuid4(),
+            base_release_id=retired_release_id,
+            mode=LoadMode.REFRESH,
+        )
+        cases.append(
+            (
+                "reused",
+                reused_handle,
+                True,
+                retired_release_id,
+                "discarded",
+                False,
+                True,
+            )
+        )
+
+        for (
+            name,
+            handle,
+            reused,
+            result_release_id,
+            candidate_status,
+            cleanup_pending,
+            cleanup_complete,
+        ) in cases:
+            row = {
+                "job_status": "succeeded",
+                "result_release_id": result_release_id,
+                "reused_active_release": reused,
+                "active_release_id": successor_release_id,
+                "result_release_status": "retired",
+                "source_row_count": summary.source_rows,
+                "public_record_count": summary.published_records,
+                "cell_count": summary.distribution_cells,
+                "candidate_sha256": summary.candidate_sha256,
+                "result_is_current": False,
+                "result_was_superseded": True,
+                "job_load_mode": "refresh",
+                "job_base_release_id": handle.base_release_id,
+                "candidate_release_id": handle.release_id,
+                "candidate_load_mode": "refresh",
+                "candidate_base_release_id": handle.base_release_id,
+                "candidate_release_status": candidate_status,
+                "candidate_cleanup_pending": cleanup_pending,
+                "candidate_cleanup_complete": cleanup_complete,
+            }
+            with self.subTest(name=name):
+                store = object.__new__(self.coordinator._PostgreSQLTargetStore)
+                store._control = SingleRowCursor(row)
+                store._closed = False
+                store._set_statement_budget = lambda _cursor: None
+                result = store._read_activation_result(
+                    handle,
+                    summary,
+                    returned_release=result_release_id,
+                )
+                self.assertEqual(result.release_id, result_release_id)
+                self.assertIs(result.reused_active_release, reused)
+
+            corrupt = dict(row, result_was_superseded=False)
+            store = object.__new__(self.coordinator._PostgreSQLTargetStore)
+            store._control = SingleRowCursor(corrupt)
+            store._closed = False
+            store._set_statement_budget = lambda _cursor: None
+            with (
+                self.subTest(name=name, state="not-in-active-lineage"),
+                self.assertRaises(LoaderCandidateInvalid),
+            ):
+                store._read_activation_result(
+                    handle,
+                    summary,
+                    returned_release=result_release_id,
+                )
+
     def test_begin_ack_reconciliation_restores_the_workload_deadline(self) -> None:
         store = object.__new__(self.coordinator._PostgreSQLTargetStore)
         store._config = loader_config()
@@ -915,7 +1226,7 @@ class TestCompatibilityIdentity(CoordinatorCase):
             release_id=self.coordinator.uuid4(),
             base_release_id=None,
         )
-        store._read_known_begin = lambda _attempt: attempt
+        store._read_known_begin = lambda _source_id, _attempt: attempt
 
         with mock.patch.object(self.coordinator.time, "monotonic", return_value=100.0):
             recovered = store._recover_begin_ack(
@@ -1071,6 +1382,51 @@ class TestBoundedSafeStaging(CoordinatorCase):
         for sentinel in RAW_SENTINELS:
             self.assertNotIn(sentinel, rendered)
 
+    def test_refresh_uses_a_complete_snapshot_and_replaces_only_at_activation(self) -> None:
+        target = FakeTargetStore(self.coordinator, active_release=OLD_RELEASE_ID)
+        batches = [
+            (disposition(1), disposition(2)),
+            (disposition(3),),
+        ]
+        report, source, snapshot, target = self.run_refresh(batches, target=target)
+
+        self.assertIs(report.mode, LoadMode.REFRESH)
+        self.assertEqual(report.source_rows, 3)
+        self.assertEqual(
+            target.calls,
+            [
+                "acquire",
+                "begin_refresh",
+                "stage_batch",
+                "stage_batch",
+                "finalize",
+                "activate",
+                "close",
+            ],
+        )
+        self.assertEqual(len(source.open_calls), 1)
+        self.assertTrue(snapshot.entered)
+        self.assertTrue(snapshot.exhausted)
+        self.assertTrue(snapshot.closed)
+        self.assertTrue(target.activated)
+        self.assertNotEqual(str(target.active_release), OLD_RELEASE_ID)
+        self.assertEqual(str(target.active_release), report.release_id)
+        self.assertFalse(report.reused_active_release)
+
+    def test_no_change_refresh_report_exposes_the_reused_active_release(self) -> None:
+        target = FakeTargetStore(
+            self.coordinator,
+            active_release=OLD_RELEASE_ID,
+            reuse_active_on_activation=True,
+        )
+        report, _source, _snapshot, target = self.run_refresh(
+            [(disposition(1),)],
+            target=target,
+        )
+        self.assertTrue(report.reused_active_release)
+        self.assertEqual(report.release_id, OLD_RELEASE_ID)
+        self.assertEqual(str(target.active_release), OLD_RELEASE_ID)
+
     def test_source_batches_larger_than_the_target_bound_are_split_not_rejected(self) -> None:
         # Source and target deployments have independent batch controls. A
         # reviewed source config may yield 101 rows while the loader is bounded
@@ -1220,6 +1576,35 @@ class TestFailureAtomicity(CoordinatorCase):
                         target=target,
                     )
                 self.assertIsNone(target.active_release)
+                self.assertFalse(target.activated)
+                self.assertEqual(target.failed_codes, ["LOADER_SOURCE_COUNT_REJECTED"])
+                self.assertTrue(self.last_snapshot.closed)
+
+    def test_refresh_uses_its_own_inclusive_source_count_bounds(self) -> None:
+        config = loader_config(
+            minimum=50,
+            maximum=60,
+            refresh_minimum=2,
+            refresh_maximum=3,
+        )
+        for rows in (2, 3):
+            with self.subTest(rows=rows, outcome="accepted"):
+                report, *_ = self.run_refresh(
+                    [tuple(disposition(number) for number in range(rows))],
+                    config=config,
+                )
+                self.assertEqual(report.source_rows, rows)
+
+        for rows in (1, 4):
+            with self.subTest(rows=rows, outcome="rejected"):
+                target = FakeTargetStore(self.coordinator, active_release=OLD_RELEASE_ID)
+                with self.assertRaises(LoaderSourceCountRejected):
+                    self.run_refresh(
+                        [tuple(disposition(number) for number in range(rows))],
+                        config=config,
+                        target=target,
+                    )
+                self.assertEqual(target.active_release, OLD_RELEASE_ID)
                 self.assertFalse(target.activated)
                 self.assertEqual(target.failed_codes, ["LOADER_SOURCE_COUNT_REJECTED"])
                 self.assertTrue(self.last_snapshot.closed)

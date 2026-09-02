@@ -4,7 +4,10 @@ Coordinates data cleaning, species resolution, spatial aggregation, database per
 provenance tracking, and reconciliation into a single unified transactional run.
 """
 
-# python -c "from etl.job import nightly_job; nightly_job()"
+# Historical pipeline implementation only. Do not invoke this module for a
+# publication update; the supported command is `brerc-load refresh`. The legacy
+# `etl.job.nightly_job()` entry point is fail-closed outside explicitly enabled
+# development/test rehearsals.
 from datetime import datetime, timezone
 import logging
 import time

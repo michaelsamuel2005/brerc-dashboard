@@ -2,6 +2,7 @@ import { delay, http, HttpResponse } from "msw";
 import {
   buildSpeciesListPage,
   cellsForSpecies,
+  fixtureReleaseIdentity,
   healthFixture,
   provenanceFixture,
   recordsForSpecies,
@@ -96,7 +97,11 @@ export const handlers = [
     const scenario = a11yScenario(cookies);
     if (scenario === "loading") await delay("infinite");
     if (scenario === "empty") {
-      return HttpResponse.json({ verificationAvailable: true, cells: [] });
+      return HttpResponse.json({
+        ...fixtureReleaseIdentity,
+        verificationAvailable: true,
+        cells: [],
+      });
     }
     if (scenario === "error") {
       return HttpResponse.json(
@@ -106,9 +111,14 @@ export const handlers = [
     }
     const speciesId = speciesParam(request);
     if (speciesId === null) {
-      return HttpResponse.json({ verificationAvailable: true, cells: [] });
+      return HttpResponse.json({
+        ...fixtureReleaseIdentity,
+        verificationAvailable: true,
+        cells: [],
+      });
     }
     return HttpResponse.json({
+      ...fixtureReleaseIdentity,
       verificationAvailable: true,
       cells: cellsForSpecies(speciesId, yearParam(request)),
     });

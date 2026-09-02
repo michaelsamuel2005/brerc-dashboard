@@ -25,6 +25,8 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/loader_tests/setup_postgis16_destination.sh",
                 "api/loader_tests/setup_postgres16_e2e_source.sh",
                 "db/migrations/0001_publication_store.sql",
+                "db/migrations/0002_sensitive_record_action.sql",
+                "db/migrations/0003_full_snapshot_refresh.sql",
                 "db/roles.sql",
             }.issubset(dependencies)
         )

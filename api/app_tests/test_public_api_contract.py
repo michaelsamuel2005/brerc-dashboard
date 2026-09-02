@@ -20,6 +20,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 PROVENANCE_KEYS = {
+    "releaseId",
+    "datasetVersion",
     "lastUpdated",
     "recordTotal",
     "sources",
@@ -27,7 +29,8 @@ PROVENANCE_KEYS = {
     "sensitivityPolicy",
     "attributions",
 }
-SPECIES_PAGE_KEYS = {"items", "page", "pageSize", "total", "facets"}
+RELEASE_IDENTITY_KEYS = {"releaseId", "datasetVersion"}
+SPECIES_PAGE_KEYS = {"items", "page", "pageSize", "total", "facets"} | RELEASE_IDENTITY_KEYS
 SPECIES_ITEM_KEYS = {
     "speciesId",
     "slug",
@@ -47,7 +50,7 @@ SPECIES_DETAIL_KEYS = {
     "group",
     "imagePublication",
     "stats",
-}
+} | RELEASE_IDENTITY_KEYS
 SUMMARY_KEYS = {
     "totalRecords",
     "totalSpecies",
@@ -55,8 +58,14 @@ SUMMARY_KEYS = {
     "recordsByYear",
     "topGroups",
     "coverageCaveat",
-}
-RECORD_PAGE_KEYS = {"publication", "items", "page", "pageSize", "total"}
+} | RELEASE_IDENTITY_KEYS
+RECORD_PAGE_KEYS = {
+    "publication",
+    "items",
+    "page",
+    "pageSize",
+    "total",
+} | RELEASE_IDENTITY_KEYS
 CELL_KEYS = {"cellId", "precisionMetres", "recordCount"}
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -93,6 +102,11 @@ def test_provenance_describes_the_active_release_exactly(client) -> None:
     body = response.json()
     assert set(body) == PROVENANCE_KEYS
     assert body["recordTotal"] >= 0
+    assert re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        body["releaseId"],
+    )
+    assert body["datasetVersion"]
     assert body["coverageCaveats"]
     policy = body["sensitivityPolicy"]
     assert set(policy) == {
@@ -121,19 +135,44 @@ def test_provenance_describes_the_active_release_exactly(client) -> None:
             "ORDER BY precision_metres"
         )
         observed_tiers = [int(row["precision_metres"]) for row in cursor.fetchall()]
-        cursor.execute("SELECT sensitive_record_action FROM serve.public_release")
-        sensitive_record_action = cursor.fetchone()["sensitive_record_action"]
+        cursor.execute(
+            "SELECT release_id, dataset_version, sensitive_record_action FROM serve.public_release"
+        )
+        active_release = cursor.fetchone()
     assert body["recordTotal"] == observed_total
     assert tiers == observed_tiers
+    assert body["releaseId"] == str(active_release["release_id"])
+    assert body["datasetVersion"] == active_release["dataset_version"]
     assert (
         policy["protectedRecordsMode"]
         == {
             "generalise": "generalised",
             "withhold": "withheld",
-        }[sensitive_record_action]
+        }[active_release["sensitive_record_action"]]
     )
-    if sensitive_record_action == "withhold":
+    if active_release["sensitive_record_action"] == "withhold":
         assert "generalis" not in policy["note"].casefold()
+
+
+def test_every_public_data_response_carries_the_active_release_identity(
+    client, listed_species: dict
+) -> None:
+    provenance = client.get("/api/meta/provenance").json()
+    expected = {
+        "releaseId": provenance["releaseId"],
+        "datasetVersion": provenance["datasetVersion"],
+    }
+    responses = [
+        client.get("/api/summary"),
+        client.get("/api/species"),
+        client.get(f"/api/species/{listed_species['speciesId']}"),
+        client.get("/api/distribution/cells", params={"species": listed_species["speciesId"]}),
+        client.get("/api/records", params={"species": listed_species["speciesId"]}),
+    ]
+    for response in responses:
+        assert response.status_code == 200
+        body = response.json()
+        assert {key: body[key] for key in RELEASE_IDENTITY_KEYS} == expected
 
 
 def test_species_listing_and_detail_match_the_strict_browser_contract(
@@ -170,6 +209,8 @@ def test_species_listing_and_detail_match_the_strict_browser_contract(
     assert detail["stats"]["verificationAvailable"] == (
         detail["stats"]["verifiedCount"] is not None
     )
+    assert detail["releaseId"] == listing["releaseId"]
+    assert detail["datasetVersion"] == listing["datasetVersion"]
 
 
 def test_species_search_escapes_wildcards_and_sort_is_allow_listed(client) -> None:
@@ -226,7 +267,7 @@ def test_distribution_is_empty_unscoped_and_safe_when_scoped(client, listed_spec
     )
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"verificationAvailable", "cells"}
+    assert set(body) == {"verificationAvailable", "cells"} | RELEASE_IDENTITY_KEYS
     assert body["cells"], "a listed species must have aggregate distribution cells"
     forbidden = {
         "geom",

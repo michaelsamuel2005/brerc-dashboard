@@ -1,4 +1,4 @@
-"""Safe operator-boundary tests for initial and incremental release loads."""
+"""Safe operator-boundary tests for full-snapshot and incremental release loads."""
 
 from __future__ import annotations
 
@@ -22,7 +22,11 @@ class FakeConfig:
     """Opaque stand-in: CLI tests must not need YAML or database credentials."""
 
 
-def successful_report(mode: LoadMode = LoadMode.INITIAL) -> LoaderRunReport:
+def successful_report(
+    mode: LoadMode = LoadMode.INITIAL,
+    *,
+    reused_active_release: bool = False,
+) -> LoaderRunReport:
     return LoaderRunReport(
         run_id="11111111-1111-4111-8111-111111111111",
         release_id="22222222-2222-4222-8222-222222222222",
@@ -33,6 +37,7 @@ def successful_report(mode: LoadMode = LoadMode.INITIAL) -> LoaderRunReport:
         distribution_cells=3,
         candidate_sha256="a" * 64,
         activated=True,
+        reused_active_release=reused_active_release,
     )
 
 
@@ -40,7 +45,7 @@ def _successful_operation(_config: object, mode: LoadMode) -> LoaderRunReport:
     return successful_report(mode)
 
 
-def run_initial(operation: object = None):
+def run_command(command: str, operation: object = None):
     if operation is None:
         operation = _successful_operation
     module = types.SimpleNamespace(run_load=operation)
@@ -52,8 +57,16 @@ def run_initial(operation: object = None):
         contextlib.redirect_stdout(stdout),
         contextlib.redirect_stderr(stderr),
     ):
-        code = main(["initial", "--config", "/controlled/loader.yaml"])
+        code = main([command, "--config", "/controlled/loader.yaml"])
     return code, stdout.getvalue(), stderr.getvalue()
+
+
+def run_initial(operation: object = None):
+    return run_command("initial", operation)
+
+
+def run_refresh(operation: object = None):
+    return run_command("refresh", operation)
 
 
 class TestInitialCommand(unittest.TestCase):
@@ -75,6 +88,7 @@ class TestInitialCommand(unittest.TestCase):
                 "distributionCells": 3,
                 "candidateSha256": "a" * 64,
                 "activated": True,
+                "reusedActiveRelease": False,
             },
         )
 
@@ -199,6 +213,60 @@ class TestInitialCommand(unittest.TestCase):
                 )
 
 
+class TestRefreshCommand(unittest.TestCase):
+    def test_success_is_one_fixed_refresh_json_document(self) -> None:
+        code, stdout, stderr = run_refresh()
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertEqual(stdout.count("\n"), 1)
+        self.assertEqual(
+            json.loads(stdout),
+            {
+                "status": "ok",
+                "mode": "refresh",
+                "state": "succeeded",
+                "runId": "11111111-1111-4111-8111-111111111111",
+                "releaseId": "22222222-2222-4222-8222-222222222222",
+                "sourceRows": 10,
+                "publicRecords": 8,
+                "distributionCells": 3,
+                "candidateSha256": "a" * 64,
+                "activated": True,
+                "reusedActiveRelease": False,
+            },
+        )
+
+    def test_no_change_refresh_reports_reused_active_release(self) -> None:
+        operation = mock.Mock(
+            return_value=successful_report(
+                LoadMode.REFRESH,
+                reused_active_release=True,
+            )
+        )
+        code, stdout, stderr = run_refresh(operation)
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertIs(json.loads(stdout)["reusedActiveRelease"], True)
+
+    def test_coordinator_receives_refresh_mode_and_must_return_refresh_report(self) -> None:
+        operation = mock.Mock(return_value=successful_report(LoadMode.REFRESH))
+        code, _stdout, _stderr = run_refresh(operation)
+        self.assertEqual(code, 0)
+        config, mode = operation.call_args.args
+        self.assertIsInstance(config, FakeConfig)
+        self.assertIs(mode, LoadMode.REFRESH)
+
+        code, stdout, stderr = run_refresh(
+            mock.Mock(return_value=successful_report(LoadMode.INITIAL))
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout, "")
+        self.assertEqual(
+            json.loads(stderr),
+            {"status": "failed", "code": "LOADER_EXECUTION_FAILED"},
+        )
+
+
 class TestIncrementalCommand(unittest.TestCase):
     def test_current_contract_blocks_before_config_or_database_import(self) -> None:
         config_loader = mock.Mock(side_effect=AssertionError("must not parse config"))
@@ -233,12 +301,13 @@ class TestCliSurface(unittest.TestCase):
     def test_help_exposes_only_explicit_modes_and_config(self) -> None:
         help_text = _parser().format_help()
         self.assertIn("initial", help_text)
+        self.assertIn("refresh", help_text)
         self.assertIn("incremental", help_text)
         subcommand_help = " ".join(
             _parser().parse_args([mode, "--config", "/x"]).command
-            for mode in ("initial", "incremental")
+            for mode in ("initial", "refresh", "incremental")
         )
-        self.assertEqual(subcommand_help, "initial incremental")
+        self.assertEqual(subcommand_help, "initial refresh incremental")
         for forbidden in (
             "--dsn",
             "--password",
@@ -280,6 +349,8 @@ class TestReportValidation(unittest.TestCase):
             {"public_records": True},
             {"candidate_sha256": "A" * 64},
             {"activated": False},
+            {"reused_active_release": 1},
+            {"reused_active_release": True},
         )
         for changes in mutations:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
@@ -293,6 +364,7 @@ class TestReportValidation(unittest.TestCase):
                     "distribution_cells": base.distribution_cells,
                     "candidate_sha256": base.candidate_sha256,
                     "activated": base.activated,
+                    "reused_active_release": base.reused_active_release,
                     **changes,
                 }
                 LoaderRunReport(**values)

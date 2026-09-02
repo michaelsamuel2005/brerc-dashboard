@@ -73,12 +73,15 @@ def load_active_release(connection) -> ActiveRelease:
     release_id = _as_text(row["release_id"])
     if not release_id:
         raise HTTPException(status_code=503, detail="Publication release identity is invalid")
+    dataset_version = _as_text(row["dataset_version"])
+    if not dataset_version or not dataset_version.strip():
+        raise HTTPException(status_code=503, detail="Publication dataset identity is invalid")
     return ActiveRelease(
         release_id=release_id,
         published_at=_as_text(row["published_at"]),
         source_data_as_of=_as_text(row["source_data_as_of"]),
         publication_policy_version=_as_text(row["publication_policy_version"]),
-        dataset_version=_as_text(row["dataset_version"]),
+        dataset_version=dataset_version,
         source_label=_as_text(row["public_source_label"]),
         verification_available=_as_database_bool(row["verification_available"]),
         individual_records_available=_as_database_bool(row["individual_records_available"]),
@@ -88,3 +91,15 @@ def load_active_release(connection) -> ActiveRelease:
         record_type_available=_as_database_bool(row["record_type_available"]),
         sensitive_record_action=_as_sensitive_record_action(row["sensitive_record_action"]),
     )
+
+
+def release_identity(release: ActiveRelease) -> dict[str, str]:
+    """Return the mandatory browser-facing identity for a release response."""
+    # ``load_active_release`` rejects a missing value. Keep the guard here too
+    # because route unit tests can inject an ``ActiveRelease`` directly.
+    if not release.dataset_version or not release.dataset_version.strip():
+        raise HTTPException(status_code=503, detail="Publication dataset identity is invalid")
+    return {
+        "releaseId": release.release_id,
+        "datasetVersion": release.dataset_version,
+    }

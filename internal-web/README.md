@@ -3,6 +3,11 @@
 An **internal data‑quality tool** to help BRERC staff monitor the content and
 quality of their database.
 
+This is distinct from [`../run-dashboard/`](../run-dashboard/README.md), the
+authenticated read-only viewer for authoritative atomic-loader job history.
+Neither application is the public React dashboard in `../web/`, and this
+data-quality tool must not be treated as the ETL run-history store.
+
 **Owner:** [TO BE CONFIRMED]
 **Status:** ⚪ Secondary — only if time permits
 

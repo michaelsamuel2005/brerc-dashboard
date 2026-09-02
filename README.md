@@ -77,7 +77,9 @@ brerc-dashboard/
 ├── web/            # 🌐 Front‑end: the public dashboard (React / TypeScript / Vite)
 ├── api/            # 🔌 Back‑end API: talks to the database, serves safe data to the front‑end
 ├── internal-web/   # 🔧 Internal staff data‑quality dashboard (secondary)
+├── run-dashboard/  # 🔐 Authenticated PostgreSQL ETL run-history viewer
 ├── db/             # 🗄️ Database schema & migrations (PostgreSQL / PostGIS)
+├── deploy/         # ⚙️ Inert, reviewed production deployment templates
 ├── docs/           # 📚 Shared documentation
 ├── data/           # ⚠️ Local sample data — git‑ignored, NEVER committed
 └── .github/        # ⚙️ GitHub templates (pull‑request template)
@@ -88,7 +90,9 @@ brerc-dashboard/
 | **`web/`** | The public dashboard front‑end. |
 | **`api/`** | The back‑end API that reads the database and serves only safe, public data. |
 | **`internal-web/`** | The internal data‑quality tool for BRERC staff *(secondary)*. |
+| **`run-dashboard/`** | The authenticated, read-only PostgreSQL loader run-history viewer. |
 | **`db/`** | Database schema and migrations. |
+| **`deploy/`** | Hardened deployment templates and operator runbooks; nothing here enables production automatically. |
 | **`docs/`** | All shared project documentation. |
 | **`data/`** | Local sample data — **git‑ignored and never committed**. |
 
@@ -134,6 +138,7 @@ git push -u origin <your-name>/<short-topic>
 | **[docs/GETTING_STARTED_GITHUB.md](docs/GETTING_STARTED_GITHUB.md)** | New to GitHub? Start here — a zero‑prior‑knowledge walkthrough. |
 | **[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** | How the repository is organised and what each folder does. |
 | **[docs/MAINTAINER_GUIDE.md](docs/MAINTAINER_GUIDE.md)** | For the BRERC staff member who maintains the dashboard after handover. |
+| **[docs/FULL_SNAPSHOT_REFRESH.md](docs/FULL_SNAPSHOT_REFRESH.md)** | How the first load and safe atomic full-snapshot updates reach the API and dashboard. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How we branch, review, and merge. |
 
 More documentation lives in **[docs/](docs/)**.

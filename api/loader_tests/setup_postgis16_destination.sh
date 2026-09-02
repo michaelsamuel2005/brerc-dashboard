@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 6 ]]; then
-  echo "usage: setup_postgis16_destination.sh CONTAINER ROLES_SQL MIGRATION_0001_SQL MIGRATION_0002_SQL FIXTURE_SQL OUTPUT_DIRECTORY" >&2
+if [[ "$#" -ne 7 ]]; then
+  echo "usage: setup_postgis16_destination.sh CONTAINER ROLES_SQL MIGRATION_0001_SQL MIGRATION_0002_SQL MIGRATION_0003_SQL FIXTURE_SQL OUTPUT_DIRECTORY" >&2
   exit 2
 fi
 
@@ -10,8 +10,9 @@ container="$1"
 roles_sql="$2"
 migration_0001_sql="$3"
 migration_0002_sql="$4"
-fixture_sql="$5"
-output_directory="$6"
+migration_0003_sql="$5"
+fixture_sql="$6"
+output_directory="$7"
 
 mkdir -p "$output_directory"
 chmod 700 "$output_directory"
@@ -68,7 +69,7 @@ for _attempt in $(seq 1 30); do
 done
 docker exec -u postgres "$container" pg_isready --dbname brerc_ui_integration >/dev/null
 
-# These are deliberately three separate ON_ERROR_STOP applications.  A role,
+# These are deliberately separate ON_ERROR_STOP applications.  A role,
 # migration or deployment-login error must stop provisioning before tests run.
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$roles_sql"
@@ -76,6 +77,8 @@ docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$migration_0001_sql"
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$migration_0002_sql"
+docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
+  --dbname brerc_ui_integration < "$migration_0003_sql"
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$fixture_sql"
 
