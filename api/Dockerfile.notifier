@@ -1,0 +1,26 @@
+# Minimal, non-root image for the private notification worker.
+# Python 3.12.14 slim, multi-architecture OCI index resolved 2026-08-26.
+FROM python:3.12.14-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17
+
+WORKDIR /app
+
+# Fail the build if the immutable manifest no longer matches the reviewed
+# runtime assertion or lacks the system trust roots required by TLS-only
+# provider/database connections.
+RUN python -c 'import ssl, sys; assert sys.version_info[:3] == (3, 12, 14); assert ssl.create_default_context().get_ca_certs()'
+
+COPY requirements-notifier.txt .
+RUN pip install --no-cache-dir -r requirements-notifier.txt
+
+COPY brerc_notifier ./brerc_notifier
+
+# Numeric identity works on both Docker and Kubernetes without creating a
+# shell account. Deployment secrets must be readable by this identity.
+USER 65532:65532
+
+# Private metadata only. Compose uses `expose`, never a host `ports` mapping,
+# and Caddy has no route to it.
+EXPOSE 9108
+
+ENTRYPOINT ["python", "-m", "brerc_notifier"]
+CMD ["run", "--config", "/run/secrets/notifier-config"]

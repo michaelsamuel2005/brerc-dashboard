@@ -11,6 +11,7 @@ the guide that matches what you need.
 | 🐙 [GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Step‑by‑step guide to Git and GitHub — assumes **zero** prior experience. Start here if you've never branched, pushed, or opened a pull request. |
 | 🗂️ [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | What every folder in the repo is for, and where your work belongs. |
 | 🌱 [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md) | A friendly, non‑technical guide for the BRERC staff member who maintains the dashboard after the team leaves. |
+| 🔔 [NOTIFICATION_WORKER.md](NOTIFICATION_WORKER.md) | How the transactional notification worker is deployed, monitored and accepted without exposing recipients or source data. |
 
 ## 🔗 Also useful
 

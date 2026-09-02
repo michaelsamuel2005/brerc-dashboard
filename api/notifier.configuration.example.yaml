@@ -1,0 +1,62 @@
+# Credential-free notification worker template.
+#
+# Copy this file to the deployment secret store. Every *_env value names an
+# environment variable whose value is either a libpq service name or an
+# absolute path mounted from that secret store. Never place a password,
+# passfile line, webhook key or live recipient in Git.
+
+config_version: brerc-notifier-v1
+
+database:
+  expected_database: REPLACE_WITH_PUBLICATION_DATABASE
+  expected_login: REPLACE_WITH_NOTIFIER_LOGIN
+  expected_role: brerc_notifier
+  expected_migration_version: 2
+  connect_timeout_seconds: 10
+  statement_timeout_ms: 5000
+  service_env: BRERC_NOTIFIER_PGSERVICE
+  service_file_env: PGSERVICEFILE
+  passfile_env: BRERC_NOTIFIER_PGPASSFILE
+  sslrootcert_env: BRERC_NOTIFIER_SSLROOTCERT
+  sslmode: verify-full
+
+runtime:
+  # One leased item per process. Scale with multiple worker replicas; the
+  # database's SKIP LOCKED claim function prevents duplicate live claims.
+  batch_size: 1
+  # Provider timeout is less than one quarter of the lease, leaving room for
+  # connection, protocol and database acknowledgement overhead.
+  lease_seconds: 120
+  poll_interval_seconds: 10
+  delivery_timeout_seconds: 15
+  # No-send TLS/authentication check. Failure is an alert metric and does not
+  # trigger a restart loop; real receipt still needs controlled acceptance.
+  provider_probe_interval_seconds: 300
+  readiness_stale_seconds: 60
+  # Port 9108 is exposed only on the private container network. Caddy must not
+  # proxy /live, /ready or /metrics to the public internet.
+  health_host: 0.0.0.0
+  health_port: 9108
+
+destinations:
+  # This alias is written to the database outbox; addresses remain here only.
+  etl-operations:
+    provider: smtp
+    # SMTP is implicit TLS from the first byte (normally port 465). STARTTLS
+    # downgrade/fallback is deliberately unsupported.
+    host: smtp.replace.invalid
+    port: 465
+    from_address: dashboard-alerts@replace.invalid
+    to_addresses:
+      - operations@replace.invalid
+    username_file_env: BRERC_NOTIFIER_SMTP_USERNAME_FILE
+    password_file_env: BRERC_NOTIFIER_SMTP_PASSWORD_FILE
+
+# To use an idempotent HTTPS webhook instead of SMTP, replace the
+# etl-operations mapping above with this shape. Query-string secrets, embedded
+# credentials, redirects and plain HTTP are rejected.
+#
+#  etl-operations:
+#    provider: webhook
+#    url: https://alerts.replace.invalid/brerc-etl
+#    secret_file_env: BRERC_NOTIFIER_WEBHOOK_SECRET_FILE

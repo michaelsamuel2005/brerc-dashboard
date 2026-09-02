@@ -6,3 +6,20 @@ __pycache__/
 *.pyc
 tests/
 .pytest_cache/
+
+# Notification credentials/configuration must not even enter a Docker build
+# context. The tracked example is intentionally excluded too; the image needs
+# only code plus requirements and receives real configuration at runtime.
+notifier.configuration*.yaml
+notifier*.yaml
+*pgpass*
+.pgpass
+pg_service.conf
+.pg_service.conf
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+*password*
+*secret*
