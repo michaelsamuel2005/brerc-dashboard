@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from uuid import UUID
@@ -36,10 +37,12 @@ def _job_row(**overrides):
 
 
 def _verified_session(**overrides):
+    expected_database = os.environ["RUN_DASHBOARD_EXPECTED_DATABASE"]
+    expected_role = os.environ["RUN_DASHBOARD_EXPECTED_ROLE"]
     row = {
-        "database_name": "synthetic-dashboard",
-        "login_role": "synthetic-monitor",
-        "session_role": "synthetic-monitor",
+        "database_name": expected_database,
+        "login_role": expected_role,
+        "session_role": expected_role,
         "read_only": "on",
         "is_superuser": False,
         "can_login": True,
