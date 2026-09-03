@@ -48,6 +48,9 @@ CREATE TABLE brerc_source.occurrences (
     record_type        TEXT,                  -- feature sensitivity lives here (roost/sett/holt)
     sensitive          TEXT,                  -- the view's own flag: 'Yes' / 'No'
     verified           TEXT,                  -- verification status as supplied
+    vitality           TEXT,                  -- e.g. 'alive' / 'dead' — carried through, not public
+    abundance          TEXT,                  -- count/estimate as supplied — carried through, not public
+    sex_stage          TEXT,                  -- e.g. 'male' / 'female' / 'unknown' — carried through, not public
     eastings           INTEGER,               -- PRECISE — must never reach the public tier
     northings          INTEGER,               -- PRECISE — must never reach the public tier
     date_of_record     DATE,
