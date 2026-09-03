@@ -124,6 +124,14 @@ jobs:
       - name: Run the ETL and safety-gate tests
         run: python -m pytest etl/tests -q
 
+      # Full source-to-publication test (db/test/run_e2e.py). Uses its own
+      # throwaway databases on the same service, so it can't collide with the
+      # steps above.
+      - name: Run the synthetic source-to-publication E2E test
+        env:
+          E2E_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: python ../db/test/run_e2e.py
+
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build
   # ---------------------------------------------------------------------------
