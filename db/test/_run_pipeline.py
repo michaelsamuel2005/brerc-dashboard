@@ -64,6 +64,9 @@ reconciliation:
     - scientific_name
     - record_type
     - verified
+    - vitality
+    - abundance
+    - sex_stage
     - eastings
     - northings
 
