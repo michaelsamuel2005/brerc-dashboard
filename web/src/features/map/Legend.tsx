@@ -8,7 +8,7 @@ export function Legend() {
       <b>Records per 1&nbsp;km square</b>
       {LEGEND_BANDS.map((band) => (
         <div className="legend-row" key={band.label}>
-          <span className="legend-sw" style={{ background: band.colour }} aria-hidden="true" />
+          <span className="legend-sw" style={{ background: band.colour, opacity: band.opacity }} aria-hidden="true" />
           {band.label}
         </div>
       ))}
