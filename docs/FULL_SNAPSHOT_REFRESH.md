@@ -89,6 +89,11 @@ The first run is:
 brerc-load initial --config /controlled/path/loader.configuration.yaml
 ```
 
+For a first production run under systemd, use the deliberately inert one-shot
+example and observed-attempt runbook in
+[`../deploy/initial/README.md`](../deploy/initial/README.md). Its separate
+approval marker must be removed after every attempt; it has no timer.
+
 Every subsequent complete replacement is:
 
 ```sh

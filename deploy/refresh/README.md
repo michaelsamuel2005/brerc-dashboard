@@ -16,6 +16,9 @@ The service has exactly one operational command:
 It performs the privacy-gated, atomic **full-snapshot refresh**. It does not run
 the legacy `nightly_job`, initial mode, incremental mode, ad-hoc SQL or a shell
 wrapper. A failed candidate must leave the previous `serve.*` release active.
+For the first production `initial` attempt, use the separate inert example and
+operator gate in [`../initial/README.md`](../initial/README.md); the refresh
+approval marker does not authorise that first load.
 
 The templates do not choose production policy. Before installation, the
 authorised service owner must record approval for all of the following:
