@@ -810,6 +810,30 @@ class TestLicenceGate(unittest.TestCase):
         records, _ = run([row(Licence="anything at all")])
         self.assertEqual(len(records), 1)
 
+    def test_the_allow_list_cannot_run_without_a_licence_mapping(self):
+        # Withholding 100% of rows as licence-not-permitted would look like a
+        # data problem. The actual cause is configuration, so it fails first.
+        unmapped = dataclasses.replace(COLUMNS, licence=None)
+        for rows in ([], [row()]):
+            with self.subTest(rows=len(rows)), self.assertRaises(InvalidPolicy) as ctx:
+                run(rows, columns=unmapped, policy=self.POLICY)
+            self.assertIn("licence", str(ctx.exception))
+
+    def test_a_mapped_licence_must_exist_on_every_row(self):
+        source = row()
+        del source["Licence"]
+        with self.assertRaises(MissingColumns) as ctx:
+            run([source], policy=self.POLICY)
+        self.assertIn("Licence", str(ctx.exception))
+
+    def test_not_applicable_does_not_require_a_licence_mapping(self):
+        unmapped = dataclasses.replace(COLUMNS, licence=None)
+        source = row()
+        del source["Licence"]
+        records, report = run([source], columns=unmapped)
+        self.assertEqual(len(records), 1)
+        self.assertNotIn("licence-not-permitted", report.withheld)
+
 
 class TestSuppressionIsConsistentAcrossTheWholeView(unittest.TestCase):
     """Hiding a sparse map cell while still listing its records in the table, and
