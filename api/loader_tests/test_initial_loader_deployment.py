@@ -38,7 +38,11 @@ class InitialLoaderDeploymentTests(unittest.TestCase):
         self.assertEqual(
             exec_lines,
             [
-                "ExecStart=/opt/brerc-dashboard/current/bin/brerc-load initial "
+                "ExecStartPre=+/usr/bin/python3 "
+                "/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/"
+                "deploy/initial/consume_initial_approval.py",
+                "ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/"
+                "bin/brerc-load initial "
                 "--config /etc/brerc/refresh/loader.configuration.yaml"
             ],
         )
@@ -47,16 +51,27 @@ class InitialLoaderDeploymentTests(unittest.TestCase):
         self.assertEqual(directives(self.service, "Type"), ["Type=oneshot"])
 
     def test_distinct_manual_approval_is_required_but_not_overclaimed(self) -> None:
-        self.assertEqual(
-            directives(self.service, "ConditionPathExists"),
-            ["ConditionPathExists=/etc/brerc/refresh/APPROVED_TO_INITIAL"],
-        )
+        plain_runbook = self.runbook.replace("*", "").lower()
+        normalised_runbook = " ".join(self.runbook.split())
+        self.assertEqual(directives(self.service, "ConditionPathExists"), [])
+        self.assertIn("missing or invalid marker fails the unit", plain_runbook)
         self.assertNotIn("APPROVED_TO_SCHEDULE", self.service)
         self.assertNotIn("ConditionPathIsExecutable=", self.service)
-        self.assertIn("an automatically consumed token", self.runbook)
-        self.assertIn("Remove it immediately after *every* start attempt", self.runbook)
-        self.assertIn("A retry requires investigation, a new approval", self.runbook)
-        self.assertIn("refuses `initial` once an active release exists", self.runbook)
+        self.assertIn("consume_initial_approval.py", self.service)
+        self.assertNotIn("/opt/brerc-dashboard/current", self.service)
+        self.assertIn("REPLACE_WITH_APPROVED_ARTIFACT_ID", self.service)
+        self.assertIn("single-use", plain_runbook)
+        self.assertIn("consum", plain_runbook)
+        self.assertNotIn("not an automatically consumed token", plain_runbook)
+        self.assertNotIn("remove it immediately after every start attempt", plain_runbook)
+        self.assertIn("A retry requires investigation, a new approval", normalised_runbook)
+        self.assertIn(
+            "refuses `initial` once an active release exists", normalised_runbook
+        )
+        self.assertEqual(
+            directives(self.service, "ReadWritePaths"),
+            ["ReadWritePaths=/etc/brerc/initial-approval"],
+        )
 
     def test_external_inputs_and_unprivileged_runtime_match_refresh(self) -> None:
         for key in (
@@ -109,27 +124,29 @@ class InitialLoaderDeploymentTests(unittest.TestCase):
             "SystemCallArchitectures",
             "RestrictAddressFamilies",
             "RemoveIPC",
+            "LimitCORE",
         ):
             with self.subTest(key=key):
                 self.assertEqual(directives(self.service, key), directives(self.refresh, key))
 
     def test_runbook_covers_preflight_outcome_and_retry_boundary(self) -> None:
+        normalised_runbook = " ".join(self.runbook.split())
         for phrase in (
             "no active release",
             "network-dark acceptance destination",
             "initial bounds",
             "systemd-analyze verify",
-            "root:brerc-loader` mode `0440",
-            "even if the command failed",
+            "root:root` mode `0400",
+            "It stays absent after success, failure, timeout, cancellation",
             "Never source the",
             "browser mocks disabled",
             '`mode:"initial"`',
-            "no active release was\npublished",
+            "no active release was published",
             "inactive cleanup debt",
             "only the separately approved full-snapshot `refresh` path",
         ):
             with self.subTest(phrase=phrase):
-                self.assertIn(phrase, self.runbook)
+                self.assertIn(phrase, normalised_runbook)
 
 
 if __name__ == "__main__":

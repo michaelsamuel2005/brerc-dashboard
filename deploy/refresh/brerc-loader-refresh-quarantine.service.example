@@ -1,0 +1,47 @@
+# EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
+# Install it alongside brerc-loader-refresh.service only after operator review.
+# Its sole write is removal of the refresh scheduling approval marker.
+
+[Unit]
+Description=Disarm BRERC publication refresh after a failed attempt
+AssertPathIsDirectory=/etc/brerc/refresh
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/rm -f -- /etc/brerc/refresh/APPROVED_TO_SCHEDULE
+Restart=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brerc-loader-refresh-quarantine
+
+# The process needs root access only to unlink one root-controlled marker. The
+# exact rm command above accepts no operator input and invokes no shell.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/brerc/refresh
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+RemoveIPC=true
+LimitCORE=0

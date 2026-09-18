@@ -71,7 +71,13 @@ EXPECTED_COUNTS = {
 }
 REPO_ROOT = API_ROOT.parent
 SCALE_FIXTURE = REPO_ROOT / "api/loader_tests/postgres16_scale_source_fixture.sql"
-MIGRATION = REPO_ROOT / "db/migrations/0001_publication_store.sql"
+MIGRATIONS = tuple(sorted((REPO_ROOT / "db/migrations").glob("[0-9][0-9][0-9][0-9]_*.sql")))
+EXPECTED_MIGRATION_NAMES = (
+    "0001_publication_store.sql",
+    "0002_sensitive_record_action.sql",
+    "0003_full_snapshot_refresh.sql",
+    "0004_release_evidence.sql",
+)
 ROLES_SQL = REPO_ROOT / "db/roles.sql"
 WORKFLOW = REPO_ROOT / ".github/workflows/loader-scale-acceptance.yml"
 
@@ -900,7 +906,15 @@ def _write_evidence(path: Path, document: dict[str, Any]) -> str:
 def run(evidence_path: Path, budgets: Budgets) -> dict[str, Any]:
     if os.environ.get("BRERC_LOADER_SCALE_ACCEPTANCE") != CONFIRMATION:
         raise ScaleAcceptanceError
-    for required in (SCALE_FIXTURE, MIGRATION, ROLES_SQL, WORKFLOW, Path(__file__).resolve()):
+    if tuple(path.name for path in MIGRATIONS) != EXPECTED_MIGRATION_NAMES:
+        raise ScaleAcceptanceError
+    for required in (
+        SCALE_FIXTURE,
+        *MIGRATIONS,
+        ROLES_SQL,
+        WORKFLOW,
+        Path(__file__).resolve(),
+    ):
         if not required.is_file():
             raise ScaleAcceptanceError
     commit, clean = _git_identity()
@@ -1066,7 +1080,7 @@ def run(evidence_path: Path, budgets: Budgets) -> dict[str, Any]:
     metrics = {key: round(value, 3) for key, value in raw_metrics.items()}
 
     files = {
-        "migration": _sha256(MIGRATION),
+        "migrations": {path.name: _sha256(path) for path in MIGRATIONS},
         "roles": _sha256(ROLES_SQL),
         "runner": _sha256(Path(__file__).resolve()),
         "sourceGenerator": _sha256(SCALE_FIXTURE),

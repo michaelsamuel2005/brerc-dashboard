@@ -15,6 +15,7 @@ schema only: no client rows, credentials, hostnames, email addresses or private 
 | `migrations/0001_publication_store.sql` | Installs the versioned schemas, tables, constraints, indexes, PostGIS geometry and serving views. |
 | `migrations/0002_sensitive_record_action.sql` | Adds approval-bound sensitive-record action evidence to manifests, releases and the serving view. |
 | `migrations/0003_full_snapshot_refresh.sql` | Adds full-snapshot refresh, immutable comparative thresholds and the loader-facing activation dispatcher. |
+| `migrations/0004_release_evidence.sql` | Adds a least-privilege active-release evidence view for the internal monitor role. |
 
 Apply each file with a migration/administrator account and `ON_ERROR_STOP`:
 
@@ -25,6 +26,8 @@ psql -X -v ON_ERROR_STOP=1 -f db/migrations/0001_publication_store.sql \
 psql -X -v ON_ERROR_STOP=1 -f db/migrations/0002_sensitive_record_action.sql \
   "$BRERC_DESTINATION_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 -f db/migrations/0003_full_snapshot_refresh.sql \
+  "$BRERC_DESTINATION_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 -f db/migrations/0004_release_evidence.sql \
   "$BRERC_DESTINATION_ADMIN_DSN"
 ```
 
@@ -48,6 +51,12 @@ requires every refresh manifest to bind all eight comparative thresholds, and ex
 `brerc_loader`. It revokes direct loader execution of the older activation function. Its
 pre-migration lock audit refuses to proceed while non-terminal ETL work exists; reapplication is
 also refused.
+
+Migration `0004` is transactional and must follow exactly `0003`. It adds only the
+`serve.etl_release_evidence` security-barrier view and its explicit `brerc_monitor` grant. The view
+contains opaque release/job identifiers, structural counts and digests; it exposes no records,
+coordinates, credentials, database errors or connection details. Reapplication and out-of-order
+application are refused.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS

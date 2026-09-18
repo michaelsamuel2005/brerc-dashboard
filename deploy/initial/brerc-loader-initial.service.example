@@ -1,14 +1,13 @@
 # EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
 # An authorised operator must approve the first production load and its inputs
 # before copying it to /etc/systemd/system/brerc-loader-initial.service.
-# There is no timer. Remove APPROVED_TO_INITIAL after every start attempt.
+# There is no timer. ExecStartPre consumes APPROVED_TO_INITIAL exactly once.
 
 [Unit]
 Description=BRERC first atomic publication load
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=/etc/brerc/refresh/APPROVED_TO_INITIAL
-AssertFileIsExecutable=/opt/brerc-dashboard/current/bin/brerc-load
+AssertFileIsExecutable=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/bin/brerc-load
 AssertFileNotEmpty=/etc/brerc/refresh/loader.configuration.yaml
 AssertFileNotEmpty=/etc/brerc/refresh/source.configuration.yaml
 AssertFileNotEmpty=/etc/brerc/refresh/publication-policy.approved.json
@@ -25,12 +24,13 @@ Type=oneshot
 User=brerc-loader
 Group=brerc-loader
 UMask=0077
-WorkingDirectory=/opt/brerc-dashboard/current
+WorkingDirectory=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/etc/brerc/refresh/loader-runtime.env
 UnsetEnvironment=PGPASSWORD
-ExecStart=/opt/brerc-dashboard/current/bin/brerc-load initial --config /etc/brerc/refresh/loader.configuration.yaml
+ExecStartPre=+/usr/bin/python3 /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/deploy/initial/consume_initial_approval.py
+ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/bin/brerc-load initial --config /etc/brerc/refresh/loader.configuration.yaml
 TimeoutStartSec=2h15m
 TimeoutStopSec=30s
 KillMode=mixed
@@ -47,7 +47,8 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadOnlyPaths=/etc/brerc/refresh /opt/brerc-dashboard/current
+ReadOnlyPaths=/etc/brerc/refresh /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID
+ReadWritePaths=/etc/brerc/initial-approval
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -66,3 +67,4 @@ AmbientCapabilities=
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RemoveIPC=true
+LimitCORE=0

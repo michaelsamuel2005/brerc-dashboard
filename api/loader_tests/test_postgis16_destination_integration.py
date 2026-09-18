@@ -942,6 +942,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                         "migration_version": 3,
                         "migration_key": "0003_full_snapshot_refresh",
                     },
+                    {
+                        "migration_version": 4,
+                        "migration_key": "0004_release_evidence",
+                    },
                 ],
             )
 
@@ -1108,6 +1112,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "migration_version": 3,
                     "migration_key": "0003_full_snapshot_refresh",
                 },
+                {
+                    "migration_version": 4,
+                    "migration_key": "0004_release_evidence",
+                },
             ],
         )
 
@@ -1146,6 +1154,10 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "migration_version": 3,
                     "migration_key": "0003_full_snapshot_refresh",
                 },
+                {
+                    "migration_version": 4,
+                    "migration_key": "0004_release_evidence",
+                },
             ],
         )
 
@@ -1182,7 +1194,28 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "migration_version": 3,
                     "migration_key": "0003_full_snapshot_refresh",
                 },
+                {
+                    "migration_version": 4,
+                    "migration_key": "0004_release_evidence",
+                },
             ],
+        )
+
+    def test_release_evidence_migration_refuses_reapplication(self) -> None:
+        migration = (REPO_ROOT / "db/migrations/0004_release_evidence.sql").read_text(
+            encoding="utf-8"
+        )
+        connection = self._admin_connection()
+        try:
+            with self.assertRaises(self.psycopg.errors.RaiseException) as raised:
+                self.ClientCursor(connection).execute(migration)
+            connection.rollback()
+        finally:
+            connection.close()
+        self.assertEqual(raised.exception.sqlstate, "P0001")
+        self.assertIn(
+            "migration 0004_release_evidence is already applied",
+            raised.exception.diag.message_primary,
         )
 
     def test_sensitive_action_is_immutable_matched_and_served_from_the_active_release(
@@ -1327,6 +1360,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 connection.execute("SELECT count(*) FROM publication.public_species")
             with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
                 connection.execute("SELECT count(*) FROM serve.etl_job_status")
+            with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                connection.execute("SELECT count(*) FROM serve.etl_release_evidence")
 
         with self._connection("martin") as connection:
             connection.execute("SELECT count(*) FROM serve.public_distribution_cell")
@@ -1335,6 +1370,7 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
 
         with self._connection("monitor") as connection:
             connection.execute("SELECT count(*) FROM serve.etl_job_status")
+            connection.execute("SELECT count(*) FROM serve.etl_release_evidence")
             with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
                 connection.execute("SELECT count(*) FROM serve.public_release")
 
