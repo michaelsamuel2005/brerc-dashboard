@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from etl import pipeline
+from etl import nightly_pipeline as pipeline
 from etl.job import describe_failure
 from etl.safety_gate import rules
 from etl.safety_gate.rules import SensitiveSpeciesListUnavailable

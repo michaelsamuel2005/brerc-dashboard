@@ -2,17 +2,17 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from etl.pipeline import (
+from etl.nightly_pipeline import (
     run_pipeline,
 )  # Update with your actual module path if different
 
 
-@patch("etl.pipeline.clean_data")
-@patch("etl.pipeline.resolve_species_numbers")
-@patch("etl.pipeline.build_public_aggregation")
-@patch("etl.pipeline.persist_aggregation_outputs")
-@patch("etl.pipeline.upsert_provenance")
-@patch("etl.pipeline.reconcile")
+@patch("etl.nightly_pipeline.clean_data")
+@patch("etl.nightly_pipeline.resolve_species_numbers")
+@patch("etl.nightly_pipeline.build_public_aggregation")
+@patch("etl.nightly_pipeline.persist_aggregation_outputs")
+@patch("etl.nightly_pipeline.upsert_provenance")
+@patch("etl.nightly_pipeline.reconcile")
 def test_run_pipeline_executes_all_steps_in_order(
     mock_reconcile,
     mock_upsert_prov,

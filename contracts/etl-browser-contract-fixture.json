@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "verifiedAvailable": {
+    "cells": {
+      "cells": [
+        {
+          "cellId": "ST5872",
+          "precisionMetres": 1000,
+          "recordCount": 2,
+          "verifiedCount": 1
+        }
+      ],
+      "verificationAvailable": true
+    },
+    "records": {
+      "items": [
+        {
+          "abundance": "1",
+          "commonName": "Slow-worm",
+          "gridRef": "ST587721",
+          "id": "83dd1b7fd22c4cd5f3c916418d968af7",
+          "place": null,
+          "precisionMetres": 100,
+          "recordType": "field observation",
+          "scientificName": "Anguis fragilis",
+          "source": "BRERC",
+          "verified": "accepted",
+          "year": 2023
+        },
+        {
+          "abundance": "1",
+          "commonName": "Slow-worm",
+          "gridRef": "ST588722",
+          "id": "47b70284c6e6dc01fd18f3b5c80fafd5",
+          "place": null,
+          "precisionMetres": 100,
+          "recordType": "field observation",
+          "scientificName": "Anguis fragilis",
+          "source": "BRERC",
+          "verified": "rejected",
+          "year": 2024
+        }
+      ],
+      "page": 1,
+      "pageSize": 100,
+      "publication": {
+        "fields": {
+          "abundance": true,
+          "place": false,
+          "recordType": true,
+          "verification": true
+        },
+        "mode": "individual-records"
+      },
+      "total": 2
+    },
+    "verificationAvailable": true
+  },
+  "verifiedUnavailable": {
+    "cells": {
+      "cells": [
+        {
+          "cellId": "ST5872",
+          "precisionMetres": 1000,
+          "recordCount": 2
+        }
+      ],
+      "verificationAvailable": false
+    },
+    "records": {
+      "items": [
+        {
+          "abundance": "1",
+          "commonName": "Slow-worm",
+          "gridRef": "ST587721",
+          "id": "83dd1b7fd22c4cd5f3c916418d968af7",
+          "place": null,
+          "precisionMetres": 100,
+          "recordType": "field observation",
+          "scientificName": "Anguis fragilis",
+          "source": "BRERC",
+          "year": 2023
+        },
+        {
+          "abundance": "1",
+          "commonName": "Slow-worm",
+          "gridRef": "ST588722",
+          "id": "47b70284c6e6dc01fd18f3b5c80fafd5",
+          "place": null,
+          "precisionMetres": 100,
+          "recordType": "field observation",
+          "scientificName": "Anguis fragilis",
+          "source": "BRERC",
+          "year": 2024
+        }
+      ],
+      "page": 1,
+      "pageSize": 100,
+      "publication": {
+        "fields": {
+          "abundance": true,
+          "place": false,
+          "recordType": true,
+          "verification": false
+        },
+        "mode": "individual-records"
+      },
+      "total": 2
+    },
+    "verificationAvailable": false
+  }
+}
