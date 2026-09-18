@@ -277,6 +277,7 @@ jobs:
             ../db/migrations/0001_publication_store.sql \
             ../db/migrations/0002_sensitive_record_action.sql \
             ../db/migrations/0003_full_snapshot_refresh.sql \
+            ../db/migrations/0004_release_evidence.sql \
             loader_tests/postgis16_destination_fixture.sql \
             "${RUNNER_TEMP}/brerc-postgis16-destination"
       - name: Run the real atomic destination lifecycle

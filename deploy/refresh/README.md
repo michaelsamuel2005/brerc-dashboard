@@ -2,20 +2,28 @@
 
 ## Status and safety boundary
 
-This directory is a deployment package, not an enabled deployment. Both unit
-files end in `.example`; the repository and CI neither install nor enable them.
+This directory is a deployment package, not an enabled deployment. All three
+unit templates end in `.example`.
+The repository and CI neither install nor enable them.
 The additional `APPROVED_TO_SCHEDULE` condition keeps an accidentally copied
 service inert until an authorised operator deliberately creates the marker.
+If an authorised refresh later fails, `OnFailure` starts the separate quarantine
+unit, whose only command removes that marker as root. The installed timer may
+continue to wake on its approved cadence, but the refresh condition then fails
+closed and no further loader attempt can begin until an operator re-arms it.
 
 The service has exactly one operational command:
 
 ```text
-/opt/brerc-dashboard/current/bin/brerc-load refresh --config /etc/brerc/refresh/loader.configuration.yaml
+/opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/bin/brerc-load refresh --config /etc/brerc/refresh/loader.configuration.yaml
 ```
 
 It performs the privacy-gated, atomic **full-snapshot refresh**. It does not run
 the legacy `nightly_job`, initial mode, incremental mode, ad-hoc SQL or a shell
 wrapper. A failed candidate must leave the previous `serve.*` release active.
+For the first production `initial` attempt, use the separate inert example and
+operator gate in [`../initial/README.md`](../initial/README.md); the refresh
+approval marker does not authorise that first load.
 
 The templates do not choose production policy. Before installation, the
 authorised service owner must record approval for all of the following:
@@ -36,10 +44,12 @@ approval. Do not install the timer until those decisions are signed off.
 ## Required external inputs
 
 Install the reviewed application release read-only beneath
-`/opt/brerc-dashboard`, exposing the approved version as
-`/opt/brerc-dashboard/current`. Build it from an exact protected-main commit and
-record the commit and immutable wheel/container digest. Do not resolve new
-packages from the Internet during the production install.
+`/opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID`. The identifier must bind
+the exact protected-main commit and immutable wheel/container digest. Render
+that exact nonsymlink path into the installed unit in place of
+`REPLACE_WITH_APPROVED_ARTIFACT_ID`; never execute the loader through `current`
+or another mutable symlink. Do not resolve new packages from the Internet
+during the production install.
 
 Create a dedicated system account with no login shell and no home directory:
 
@@ -82,9 +92,9 @@ and recovery plan rather than an unattended secret update.
 Complete these checks before creating `APPROVED_TO_SCHEDULE`:
 
 1. Verify the release commit and artifact digest against the approved release
-   record. Confirm `/opt/brerc-dashboard/current/bin/brerc-load` is owned by the
-   deployment owner, is not writable by `brerc-loader`, and resolves to that
-   exact release.
+   record. Confirm the rendered immutable release path and its `bin/brerc-load`
+   are owned by the deployment owner, are not writable by `brerc-loader`, and
+   exactly match that release. Reject an unresolved placeholder or any symlink.
 2. Verify the destination migration is current and that its database,
    environment UUID and loader role equal the three pinned values in
    `loader.configuration.yaml`. Verify the source view version, 39-column
@@ -102,8 +112,9 @@ Complete these checks before creating `APPROVED_TO_SCHEDULE`:
    outbox rows cannot report a failure that occurs before the loader connects.
    Confirm journald retention and access controls preserve useful exit evidence
    without granting dashboard users or notification workers broad journal access.
-6. Copy the examples to temporary names ending `.service` and `.timer` in a
-   protected staging directory and run `systemd-analyze verify` against both.
+6. Copy the three examples to temporary names ending `.service` and `.timer` in
+   a protected staging directory and run `systemd-analyze verify` against all
+   three, including the exact `OnFailure` relationship.
    Review `systemd-analyze security` on the actual production systemd version;
    do not delete a hardening directive merely to improve compatibility without
    a documented security review.
@@ -112,11 +123,60 @@ Complete these checks before creating `APPROVED_TO_SCHEDULE`:
    config that the unit will use. This is a real candidate publication attempt,
    not a dry run. Do not schedule anything until its evidence is accepted.
 
-For step 7, use a transient one-shot unit or install the service unit without
-the timer, create the approval marker for the observed run, start the service
-once, then remove the marker immediately. Never source the environment file into
-an interactive shell. Inspect status with `systemctl status` and
-`journalctl -u brerc-loader-refresh.service`; export only redacted evidence.
+For step 7, install the rendered service and quarantine units without the timer,
+create the approval marker for the observed run, record the previous
+`InvocationID`, and start the service once with `systemctl start --no-block`.
+Never source the environment file into an interactive shell. Wait until the
+unit reaches a terminal state, then remove the schedule marker after confirming
+that no further attempt is running. A failed run must already have caused the
+quarantine unit to remove it.
+
+Capture evidence for this invocation only. Replace
+`CONTROLLED_EVIDENCE_DIRECTORY`, `APPROVED_MONITOR_SERVICE` and the public host
+with protected deployment values; none belongs in Git or shell screenshots:
+
+```sh
+unit=brerc-loader-refresh.service
+invocation_id="$(systemctl show "$unit" --property=InvocationID --value)"
+case "$invocation_id" in
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  *) echo 'invalid InvocationID' >&2; exit 1 ;;
+esac
+evidence=CONTROLLED_EVIDENCE_DIRECTORY
+systemctl show "$unit" \
+  --property=InvocationID --property=Result --property=ExecMainCode \
+  --property=ExecMainStatus --property=ActiveState --property=SubState \
+  > "$evidence/unit.properties"
+journalctl _SYSTEMD_INVOCATION_ID="$invocation_id" --output=json \
+  > "$evidence/journal.json"
+run_id="$(jq -ers --arg id "$invocation_id" '
+  [.[] | select(._SYSTEMD_INVOCATION_ID == $id) |
+   (.MESSAGE | fromjson?) |
+   select(.status == "ok" and .state == "succeeded" and .mode == "refresh")]
+  | if length == 1 then .[0].runId else error("not exactly one result") end
+' "$evidence/journal.json")"
+psql APPROVED_MONITOR_SERVICE --tuples-only --no-align \
+  --set=run_id="$run_id" \
+  --file=/opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/release_evidence_query.sql \
+  > "$evidence/database.json"
+curl --fail --silent --show-error https://APPROVED_PUBLIC_HOST/api/summary \
+  > "$evidence/api-summary.json"
+curl --fail --silent --show-error https://APPROVED_PUBLIC_HOST/api/meta/provenance \
+  > "$evidence/api-provenance.json"
+python3 /opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/verify_release_evidence.py \
+  --invocation-id "$invocation_id" --mode refresh \
+  --unit-properties "$evidence/unit.properties" \
+  --journal-json "$evidence/journal.json" \
+  --database-json "$evidence/database.json" \
+  --api-summary-json "$evidence/api-summary.json" \
+  --api-provenance-json "$evidence/api-provenance.json"
+```
+
+Confirm the invocation ID is non-empty and differs from the recorded previous
+ID. `journalctl -u` is useful for diagnosis but is not acceptance evidence
+because it mixes attempts. The verifier supports both a changed refresh and a
+validated no-change refresh; in the latter, `reusedActiveRelease` must be true
+and the result/base/API release IDs must remain equal.
 
 ## Acceptance evidence
 
@@ -145,13 +205,17 @@ Recipients and escalation routes remain an operator approval, not a code default
 ## Install and activate only after acceptance
 
 After all approvals and the controlled refresh have passed, copy the examples
-to `/etc/systemd/system/brerc-loader-refresh.service` and
+to `/etc/systemd/system/brerc-loader-refresh.service`,
+`/etc/systemd/system/brerc-loader-refresh-quarantine.service` and
 `/etc/systemd/system/brerc-loader-refresh.timer`, preserving `root:root` and
 mode `0644`. Put the approved `OnCalendar` value in the installed timer. Create
 `/etc/brerc/refresh/APPROVED_TO_SCHEDULE` as `root:brerc-loader` mode `0440`, run
-`systemctl daemon-reload`, then `systemctl enable --now
-brerc-loader-refresh.timer`. Verify `systemctl list-timers` shows the approved
-next run in UTC and ensure the dead-man monitor expects that same window.
+`systemctl daemon-reload`, then verify that `systemctl cat
+brerc-loader-refresh.service` contains the exact reviewed `OnFailure` target.
+Enable the timer with `systemctl enable --now brerc-loader-refresh.timer`.
+Verify `systemctl list-timers` shows the approved next run in UTC and ensure the
+dead-man monitor expects that same window. The quarantine unit is pulled in by
+`OnFailure`; do not enable it independently.
 
 `Persistent=true` asks systemd to catch up a missed run after downtime. If BRERC
 does not approve immediate catch-up, change that setting before installation;
@@ -159,22 +223,40 @@ do not silently inherit the example.
 
 ## Failure and rollback
 
-1. Stop and disable `brerc-loader-refresh.timer`, then remove the approval marker
-   so no further refresh can begin. Preserve the journal and database evidence.
-2. If a refresh failed, verify the previous release is still active through the
+1. A failed `brerc-loader-refresh.service` must start
+   `brerc-loader-refresh-quarantine.service`, which removes only
+   `/etc/brerc/refresh/APPROVED_TO_SCHEDULE`. Verify both the quarantine unit's
+   successful status and the marker's absence. If either check fails, stop and
+   disable `brerc-loader-refresh.timer` and have an authorised root operator
+   remove that exact marker. Preserve the invocation-scoped journal and database
+   evidence. Never use a wildcard or remove any other file in the configuration
+   directory.
+2. Stop and disable the timer while the cause is investigated. Although a timer
+   that remains enabled cannot pass the missing-marker condition, disabling it
+   prevents a race while an operator deliberately re-arms the schedule.
+3. If a refresh failed, verify the previous release is still active through the
    API identity and safe structural counts. Do not move a `serve.*` pointer with
    manual SQL, run the legacy nightly path, use a force flag or edit a manifest.
-3. Correct the source, configuration, policy or release artifact through review.
+4. Correct the source, configuration, policy or release artifact through review.
    Re-run only `brerc-load refresh` in a new approved window; atomic activation
    is the recovery mechanism.
-4. If application code itself must be rolled back, repoint
-   `/opt/brerc-dashboard/current` only to a previously approved, digest-verified
-   build that is compatible with the installed database migration. Reload the
-   unit and repeat the API/dashboard smoke tests before re-enabling the timer.
-5. A successful but semantically wrong data release requires an approved
+5. If application code itself must be rolled back, render and install a newly
+   reviewed unit that names a previously approved, digest-verified immutable
+   build compatible with the installed database migration. Never repoint a
+   mutable runtime symlink. Reload the unit and repeat the API/dashboard smoke
+   tests before re-enabling the timer.
+6. A successful but semantically wrong data release requires an approved
    corrected full snapshot. Emergency database-level reactivation of an older
    release is a DBA incident action and needs its own reviewed runbook; it is not
    authorised by these templates.
+
+Re-arming is a new production decision, not an automatic retry. After the fix
+and evidence have been reviewed, keep the timer disabled, reset the failed
+service state, create a new root-controlled `APPROVED_TO_SCHEDULE` marker, and
+perform one attended refresh. Only after that refresh succeeds and its release
+identity is reconciled may the operator re-enable the timer. Never configure
+`Restart=` on the loader or quarantine units and never recreate the marker from
+an `ExecStopPost`, notification worker or timer hook.
 
 Removing the timer later does not authorise deleting configuration, credentials,
 logs or evidence. Their retention and secure destruction remain with the named

@@ -131,11 +131,12 @@ cannot change whether a cohort is published.
 The destination schema consists of ordered migrations
 `db/migrations/0001_publication_store.sql`,
 `db/migrations/0002_sensitive_record_action.sql` and
-`db/migrations/0003_full_snapshot_refresh.sql`.
+`db/migrations/0003_full_snapshot_refresh.sql` followed by
+`db/migrations/0004_release_evidence.sql`.
 This implementation is pinned to PostgreSQL major version 16 and PostGIS 3.5;
 the target preflight reads both server-side and fails before loading if either
 version family differs or the migration history is not exactly the expected
-ordered sequence of three. Migration 0001 also generates a single destination
+ordered sequence of four. Migration 0001 also generates a single destination
 environment UUID in `loader_control.deployment_identity`. Operations must copy
 that UUID into the protected loader configuration through a trusted channel;
 the loader compares it, the database name and the execution role before it
@@ -159,6 +160,8 @@ psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0002_sensitive_record_action.sql "$CONTROLLED_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0003_full_snapshot_refresh.sql "$CONTROLLED_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 \
+  -f db/migrations/0004_release_evidence.sql "$CONTROLLED_ADMIN_DSN"
 ```
 
 The variable is illustrative. Do not place a DSN or password in source control,

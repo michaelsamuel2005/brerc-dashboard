@@ -64,6 +64,8 @@ psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0002_sensitive_record_action.sql "$CONTROLLED_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0003_full_snapshot_refresh.sql "$CONTROLLED_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 \
+  -f db/migrations/0004_release_evidence.sql "$CONTROLLED_ADMIN_DSN"
 ```
 
 `$CONTROLLED_ADMIN_DSN` is illustrative. Do not put a production DSN or
@@ -71,7 +73,7 @@ password in Git, ordinary email, shell history or scheduler output. Follow the
 secret-managed `verify-full` TLS procedure in
 [`POSTGRES_RELEASE_LOADER.md`](POSTGRES_RELEASE_LOADER.md).
 
-After migration 0003, `brerc_loader` can execute
+After migrations 0003 and 0004, `brerc_loader` can execute
 `loader_control.activate_release_candidate(uuid)`. It cannot execute the older
 `activate_validated_release(uuid)` function directly.
 
@@ -88,6 +90,11 @@ The first run is:
 ```sh
 brerc-load initial --config /controlled/path/loader.configuration.yaml
 ```
+
+For a first production run under systemd, use the deliberately inert one-shot
+example and observed-attempt runbook in
+[`../deploy/initial/README.md`](../deploy/initial/README.md). Its separate
+approval marker must be removed after every attempt; it has no timer.
 
 Every subsequent complete replacement is:
 
@@ -143,7 +150,7 @@ of these steps:
 
 1. Provision a separate TLS PostgreSQL 16 source with the exact 39-column view.
 2. Provision a TLS PostgreSQL 16/PostGIS 3.5 destination, reviewed roles and
-   migrations 0001–0003.
+   migrations 0001–0004.
 3. Run the complete destination lifecycle and adversarial database tests.
 4. Load the three-row source as the initial active release.
 5. Remove one ordinary source row and change a different row from disallowed to

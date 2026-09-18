@@ -9,6 +9,7 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 DEPLOYMENT = REPOSITORY / "deploy" / "refresh"
 SERVICE = DEPLOYMENT / "brerc-loader-refresh.service.example"
+QUARANTINE = DEPLOYMENT / "brerc-loader-refresh-quarantine.service.example"
 TIMER = DEPLOYMENT / "brerc-loader-refresh.timer.example"
 ENVIRONMENT = DEPLOYMENT / "loader-runtime.env.example"
 RUNBOOK = DEPLOYMENT / "README.md"
@@ -18,25 +19,69 @@ class RefreshSchedulerDeploymentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.service = SERVICE.read_text(encoding="utf-8")
+        cls.quarantine = QUARANTINE.read_text(encoding="utf-8")
         cls.timer = TIMER.read_text(encoding="utf-8")
         cls.environment = ENVIRONMENT.read_text(encoding="utf-8")
         cls.runbook = RUNBOOK.read_text(encoding="utf-8")
 
     def test_only_inert_example_units_are_tracked(self) -> None:
         self.assertTrue(SERVICE.is_file())
+        self.assertTrue(QUARANTINE.is_file())
         self.assertTrue(TIMER.is_file())
         self.assertFalse((DEPLOYMENT / "brerc-loader-refresh.service").exists())
+        self.assertFalse((DEPLOYMENT / "brerc-loader-refresh-quarantine.service").exists())
         self.assertFalse((DEPLOYMENT / "brerc-loader-refresh.timer").exists())
         self.assertIn("neither install nor enable", self.runbook)
         self.assertIn("APPROVED_TO_SCHEDULE", self.service)
         self.assertNotIn("ConditionPathIsExecutable=", self.service)
+
+    def test_refresh_failure_invokes_the_inert_quarantine_unit(self) -> None:
+        self.assertIn("OnFailure=brerc-loader-refresh-quarantine.service", self.service)
+        self.assertIn("EXAMPLE ONLY", self.quarantine)
+        self.assertNotIn("[Install]", self.quarantine)
+        self.assertIn("do not enable it independently", self.runbook)
+
+    def test_quarantine_removes_only_the_schedule_approval_marker(self) -> None:
+        exec_lines = [line for line in self.quarantine.splitlines() if line.startswith("Exec")]
+        self.assertEqual(
+            exec_lines,
+            ["ExecStart=/usr/bin/rm -f -- /etc/brerc/refresh/APPROVED_TO_SCHEDULE"],
+        )
+        self.assertNotIn("/bin/sh", self.quarantine)
+        self.assertNotIn("/bin/bash", self.quarantine)
+        self.assertNotIn("*", "\n".join(exec_lines))
+        self.assertIn("User=root", self.quarantine)
+        self.assertIn("Group=root", self.quarantine)
+        self.assertIn("Restart=no", self.quarantine)
+
+    def test_quarantine_is_hardened_and_has_no_network_access(self) -> None:
+        for directive in (
+            "NoNewPrivileges=true",
+            "PrivateTmp=true",
+            "PrivateDevices=true",
+            "PrivateNetwork=true",
+            "ProtectSystem=strict",
+            "ProtectHome=true",
+            "ReadWritePaths=/etc/brerc/refresh",
+            "ProtectKernelTunables=true",
+            "ProtectKernelModules=true",
+            "ProtectControlGroups=true",
+            "RestrictNamespaces=true",
+            "RestrictSUIDSGID=true",
+            "MemoryDenyWriteExecute=true",
+            "CapabilityBoundingSet=",
+            "AmbientCapabilities=",
+            "RestrictAddressFamilies=AF_UNIX",
+        ):
+            self.assertIn(directive, self.quarantine)
 
     def test_service_invokes_only_the_atomic_full_snapshot_refresh(self) -> None:
         exec_lines = [line for line in self.service.splitlines() if line.startswith("Exec")]
         self.assertEqual(
             exec_lines,
             [
-                "ExecStart=/opt/brerc-dashboard/current/bin/brerc-load refresh "
+                "ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/"
+                "bin/brerc-load refresh "
                 "--config /etc/brerc/refresh/loader.configuration.yaml"
             ],
         )
@@ -64,7 +109,8 @@ class RefreshSchedulerDeploymentTests(unittest.TestCase):
             "EnvironmentFile=/etc/brerc/refresh/loader-runtime.env",
             "UnsetEnvironment=PGPASSWORD",
             "ConditionPathExists=/etc/brerc/refresh/APPROVED_TO_SCHEDULE",
-            "AssertFileIsExecutable=/opt/brerc-dashboard/current/bin/brerc-load",
+            "AssertFileIsExecutable=/opt/brerc-dashboard/releases/"
+            "REPLACE_WITH_APPROVED_ARTIFACT_ID/bin/brerc-load",
             "AssertFileNotEmpty=/etc/brerc/refresh/loader.configuration.yaml",
             "AssertFileNotEmpty=/etc/brerc/refresh/source.configuration.yaml",
             "AssertFileNotEmpty=/etc/brerc/refresh/publication-policy.approved.json",
@@ -88,6 +134,7 @@ class RefreshSchedulerDeploymentTests(unittest.TestCase):
             "CapabilityBoundingSet=",
             "AmbientCapabilities=",
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+            "LimitCORE=0",
         ):
             self.assertIn(directive, self.service)
 
@@ -136,6 +183,8 @@ class RefreshSchedulerDeploymentTests(unittest.TestCase):
             "browser mocks disabled",
             "previous release is still active",
             "Never source the environment file",
+            "Re-arming is a new production decision",
+            "Never use a wildcard",
         )
         for phrase in required_phrases:
             self.assertIn(phrase, self.runbook)
