@@ -29,26 +29,20 @@ class RefreshSchedulerDeploymentTests(unittest.TestCase):
         self.assertTrue(QUARANTINE.is_file())
         self.assertTrue(TIMER.is_file())
         self.assertFalse((DEPLOYMENT / "brerc-loader-refresh.service").exists())
-        self.assertFalse(
-            (DEPLOYMENT / "brerc-loader-refresh-quarantine.service").exists()
-        )
+        self.assertFalse((DEPLOYMENT / "brerc-loader-refresh-quarantine.service").exists())
         self.assertFalse((DEPLOYMENT / "brerc-loader-refresh.timer").exists())
         self.assertIn("neither install nor enable", self.runbook)
         self.assertIn("APPROVED_TO_SCHEDULE", self.service)
         self.assertNotIn("ConditionPathIsExecutable=", self.service)
 
     def test_refresh_failure_invokes_the_inert_quarantine_unit(self) -> None:
-        self.assertIn(
-            "OnFailure=brerc-loader-refresh-quarantine.service", self.service
-        )
+        self.assertIn("OnFailure=brerc-loader-refresh-quarantine.service", self.service)
         self.assertIn("EXAMPLE ONLY", self.quarantine)
         self.assertNotIn("[Install]", self.quarantine)
         self.assertIn("do not enable it independently", self.runbook)
 
     def test_quarantine_removes_only_the_schedule_approval_marker(self) -> None:
-        exec_lines = [
-            line for line in self.quarantine.splitlines() if line.startswith("Exec")
-        ]
+        exec_lines = [line for line in self.quarantine.splitlines() if line.startswith("Exec")]
         self.assertEqual(
             exec_lines,
             ["ExecStart=/usr/bin/rm -f -- /etc/brerc/refresh/APPROVED_TO_SCHEDULE"],

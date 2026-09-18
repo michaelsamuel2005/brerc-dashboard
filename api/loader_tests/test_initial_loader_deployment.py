@@ -43,7 +43,7 @@ class InitialLoaderDeploymentTests(unittest.TestCase):
                 "deploy/initial/consume_initial_approval.py",
                 "ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/"
                 "bin/brerc-load initial "
-                "--config /etc/brerc/refresh/loader.configuration.yaml"
+                "--config /etc/brerc/refresh/loader.configuration.yaml",
             ],
         )
         for forbidden in (" refresh", " incremental", "--force", "nightly_job", "/bin/sh", "|"):
@@ -65,9 +65,7 @@ class InitialLoaderDeploymentTests(unittest.TestCase):
         self.assertNotIn("not an automatically consumed token", plain_runbook)
         self.assertNotIn("remove it immediately after every start attempt", plain_runbook)
         self.assertIn("A retry requires investigation, a new approval", normalised_runbook)
-        self.assertIn(
-            "refuses `initial` once an active release exists", normalised_runbook
-        )
+        self.assertIn("refuses `initial` once an active release exists", normalised_runbook)
         self.assertEqual(
             directives(self.service, "ReadWritePaths"),
             ["ReadWritePaths=/etc/brerc/initial-approval"],
