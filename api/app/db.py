@@ -2,15 +2,17 @@
 
 Credential resolution deliberately retains Ting Ting's ``api_readonly``
 boundary: the API never falls back to the ETL destination credentials and it
-has no postgres/postgres default. Production connections require verified TLS;
-every live session must use only the dedicated API group role and be
-transaction-read-only; routers may name only the five public serving views
-owned by the atomic publication store.
+has no postgres/postgres default. The reviewed production path uses a libpq
+service plus passfile rather than a credential-bearing environment DSN.
+Production connections require verified TLS; every live session must use only
+the dedicated API group role and be transaction-read-only; routers may name
+only the five public serving views owned by the atomic publication store.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from functools import lru_cache
@@ -19,21 +21,38 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 from psycopg import IsolationLevel
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
 from app import config
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+_SERVICE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,63}$")
+
+
+def _required_environment(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def _absolute_environment_file(name: str) -> str:
+    value = _required_environment(name)
+    if not Path(value).is_absolute():
+        raise RuntimeError(f"{name} must be an absolute path")
+    return value
+
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
     """Load host-only YAML when the ETL package is present.
 
-    The API-only image need not package the ETL, so ``DATABASE_URL`` remains a
-    supported fallback. Missing configuration is not converted into a default
-    credential anywhere below.
+    The API-only image need not package the ETL. Development retains its
+    explicit ``DATABASE_URL`` fallback; production requires service mode and
+    never reaches this YAML/URL compatibility path. Missing configuration is
+    not converted into a default credential anywhere below.
     """
     try:
         from etl.load.loader import load_safety_config
@@ -53,26 +72,38 @@ def _get_api_readonly() -> dict:
     return get_config().get("api_readonly", {})
 
 
-def _validate_production_tls(conninfo: str) -> str:
-    """Require certificate and hostname verification for production PostgreSQL."""
-    if not config.IS_PROD:
-        return conninfo
-
-    parameters = conninfo_to_dict(conninfo)
-    if parameters.get("sslmode") != "verify-full" or not parameters.get("sslrootcert"):
-        raise RuntimeError(
-            "Production database TLS requires sslmode=verify-full and an explicit sslrootcert."
-        )
-    return conninfo
-
-
 def _build_database_url() -> str:
-    """Resolve an explicit read-only credential or fail without guessing.
+    """Resolve explicit read-only connection info or fail without guessing.
 
+    Explicit service mode is isolated from legacy configuration. Otherwise,
     ``config/safety.yaml`` takes precedence when it supplies a complete
-    ``api_readonly`` block. ``DATABASE_URL`` is the deployment fallback. The
-    write-capable ``destination`` block is intentionally ignored.
+    ``api_readonly`` block and ``DATABASE_URL`` is the compatibility fallback.
+    The write-capable ``destination`` block is intentionally ignored.
     """
+    mode = os.environ.get("BRERC_API_DB_MODE", "").strip().lower()
+    if config.IS_PROD and mode != "service":
+        raise RuntimeError("Production database access requires BRERC_API_DB_MODE=service")
+    if mode:
+        if mode != "service":
+            raise RuntimeError("BRERC_API_DB_MODE must be 'service' when set")
+        if os.environ.get("PGPASSWORD"):
+            raise RuntimeError("PGPASSWORD is not permitted for the public API")
+        if os.environ.get("DATABASE_URL"):
+            raise RuntimeError("DATABASE_URL must be unset when BRERC_API_DB_MODE=service")
+        service = _required_environment("BRERC_API_DB_SERVICE")
+        if _SERVICE_NAME.fullmatch(service) is None:
+            raise RuntimeError("BRERC_API_DB_SERVICE is invalid")
+        # libpq reads PGSERVICEFILE itself. Requiring an absolute reviewed path
+        # prevents an accidental lookup from the service account's home or CWD.
+        _absolute_environment_file("PGSERVICEFILE")
+        return make_conninfo(
+            service=service,
+            passfile=_absolute_environment_file("BRERC_API_DB_PASSFILE"),
+            sslrootcert=_absolute_environment_file("BRERC_API_DB_SSLROOTCERT"),
+            sslmode="verify-full",
+            connect_timeout=10,
+        )
+
     api_readonly = _get_api_readonly()
     user = api_readonly.get("user")
     password = api_readonly.get("password")
@@ -100,11 +131,11 @@ def _build_database_url() -> str:
             sslmode=api_readonly.get("sslmode"),
             sslrootcert=api_readonly.get("sslrootcert"),
         )
-        return _validate_production_tls(conninfo)
+        return conninfo
 
     explicit_url = os.getenv("DATABASE_URL")
     if explicit_url:
-        return _validate_production_tls(explicit_url)
+        return explicit_url
     raise RuntimeError(
         "No database credentials configured. Set api_readonly.user/"
         "api_readonly.password in config/safety.yaml, or use DATABASE_URL as "
@@ -112,9 +143,33 @@ def _build_database_url() -> str:
     )
 
 
+def _expected_session_identity() -> tuple[str | None, str | None]:
+    """Return an all-or-nothing deployment identity assertion.
+
+    Service mode is the reviewed production path and cannot connect before its
+    exact destination database and distinct login role have been named. Legacy
+    development/CI configuration remains compatible, but may opt into the same
+    assertion by setting both values.
+    """
+    expected_database = os.environ.get("BRERC_API_EXPECTED_DATABASE", "").strip()
+    expected_role = os.environ.get("BRERC_API_EXPECTED_ROLE", "").strip()
+    if bool(expected_database) != bool(expected_role):
+        raise RuntimeError(
+            "BRERC_API_EXPECTED_DATABASE and BRERC_API_EXPECTED_ROLE must be set together"
+        )
+    if (
+        config.IS_PROD or os.environ.get("BRERC_API_DB_MODE", "").strip().lower() == "service"
+    ) and not (expected_database and expected_role):
+        raise RuntimeError(
+            "production/service mode requires BRERC_API_EXPECTED_DATABASE "
+            "and BRERC_API_EXPECTED_ROLE"
+        )
+    return expected_database or None, expected_role or None
+
+
 @lru_cache(maxsize=1)
 def get_database_url() -> str:
-    """Cache the already fail-closed credential resolution."""
+    """Cache the already fail-closed PostgreSQL connection information."""
     return _build_database_url()
 
 
@@ -168,30 +223,71 @@ def get_connection() -> psycopg.Connection:
 @contextmanager
 def serving_connection() -> Iterator[psycopg.Connection]:
     """Yield a verified read-only connection and always roll it back."""
+    expected_database, expected_role = _expected_session_identity()
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT current_setting('transaction_read_only') AS read_only, "
+                "SELECT current_database() AS database_name, "
+                "current_user AS login_role, session_user AS session_role, "
+                "current_setting('transaction_read_only') AS read_only, "
                 "current_setting('transaction_isolation') AS isolation_level, "
+                "(SELECT rolcanlogin FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_login, "
+                "(SELECT rolinherit FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_inherit, "
+                "(SELECT rolsuper FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS is_superuser, "
+                "(SELECT rolcreatedb FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_create_db, "
+                "(SELECT rolcreaterole FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_create_role, "
+                "(SELECT rolreplication FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_replicate, "
+                "(SELECT rolbypassrls FROM pg_catalog.pg_roles "
+                " WHERE rolname = current_user) AS can_bypass_rls, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_api', 'USAGE') AS is_api, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_loader', 'USAGE') AS is_loader, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_martin', 'USAGE') AS is_martin, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_monitor', 'USAGE') AS is_monitor, "
                 "pg_catalog.pg_has_role(current_user, 'pg_write_all_data', 'USAGE') "
-                "AS can_write_all"
+                "AS can_write_all, "
+                "ARRAY(SELECT parent.rolname::text "
+                "FROM pg_catalog.pg_auth_members AS membership "
+                "JOIN pg_catalog.pg_roles AS member ON member.oid = membership.member "
+                "JOIN pg_catalog.pg_roles AS parent ON parent.oid = membership.roleid "
+                "WHERE member.rolname = current_user "
+                "ORDER BY parent.rolname) AS direct_roles, "
+                "ARRAY(SELECT role.rolname::text FROM pg_catalog.pg_roles AS role "
+                "WHERE role.rolname <> current_user "
+                "AND pg_catalog.pg_has_role(current_user, role.oid, 'USAGE') "
+                "ORDER BY role.rolname) AS effective_roles"
             )
             session = cursor.fetchone()
         if session is None or session.get("read_only") != "on":
             raise RuntimeError("publication database session is not read-only")
         if session.get("isolation_level") != "repeatable read":
             raise RuntimeError("publication database session is not repeatable-read")
+        direct_roles = tuple(session.get("direct_roles") or ())
+        effective_roles = tuple(session.get("effective_roles") or ())
         if (
-            session.get("is_api") is not True
+            session.get("login_role") != session.get("session_role")
+            or (expected_database is not None and session.get("database_name") != expected_database)
+            or (expected_role is not None and session.get("login_role") != expected_role)
+            or session.get("can_login") is not True
+            or session.get("can_inherit") is not True
+            or session.get("is_superuser") is not False
+            or session.get("can_create_db") is not False
+            or session.get("can_create_role") is not False
+            or session.get("can_replicate") is not False
+            or session.get("can_bypass_rls") is not False
+            or session.get("is_api") is not True
             or session.get("is_loader") is not False
             or session.get("is_martin") is not False
             or session.get("is_monitor") is not False
             or session.get("can_write_all") is not False
+            or direct_roles != ("brerc_api",)
+            or effective_roles != ("brerc_api",)
         ):
             raise RuntimeError(
                 "publication database session is not using the dedicated read-only API role"

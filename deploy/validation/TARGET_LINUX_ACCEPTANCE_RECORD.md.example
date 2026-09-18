@@ -1,0 +1,122 @@
+# BRERC target-Linux production acceptance record
+
+> Private operational evidence template. Complete this only in BRERC's
+> controlled evidence store. Do not paste credentials, DSNs, private keys,
+> private host addresses, raw records, coordinates or unrestricted logs into
+> this file or a public issue. A blank or `TBD` item is a failed gate.
+
+## Decision
+
+- Overall result (`PASS` or `FAIL`): `TBD`
+- Public activation authorised (`YES` or `NO`): `TBD`
+- UTC decision time: `TBD`
+- Restricted evidence-bundle reference: `TBD`
+- Exception/waiver references (or `NONE`): `TBD`
+
+## Exact release and host identity
+
+- Protected-main commit (40 hexadecimal characters): `TBD`
+- Immutable application artifact ID: `TBD`
+- Application artifact SHA-256: `TBD`
+- Web artifact SHA-256: `TBD`
+- API artifact SHA-256: `TBD`
+- Run-dashboard artifact SHA-256: `TBD`
+- Installed unit/config manifest SHA-256: `TBD`
+- Linux distribution and version: `TBD`
+- Kernel version: `TBD`
+- systemd version: `TBD`
+- nginx version: `TBD`
+- BRERC host/CMDB reference (not an address): `TBD`
+
+## Static compatibility and hardening
+
+- Unresolved-placeholder scan: `PASS / FAIL`
+- Immutable-path and ownership check: `PASS / FAIL`
+- `systemd-analyze verify` retained: `PASS / FAIL`
+- `systemd-analyze security` reviewed for every service: `PASS / FAIL`
+- Installed-unit digest matches reviewed candidate: `PASS / FAIL`
+- No unexpected drop-ins (`systemd-delta` reviewed): `PASS / FAIL`
+- Environment files cannot override fixed production modes/DB path: `PASS / FAIL`
+- Complete nginx candidate passed `nginx -t`: `PASS / FAIL`
+- Basemap/CSP decision reference and exact approved origin retained: `PASS / FAIL`
+- Built frontend implementation matches that basemap decision: `PASS / FAIL`
+- CSP basemap placeholder resolved only in `img-src`/`connect-src`: `PASS / FAIL`
+- Root Compose/Caddy/legacy schema absent from deployment: `PASS / FAIL`
+
+## Network, TLS and privilege boundary
+
+- Public exposure limited to approved nginx HTTPS listener: `PASS / FAIL`
+- API bound only to `127.0.0.1:8000`: `PASS / FAIL`
+- Run-history viewer bound only to `127.0.0.1:8100`: `PASS / FAIL`
+- Run-history hostname restricted to approved operator network: `PASS / FAIL`
+- PostgreSQL/PostGIS reachable only on private approved paths: `PASS / FAIL`
+- Source and target database TLS `verify-full` positive test: `PASS / FAIL`
+- Wrong CA/hostname/database/environment/role negative tests: `PASS / FAIL`
+- API session exact database/login/read-only privilege check: `PASS / FAIL`
+- Monitor session exact database/login/read-only privilege check: `PASS / FAIL`
+- API/monitor catalogue login audit (ownership/direct grants): `PASS / FAIL`
+- Public `/tiles*` and `/run-dashboard*` return `404`: `PASS / FAIL`
+
+## One-time initial load through the hardened unit
+
+- Public traffic remained disabled during rehearsal: `PASS / FAIL`
+- Fresh, root-controlled single-use approval recorded: `PASS / FAIL`
+- Exact installed `brerc-loader-initial.service` used: `PASS / FAIL`
+- Approval marker consumed before database access: `PASS / FAIL`
+- Second start without new approval failed: `PASS / FAIL`
+- Invocation-scoped terminal loader evidence verified: `PASS / FAIL`
+- Database/API/browser release and dataset identities reconciled: `PASS / FAIL`
+- Rejected-input rehearsal left no active release: `PASS / FAIL`
+
+Initial invocation ID: `TBD`
+Initial loader run ID: `TBD`
+Initial active release ID: `TBD`
+Initial dataset digest: `TBD`
+
+## Complete-snapshot refresh and quarantine
+
+- Changed refresh atomically switched one release: `PASS / FAIL`
+- Changed refresh database/API/browser identities reconciled: `PASS / FAIL`
+- No-change refresh reused the active release: `PASS / FAIL`
+- No-change refresh advanced checked-through source time: `PASS / FAIL`
+- Deliberate failure kept previous release visible: `PASS / FAIL`
+- Failure invoked quarantine and removed schedule approval: `PASS / FAIL`
+- Timer could not start further work while disarmed: `PASS / FAIL`
+- Independent alert/dead-man path reported failure: `PASS / FAIL`
+- Corrected attended refresh passed before re-arm: `PASS / FAIL`
+
+Changed-refresh invocation/run/release references: `TBD`
+No-change invocation/run reference: `TBD`
+Failure invocation/run reference: `TBD`
+
+## Serving, browser and recovery
+
+- Immutable React build served over approved HTTPS hostname: `PASS / FAIL`
+- Same-origin `/api/health`, `/api/summary` and provenance passed: `PASS / FAIL`
+- Production bundle guard confirmed browser mocks absent: `PASS / FAIL`
+- Mocks-disabled browser acceptance passed: `PASS / FAIL`
+- Security/cache headers reviewed: `PASS / FAIL`
+- Browser CSP report has zero violations across every route/map: `PASS / FAIL`
+- Observed basemap origin matches the approved CARTO/self-host decision: `PASS / FAIL`
+- Private run-history authentication positive/negative tests passed: `PASS / FAIL`
+- Run-history showed the same PostgreSQL-backed loader runs: `PASS / FAIL`
+- Service restart and controlled host reboot checks passed: `PASS / FAIL`
+- Prior immutable code/proxy artifact rollback rehearsed: `PASS / FAIL`
+- Post-rollback database/API/browser identities reconciled: `PASS / FAIL`
+
+## Sign-off
+
+Each signer confirms the exact artifact and evidence bundle above. Sign-off is
+invalid after the artifact, installed units, configuration digests or host
+controls change.
+
+- BRERC service owner/operator — name, decision, UTC time: `TBD`
+- BRERC database/network owner — name, decision, UTC time: `TBD`
+- Delivery-team technical reviewer — name, decision, UTC time: `TBD`
+- Accessibility/content approver — name, decision, UTC time: `TBD`
+
+## Residual actions
+
+- Open corrective actions (or `NONE`): `TBD`
+- Owner and deadline for each action: `TBD`
+- Reason activation remains safe while action is open: `TBD`

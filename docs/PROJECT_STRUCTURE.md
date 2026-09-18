@@ -50,7 +50,7 @@ Each area will have its own README with the detail. This table is the quick summ
 | [`internal-web/`](../internal-web/README.md) | The **internal data-quality tool** for BRERC staff. Helps them monitor the content and quality of their database. | **Team** | 🟡 Separate secondary tool; production operation remains |
 | [`run-dashboard/`](../run-dashboard/README.md) | The authenticated, read-only **ETL job-history viewer**. Reads only the bounded PostgreSQL monitor view; it is separate from `internal-web/`. | **Ting Ting / Team** | 🟢 Integrated with the atomic loader; production deployment remains |
 | [`db/`](../db/README.md) | The **database definitions** — roles and ordered PostgreSQL/PostGIS migrations for atomic publication releases. (*Schema* = the shape of the data; *migrations* = tracked, ordered changes to that shape.) | **Team** | 🟢 Initial and full-snapshot refresh store implemented |
-| [`deploy/`](../deploy/refresh/README.md) | Hardened, inert full-snapshot scheduling templates plus preflight, evidence and rollback instructions. | **Team / production operator** | 🟡 Implemented template; not installed or enabled |
+| [`deploy/`](../deploy/production/README.md) | Hardened, inert production serving, first-load and full-snapshot scheduling templates plus Linux acceptance, evidence and rollback instructions. | **Team / BRERC production operator** | 🟡 Team package implemented; target-host acceptance remains |
 
 > 📝 **A note on status.** “Implemented for synthetic integration” does not mean deployed with
 > BRERC data. Live view approval, production credentials/infrastructure, production thresholds and
@@ -132,7 +132,8 @@ New to any of this? The step-by-step walkthrough is in [**docs/GETTING_STARTED_G
 | [web/README.md](../web/README.md) · [api/README.md](../api/README.md) · [internal-web/README.md](../internal-web/README.md) · [run-dashboard/README.md](../run-dashboard/README.md) · [db/README.md](../db/README.md) · [deploy/refresh/README.md](../deploy/refresh/README.md) · [data/README.md](../data/README.md) | Per-folder details |
 
 > ℹ️ The update mechanism is decided: one `brerc-load initial`, then atomic
-> full-snapshot `brerc-load refresh` runs. Exactly where the dashboard is
-> hosted, the production cadence and installation, the owners of `api/`,
-> `internal-web/` and `db/`, alert delivery, and the final handover contact are
-> **[TO BE CONFIRMED]**.
+> full-snapshot `brerc-load refresh` runs. BRERC owns the production host,
+> database, TLS certificates, secrets, backups, operational alerts and final
+> operator assignments. BRERC must supply those target-specific values and run
+> the controlled Linux acceptance before activation; they are not defaults that
+> the delivery team may invent or store in Git.

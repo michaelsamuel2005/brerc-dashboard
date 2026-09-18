@@ -17,7 +17,7 @@ const CONTEXT: RunContext = {
   browserName: 'chromium', browserVersion: '131.0',
   engine: 'Blink', platform: 'linux', viewportLabel: 'V1-320x640', stateLabel: 'cell-selected',
   cameraLabel: 'initial-z12',
-  dependencyVersions: { 'maplibre-gl': '4.7.1', 'react-map-gl': '7.1.9' },
+  dependencyVersions: { 'maplibre-gl': '6.4.1', 'react-map-gl': '8.0.0' },
   inputHashes: { 'package-lock.json': 'sha256:test' }
 };
 const PROVENANCE: Provenance = {

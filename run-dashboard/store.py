@@ -80,6 +80,14 @@ def _connection_info() -> str:
     mode = os.environ.get("RUN_DASHBOARD_DB_MODE", "").strip().lower()
     environment = validated_dashboard_environment()
     if mode == "service":
+        if os.environ.get("PGPASSWORD"):
+            raise RunHistoryConfigurationError(
+                "PGPASSWORD is not permitted for the run-history dashboard"
+            )
+        if os.environ.get("RUN_DASHBOARD_DATABASE_URL"):
+            raise RunHistoryConfigurationError(
+                "RUN_DASHBOARD_DATABASE_URL must be unset in service mode"
+            )
         service = _required_environment("RUN_DASHBOARD_DB_SERVICE")
         if _SERVICE_NAME.fullmatch(service) is None:
             raise RunHistoryConfigurationError("RUN_DASHBOARD_DB_SERVICE is invalid")

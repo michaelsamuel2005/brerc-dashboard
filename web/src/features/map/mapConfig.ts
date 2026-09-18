@@ -68,13 +68,13 @@ const cellColourExpression: ExpressionSpecification = [
 ];
 
 // react-map-gl <Layer> props; the source is inferred from the enclosing <Source>.
-export const cellsFillLayer: LayerProps = {
+export const cellsFillLayer = {
   id: "cells-fill",
   type: "fill",
   // Keep the basemap clearly visible through the data. Cell identity is carried by
   // the separately measured, fully opaque boundary rather than an opaque colour block.
   paint: { "fill-color": cellColourExpression, "fill-opacity": CELL_FILL_OPACITY },
-};
+} satisfies LayerProps;
 
 // WCAG 1.4.11 requires 3:1 for the graphics needed to understand content, and
 // these cells are also clickable, so the boundary is what identifies each one.
@@ -106,15 +106,15 @@ const cellBoundaryExpression: ExpressionSpecification = [
   CELL_BOUNDARY_COLOURS[3],
 ];
 
-export const cellsLineLayer: LayerProps = {
+export const cellsLineLayer = {
   id: "cells-line",
   type: "line",
   // Fully opaque: the previous 0.55 diluted the line into the fill beneath it,
   // which is part of why the old boundary failed its contrast requirement.
   paint: { "line-color": cellBoundaryExpression, "line-width": 1.1, "line-opacity": 1 },
-};
+} satisfies LayerProps;
 
-export const cellsLineCasingLayer: LayerProps = {
+export const cellsLineCasingLayer = {
   id: "cells-line-casing",
   type: "line",
   paint: {
@@ -122,7 +122,7 @@ export const cellsLineCasingLayer: LayerProps = {
     "line-width": 3.1,
     "line-opacity": 0.96,
   },
-};
+} satisfies LayerProps;
 
 export const LEGEND_BANDS: readonly { colour: string; label: string }[] = [
   { colour: CELL_COLOURS[0], label: "1–5 records" },

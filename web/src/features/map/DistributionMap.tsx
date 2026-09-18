@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, { AttributionControl, Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection } from "geojson";
-import type { FilterSpecification } from "maplibre-gl";
+import { setWorkerUrl, type FilterSpecification } from "maplibre-gl";
+import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { toAsyncState, useDistributionCells } from "../../lib/api";
 import { gridRefToPolygon } from "../../lib/geo/osgb";
@@ -20,6 +21,13 @@ import {
   cellsLineLayer,
 } from "./mapConfig";
 import { installA11yTestAdapter, removeA11yTestAdapter } from "./a11yTestAdapter";
+
+// MapLibre 6 is ESM-only. Vite must bundle its worker explicitly; relying on
+// import.meta.url leaves development pointing at a non-existent optimised-deps
+// sibling and leaves production without the worker's shared module. This URL is
+// emitted as a same-origin asset and is permitted by the production worker-src
+// 'self' CSP.
+setWorkerUrl(mapLibreWorkerUrl);
 
 interface Props {
   speciesId: string;

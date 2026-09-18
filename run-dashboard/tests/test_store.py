@@ -91,6 +91,8 @@ def test_connection_rejects_missing_or_unknown_environment(monkeypatch, environm
 def test_service_connection_requires_absolute_protected_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("DASHBOARD_ENV", "prod")
     monkeypatch.setenv("RUN_DASHBOARD_DB_MODE", "service")
+    monkeypatch.delenv("RUN_DASHBOARD_DATABASE_URL", raising=False)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
     monkeypatch.setenv("RUN_DASHBOARD_DB_SERVICE", "brerc-monitor")
     monkeypatch.setenv("PGSERVICEFILE", str(tmp_path / "pg_service.conf"))
     monkeypatch.setenv("RUN_DASHBOARD_DB_PASSFILE", str(tmp_path / "monitor.pgpass"))
@@ -108,12 +110,42 @@ def test_service_connection_requires_absolute_protected_paths(monkeypatch, tmp_p
 def test_service_connection_rejects_relative_service_file(monkeypatch, tmp_path):
     monkeypatch.setenv("DASHBOARD_ENV", "prod")
     monkeypatch.setenv("RUN_DASHBOARD_DB_MODE", "service")
+    monkeypatch.delenv("RUN_DASHBOARD_DATABASE_URL", raising=False)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
     monkeypatch.setenv("RUN_DASHBOARD_DB_SERVICE", "brerc-monitor")
     monkeypatch.setenv("PGSERVICEFILE", "relative.conf")
     monkeypatch.setenv("RUN_DASHBOARD_DB_PASSFILE", str(tmp_path / "monitor.pgpass"))
     monkeypatch.setenv("RUN_DASHBOARD_DB_SSLROOTCERT", str(tmp_path / "ca.crt"))
 
     with pytest.raises(store.RunHistoryConfigurationError, match="absolute path"):
+        store._connection_info()
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    (
+        ("PGPASSWORD", "must-not-be-inherited", "PGPASSWORD is not permitted"),
+        (
+            "RUN_DASHBOARD_DATABASE_URL",
+            "postgresql://must-not-be-used/monitor",
+            "must be unset in service mode",
+        ),
+    ),
+)
+def test_service_connection_rejects_ambient_password_or_direct_dsn(
+    monkeypatch, tmp_path, name, value, message
+):
+    monkeypatch.setenv("DASHBOARD_ENV", "prod")
+    monkeypatch.setenv("RUN_DASHBOARD_DB_MODE", "service")
+    monkeypatch.setenv("RUN_DASHBOARD_DB_SERVICE", "brerc-monitor")
+    monkeypatch.setenv("PGSERVICEFILE", str(tmp_path / "pg_service.conf"))
+    monkeypatch.setenv("RUN_DASHBOARD_DB_PASSFILE", str(tmp_path / "monitor.pgpass"))
+    monkeypatch.setenv("RUN_DASHBOARD_DB_SSLROOTCERT", str(tmp_path / "ca.crt"))
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    monkeypatch.delenv("RUN_DASHBOARD_DATABASE_URL", raising=False)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(store.RunHistoryConfigurationError, match=message):
         store._connection_info()
 
 

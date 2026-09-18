@@ -9,6 +9,10 @@ ENV APP_ENV=prod \
 
 WORKDIR /srv/brerc-api
 
+# At runtime, production also requires the credential-free BRERC_API_DB_MODE
+# service configuration plus mounted libpq service/passfile/CA files. A
+# DATABASE_URL is deliberately rejected in production.
+
 # Resolve the API's pinned direct dependencies from the single project source
 # of truth without installing the combined repository wheel (which also
 # defines loader/source commands). Python 3.13 supplies tomllib in the stdlib.

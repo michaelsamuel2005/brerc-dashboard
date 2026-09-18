@@ -1,5 +1,14 @@
 # =============================================================================
-# BRERC dashboard — full backend stack in one command (B9, Half B).
+# LEGACY LOCAL DEMONSTRATION ONLY — NOT A PRODUCTION DEPLOYMENT.
+#
+# This stack uses the obsolete B6/sample schema, development credentials, an
+# unpinned Martin image and the root Caddy placeholder. It is retained only for
+# historical local-development compatibility. Do not install it on a BRERC
+# host, do not supply real BRERC data or credentials, and do not use it as a
+# fallback deployment. The reviewed production topology and Linux validation
+# procedure live under deploy/production/ and deploy/validation/.
+#
+# BRERC dashboard — historical backend demo in one command (B9, Half B).
 #
 #   docker compose up --build
 #
@@ -10,8 +19,8 @@
 #   proxy  — Caddy, exposing everything same-origin at http://localhost:8080
 #
 # Only the proxy is published to your machine; db/martin/api stay internal.
-# Override the defaults for production by putting real values in a .env file
-# next to this one (POSTGRES_PASSWORD, RO_PASSWORD, APP_ENV, ALLOWED_ORIGINS).
+# The defaults below are intentionally unsuitable for production. Do not try to
+# make this file production-ready by adding secrets to a neighbouring .env.
 # =============================================================================
 
 name: brerc-dashboard
@@ -54,7 +63,8 @@ services:
   api:
     build: ./api
     environment:
-      APP_ENV: ${APP_ENV:-prod}
+      # This obsolete local stack must never select the production contract.
+      APP_ENV: ${APP_ENV:-dev}
       DATABASE_URL: postgresql://brerc_api_ro:${RO_PASSWORD:-brerc_ro_2026}@db:5432/brerc_ui
       # Same-origin through the proxy, so this is the origin the browser uses.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}

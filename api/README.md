@@ -113,4 +113,7 @@ it there and drop the suffix.
   least-privilege deployment, safe operation and scale limitations.
 - 🔄 [Full-snapshot refresh](../docs/FULL_SNAPSHOT_REFRESH.md) — first load,
   changed refresh, API/browser verification and external acceptance gates.
+- 🛠️ [Production serving](../deploy/production/README.md) — API-only
+  artifact, libpq service-mode credentials, hardened Linux service and
+  same-origin reverse proxy.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).

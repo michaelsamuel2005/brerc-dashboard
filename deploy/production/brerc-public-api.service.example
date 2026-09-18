@@ -1,0 +1,67 @@
+# EXAMPLE ONLY. This is deliberately not an installed or enabled systemd unit.
+# Render the immutable artifact ID, review the exact file on the target Linux
+# host, and follow README.md before copying it into /etc/systemd/system.
+
+[Unit]
+Description=BRERC read-only public publication API
+Wants=network-online.target
+After=network-online.target
+AssertFileIsExecutable=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/api-runtime/venv/bin/uvicorn
+AssertFileNotEmpty=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/api-runtime/app/main.py
+AssertFileNotEmpty=/etc/brerc/production/api/public-api.env
+AssertFileNotEmpty=/etc/brerc/production/api/pg_service.conf
+AssertFileNotEmpty=/etc/brerc/production/api/api.pgpass
+AssertFileNotEmpty=/etc/brerc/production/api/postgres-ca.pem
+
+[Service]
+Type=simple
+User=brerc-api
+Group=brerc-api
+UMask=0077
+WorkingDirectory=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/api-runtime
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=APP_ENV=prod
+EnvironmentFile=/etc/brerc/production/api/public-api.env
+UnsetEnvironment=PGPASSWORD DATABASE_URL
+ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/api-runtime/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log --no-server-header --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=45s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brerc-public-api
+
+# The public service receives only the API-only artifact. The ETL, source
+# connector, loader, migrations and repository root must not be present in its
+# runtime directory or import path.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/brerc/production /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/api-runtime
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RemoveIPC=true
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

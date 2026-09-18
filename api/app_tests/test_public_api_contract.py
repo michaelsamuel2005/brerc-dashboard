@@ -1,7 +1,7 @@
 """Live contract checks against an active publication-store release.
 
-Run with ``BRERC_API_INTEGRATION=1`` and ``DATABASE_URL`` set to the
-``brerc_api`` read-only role. The default skip keeps ordinary unit CI
+Run with ``BRERC_API_INTEGRATION=1`` and the reviewed API connection variables
+set to the ``brerc_api`` read-only role. The default skip keeps ordinary unit CI
 independent of a database while retaining a production-shaped acceptance test.
 """
 

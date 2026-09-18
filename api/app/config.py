@@ -14,9 +14,18 @@ from dotenv import load_dotenv
 # Load api/.env (if present) BEFORE reading any setting below.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# "dev" (default) or "prod". Controls whether /docs is exposed and how strict
-# CORS is. Set APP_ENV=prod in the production .env.
-APP_ENV = os.getenv("APP_ENV", "dev").lower()
+
+# "dev" (default) or "prod". Controls whether /docs is exposed, how strict
+# CORS is and whether the database must use the production service/identity
+# path. An unknown value must not silently select the less restrictive mode.
+def _validated_app_environment() -> str:
+    value = os.getenv("APP_ENV", "dev").strip().lower()
+    if value not in {"dev", "prod"}:
+        raise RuntimeError("APP_ENV must be exactly 'dev' or 'prod'")
+    return value
+
+
+APP_ENV = _validated_app_environment()
 IS_PROD = APP_ENV == "prod"
 
 # Database credentials are resolved fail-closed in app/db.py. Keep that logic

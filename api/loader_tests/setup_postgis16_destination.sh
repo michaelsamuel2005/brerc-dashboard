@@ -114,6 +114,22 @@ printf '%s\n' \
   'user=brerc_release_loader_test' \
   'sslmode=disable' \
   'application_name=service-file-value-must-not-win' \
+  '' \
+  '[synthetic_api]' \
+  'host=localhost' \
+  'port=5432' \
+  'dbname=brerc_ui_integration' \
+  'user=brerc_api_test' \
+  'sslmode=disable' \
+  'application_name=service-file-value-must-not-win' \
+  '' \
+  '[synthetic_monitor]' \
+  'host=localhost' \
+  'port=5432' \
+  'dbname=brerc_ui_integration' \
+  'user=brerc_monitor_test' \
+  'sslmode=disable' \
+  'application_name=service-file-value-must-not-win' \
   > "$output_directory/pg_service.conf"
 chmod 600 "$output_directory/pg_service.conf"
 

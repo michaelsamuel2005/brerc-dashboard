@@ -1,8 +1,15 @@
-# Reverse proxy — serves the whole dashboard from ONE origin (B9).
+# LEGACY LOCAL PLACEHOLDER ONLY — NOT A PRODUCTION REVERSE PROXY.
+#
+# This file does not serve the React build, routes to the obsolete Martin demo,
+# and has no reviewed production TLS/security configuration. Keep it only for
+# the historical root docker-compose.yml demo. The reviewed production nginx
+# examples and validation procedure are under deploy/production/.
+#
+# Reverse proxy — serves the historical demo from ONE origin (B9).
 # Everything is reached through http://localhost:8080, so the browser sees a
 # single site (no cross-origin problems) — the "same-origin behind a reverse
-# proxy" shape from the architecture decision. In production Caddy also gets
-# free automatic HTTPS by using a real domain instead of :80.
+# proxy" shape from the architecture decision. This does not constitute the
+# reviewed production deployment.
 
 :80 {
 	# The read-only API, e.g.  /api/health , /api/species
