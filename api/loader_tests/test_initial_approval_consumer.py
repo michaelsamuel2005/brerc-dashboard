@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "deploy" / "initial" / "consume_initial_approval.py"
 

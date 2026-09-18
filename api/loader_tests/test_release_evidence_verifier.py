@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY / "deploy" / "validation" / "verify_release_evidence.py"
 
@@ -251,9 +250,7 @@ class ReleaseEvidenceVerifierTests(unittest.TestCase):
             (True, RELEASE_ID, RELEASE_ID),
         ):
             with self.subTest(reused=reused):
-                self.loader_result.update(
-                    {"mode": "refresh", "reusedActiveRelease": reused}
-                )
+                self.loader_result.update({"mode": "refresh", "reusedActiveRelease": reused})
                 self.database_result.update(
                     {
                         "loadMode": "refresh",
