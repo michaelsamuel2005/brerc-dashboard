@@ -95,17 +95,18 @@ Do not set `VITE_USE_REAL_API` or `VITE_A11Y_TEST_MODE` for the production
 build. The current source build requests CARTO Voyager tiles from
 `https://basemaps.cartocdn.com`; this is code, not an operator-selectable
 environment setting. If BRERC instead approves a self-hosted basemap or no
-basemap, implement that as a reviewed frontend change and repeat every build,
-privacy, CSP and browser gate before creating the artifact. Do not try to
-change the provider only in nginx. Record the approved origin without
-credentials. Copy only `web/dist/` into the immutable web artifact; never
-deploy Vite's development or preview server.
+basemap, implement that as a reviewed frontend change and, for self-hosted
+tiles, a reviewed serving/proxy change; then repeat every build, privacy, CSP
+and browser gate before creating the artifact. Do not try to change the
+provider only in nginx. Record the approved origin without credentials, or
+record `NONE` for an approved no-basemap build. Copy only `web/dist/` into the
+immutable web artifact; never deploy Vite's development or preview server.
 
 The public nginx example deliberately contains the unresolved
 `REPLACE_WITH_APPROVED_BASEMAP_ORIGIN` CSP token. Resolve it only after the
-CARTO-versus-self-hosted basemap decision is approved: use the one exact
-HTTPS origin when a third-party basemap is approved, or `'self'` when all
-basemap resources are served by the public dashboard origin. Do not replace it
+CARTO/self-hosted/no-basemap decision is approved: use the one exact HTTPS
+origin when a third-party basemap is approved, or `'self'` when all basemap
+resources are served by the public dashboard origin. Do not replace it
 with `https:`, `*` or a wildcard. The origin is permitted only by `img-src` and
 `connect-src`; every other resource remains same-origin (apart from the fixed
 `data:`/`blob:` allowances needed by the built UI). If the approved decision is

@@ -38,7 +38,7 @@
 - No unexpected drop-ins (`systemd-delta` reviewed): `PASS / FAIL`
 - Environment files cannot override fixed production modes/DB path: `PASS / FAIL`
 - Complete nginx candidate passed `nginx -t`: `PASS / FAIL`
-- Basemap/CSP decision reference and exact approved origin retained: `PASS / FAIL`
+- Basemap/CSP decision reference and exact approved origin (or `NONE`) retained: `PASS / FAIL`
 - Built frontend implementation matches that basemap decision: `PASS / FAIL`
 - CSP basemap placeholder resolved only in `img-src`/`connect-src`: `PASS / FAIL`
 - Root Compose/Caddy/legacy schema absent from deployment: `PASS / FAIL`
@@ -97,7 +97,7 @@ Failure invocation/run reference: `TBD`
 - Mocks-disabled browser acceptance passed: `PASS / FAIL`
 - Security/cache headers reviewed: `PASS / FAIL`
 - Browser CSP report has zero violations across every route/map: `PASS / FAIL`
-- Observed basemap origin matches the approved CARTO/self-host decision: `PASS / FAIL`
+- Observed basemap behaviour and, where applicable, origin matches the approved CARTO/self-hosted/no-basemap decision: `PASS / FAIL`
 - Private run-history authentication positive/negative tests passed: `PASS / FAIL`
 - Run-history showed the same PostgreSQL-backed loader runs: `PASS / FAIL`
 - Service restart and controlled host reboot checks passed: `PASS / FAIL`

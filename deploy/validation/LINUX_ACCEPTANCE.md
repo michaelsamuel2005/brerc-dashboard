@@ -45,14 +45,17 @@ Record without secrets or private endpoint values:
 Render every `REPLACE_WITH_APPROVED_ARTIFACT_ID` token to one immutable
 `/opt/brerc-dashboard/releases/<id>` directory. Reject any unresolved token,
 path through `current`, symlinked executable or group/world-writable code.
-Render `REPLACE_WITH_APPROVED_BASEMAP_ORIGIN` to the exact HTTPS origin from the
-approved CARTO/self-hosted decision (`'self'` for same-origin resources). Reject
-`https:`, `*`, wildcards, an unapproved origin or an unresolved token. The
-origin may appear only in the CSP's `img-src` and `connect-src` directives.
-The current frontend source uses CARTO Voyager directly. A self-hosted or
-no-basemap decision therefore requires a reviewed frontend commit and a new
-artifact; changing only this CSP token is not an implementation of that
-decision.
+For an approved CARTO or self-hosted decision, render
+`REPLACE_WITH_APPROVED_BASEMAP_ORIGIN` to the exact HTTPS origin (`'self'` for
+same-origin resources). For an approved no-basemap build, remove the token and
+record the approved origin as `NONE`. Reject `https:`, `*`, wildcards, an
+unapproved origin or an unresolved token. Any retained origin may appear only
+in the CSP's `img-src` and `connect-src` directives. The current frontend
+source uses CARTO Voyager directly. A self-hosted or no-basemap decision
+therefore requires a reviewed frontend commit and a new artifact; self-hosting
+also requires a reviewed serving/proxy change because the supplied nginx
+baseline rejects `/tiles`. Changing only the CSP token is not an implementation
+of either decision.
 
 Before installation, and again against the installed files, run:
 
