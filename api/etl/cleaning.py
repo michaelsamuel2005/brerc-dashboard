@@ -1,4 +1,10 @@
-"""Exploratory helpers. NOT part of the safety boundary.
+"""Exploratory helpers. NOT the safety boundary and NOT on the live nightly path.
+
+The nightly cleaning step that runs today is etl/profiling/cleaning.py (pandas,
+via etl.job -> etl.nightly_pipeline). This module is its stdlib namesake in name
+only: it is outside the scripts/guard_stdlib_only.py boundary set, and nothing on
+either path imports it. The column-name standardisation the live step performs
+is replaced in the publication core by the explicit ColumnMap in pipeline.py.
 
 The original `clean_data()` printed a dataframe summary and returned the frame
 unchanged - useful for looking at a new extract, but it performed no cleaning, so

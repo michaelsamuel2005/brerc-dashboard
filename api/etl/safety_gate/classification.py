@@ -1,4 +1,10 @@
 """
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline ->
+etl.reconciliation.reconcile, which imports classify_chunk. Being superseded by
+etl/sensitivity.py (publication core), where the taxon and record-type rules
+take their resolutions from etl/policy.py. Do not add safety logic here; change
+etl/sensitivity.py and keep this file behaviour-frozen.
+
 Classifies occurrence records for sensitivity by evaluating species lists, 
 unresolved entries, record types, and source flags, and assigns appropriate 
 spatial blurring resolutions.

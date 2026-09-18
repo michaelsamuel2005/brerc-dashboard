@@ -31,6 +31,28 @@ can coexist without making a false package-wide dependency claim.
 | `cleaning.py` | Exploratory only — **not** the boundary |
 | `filtering.py` | Superseded shim; raises rather than reverting to drop semantics |
 
+### Live nightly path vs publication core
+
+Two implementations of the same safety steps sit side by side in this package. The
+**live path is unchanged by this PR**: `etl.job` runs `etl.nightly_pipeline`, which uses the
+pandas modules in the left-hand column (directly, or through `etl.reconciliation.reconcile`
+and `etl.aggregation.counts`). The publication core in the right-hand column is imported by
+nothing on that path today; it **becomes the authority when the trusted connector and atomic
+loader ports (later PRs) wire it in**. Until then the old set is retained, behaviour-frozen,
+and **must not receive new safety logic** — change the publication core instead. Each module's
+docstring opens with the same marker (`LIVE NIGHTLY PATH`, `PUBLICATION CORE`, `DEAD
+DUPLICATE`), so `grep` finds the status without opening the file.
+
+| Live today (pandas, via `etl.nightly_pipeline`) | Publication core (stdlib, this port) | Status |
+|---|---|---|
+| `profiling/cleaning.py` | `cleaning.py` (exploratory only); the column-name step is replaced by `pipeline.ColumnMap` | Live; superseded by the explicit column mapping |
+| `matching/species.py` | `species.py` | Live; superseded |
+| `safety_gate/classification.py` | `sensitivity.py` (resolutions from `policy.py`) | Live; superseded |
+| `aggregation/counts.py` | `aggregate.py` | Live; superseded |
+| `safety_gate/location.py` | `gridref.py` | Live; superseded |
+| `aggregation/cell_filtering.py` | `filtering.py` is itself a superseded shim; verified-status selection is `contract.normalise_verified` against `PublicationPolicy.accepted_verification_values`, applied in `pipeline.py` | Live; superseded |
+| `profiling/classify.py` | — (older copy of `safety_gate/classification.py`) | Dead: on no path, imported only by `etl/tests/profiling/test_classify.py`; kept until those tests are retired |
+
 ## The policy object is the point
 
 Every decision that changes what the public can see lives on `PublicationPolicy`, not in
