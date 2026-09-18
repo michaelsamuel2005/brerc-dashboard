@@ -177,10 +177,14 @@ established by the dictionary join, and `unknown_species_action` decides — `"w
 `"coarsest"`. There is deliberately **no `"ordinary"` option**, and `validate()` rejects one.
 
 **9. A negated acceptance was read as accepted.** `"Not accepted"` contains `"accept"` and no
-`"reject"`. Against the 63-case shared corpus the old client function produced **10 false
-accepts** and returned `"unknown"` for 26 legible verdicts. Both implementations now test
-negation before acceptance; `api/tests/test_verified_parity.py` and `web/src/lib/api/verified.test.ts`
-pin the identical corpus.
+`"reject"`, and the same trap exists for every other word that reads as acceptance: `"Not
+valid"`, `"never correct"`, `"not determined"`. Against the original 63-case corpus a substring
+check produced **10 false accepts** and returned `"unknown"` for 26 legible verdicts.
+`normalise_verified` in `contract.py` now tests negation before acceptance for the whole
+vocabulary, and `api/tests/test_verified_parity.py` pins a 121-case corpus. On this branch the
+client (`web/src/lib/api/schemas.ts`) still uses the substring check; the full-dashboard web
+port that follows replaces it and adds `web/src/lib/api/verified.test.ts`, which must pin the
+same corpus.
 
 **10. `pageSize` could be 0.** `RecordPageSchema.pageSize` is `z.number().int().positive()`,
 and an earlier `build_payloads` used `len(records)` — so an empty result set failed client
