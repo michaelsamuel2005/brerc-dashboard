@@ -27,7 +27,7 @@ export function App() {
         </div>
       </header>
 
-      <main id="main">
+      <main id="main" className="explore-page">
         <span className="eyebrow">Distribution</span>
         <h1 className="page-title">Where wildlife has been recorded</h1>
         <p className="page-lead">
