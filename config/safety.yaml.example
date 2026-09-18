@@ -31,18 +31,29 @@ destination:
   schema: public
   table: occurrence_public
 
-# Public API's read-only connection (api/app/db.py). Deliberately its own
-# block, separate from 'destination' above: the API must connect with a
-# read-only-granted role (brerc_api_ro), never the ETL's write credentials.
-# Sharing 'destination' here would mean the "read-only" API silently starts
-# writing on any host where safety.yaml wins over DATABASE_URL.
+# Public API's read-only connection (api/app/db.py).
+#
+# OPTIONAL — most setups leave this commented out. The API normally takes its
+# connection from DATABASE_URL in api/.env, and always does under Docker: the
+# API image copies only app/, so this file is not present there at all. The
+# ETL never reads this block. Uncomment it only if you run the API straight
+# from the repo and would rather keep its credentials here than in api/.env.
+#
+# If you do uncomment it, set BOTH user and password, or neither. A half-filled
+# block raises "The api_readonly block is incomplete" rather than falling back
+# to DATABASE_URL.
+#
+# Deliberately its own block, separate from 'destination' above: the API must
+# connect with a read-only-granted role (brerc_api_ro), never the ETL's write
+# credentials. Sharing 'destination' here would mean the "read-only" API
+# silently starts writing on any host where safety.yaml wins over DATABASE_URL.
 
-api_readonly:
-  dbhostname:
-  port:
-  dbname:
-  user:
-  password:
+# api_readonly:
+#   dbhostname:
+#   port:
+#   dbname:
+#   user:
+#   password:
 
 # Admin database connection. Set dbhostname, dbname, user and password together.
 # Used only for schema-mutating operations such as full rebuilds.
