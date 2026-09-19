@@ -1,4 +1,14 @@
-"""SUPERSEDED by `sensitivity.py`. Importing the old behaviour now fails loudly.
+"""PUBLICATION CORE shim, SUPERSEDED by sensitivity.py; NOT on the live nightly path.
+
+Calling the old function now fails loudly. The import itself still succeeds, so
+scripts/guard_stdlib_only.py can keep this file inside its boundary set.
+
+The filter that runs today is etl/aggregation/cell_filtering.py (pandas, via
+etl.job -> etl.nightly_pipeline through etl.reconciliation.reconcile and
+etl.aggregation.counts). It selects by verification status, which the
+publication core carries in etl/contract.py (`normalise_verified`) against
+`PublicationPolicy.accepted_verification_values`, applied in etl/pipeline.py.
+This shim replaces nothing on that path.
 
 WHAT THIS MODULE USED TO DO, AND WHY IT WAS REPLACED
 ----------------------------------------------------

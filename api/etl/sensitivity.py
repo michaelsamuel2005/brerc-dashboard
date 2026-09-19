@@ -1,4 +1,12 @@
-"""The sensitive-species gate: generalise, never silently drop.
+"""PUBLICATION CORE — stdlib safety boundary; NOT yet on the live nightly path.
+
+The sensitive-species gate: generalise, never silently drop.
+
+The sensitivity classifier that runs today is etl/safety_gate/classification.py
+(pandas, via etl.job -> etl.nightly_pipeline -> etl.reconciliation.reconcile).
+This module becomes the authority when the trusted connector and atomic loader
+ports (later PRs) wire etl/pipeline.py in. Until then the pandas module is
+retained, behaviour-frozen.
 
 WHAT CHANGED AND WHY
 --------------------

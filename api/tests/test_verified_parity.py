@@ -1,16 +1,22 @@
 """`verified` verdict classification - the shared corpus.
 
-This table is duplicated, case for case, in web/src/lib/api/verified.test.ts.
-The server normalises before sending and the client normalises again, so the two
-implementations must agree exactly or the same record reads differently depending
-on which side you ask. If you change one table, change the other.
+The full-dashboard web port that follows this PR adds
+web/src/lib/api/verified.test.ts, which must duplicate this table case for case
+against a normaliseVerified() that mirrors etl.contract. On this branch
+web/src/lib/api/schemas.ts still classifies with a plain substring check, so
+there is no client twin to keep in step with YET.
+Once it lands, the server normalises before sending and the client normalises
+again, so the two implementations must agree exactly or the same record reads
+differently depending on which side you ask. If you change one table, change
+the other.
 
 The distinction both must get right:
 
-    negating ACCEPTANCE   -> a rejection      ("not accepted", "unaccepted")
-    negating VERIFICATION -> not yet done     ("not verified", "unconfirmed")
+    negating a determination's OUTCOME     -> a rejection   ("not accepted", "not valid")
+    negating that a determination HAPPENED -> not yet done  ("not verified", "not determined")
 
-A substring search reverses the first case: "Not accepted" contains "accept".
+A substring search reverses the first case: "Not accepted" contains "accept",
+"Not valid" contains "valid", "never correct" contains "correct".
 """
 
 import re
@@ -18,7 +24,9 @@ import unittest
 
 from etl.contract import normalise_verified
 
-#: Negating ACCEPTANCE is a rejection. This is the case a substring search inverts.
+#: Negating an OUTCOME word (accept*, correct, valid) is a rejection. This is the
+#: case a substring search inverts - for every one of those words, not only
+#: "accept".
 NEGATED_ACCEPTANCE = [
     ("Not accepted", "rejected"),
     ("not accepted", "rejected"),
@@ -30,6 +38,31 @@ NEGATED_ACCEPTANCE = [
     ("non-accepted", "rejected"),
     ("disaccepted", "rejected"),
     ("verified - not accepted", "rejected"),
+    # The other outcome words, raised in review: these used to read as accepted.
+    ("Not valid", "rejected"),
+    ("NOT VALID", "rejected"),
+    ("not correct", "rejected"),
+    ("never correct", "rejected"),
+    ("non-valid", "rejected"),
+    ("un–accepted", "rejected"),  # en dash
+    ("not a valid record", "rejected"),
+    ("not considered correct", "rejected"),
+    ("has never been correct", "rejected"),
+    ("hasn't been accepted", "rejected"),
+    ("wasn’t valid", "rejected"),  # curly apostrophe
+    ("not correct determination", "rejected"),  # binds to "correct", not "determination"
+    ("Accepted but not correct", "rejected"),
+    # Negations other than "not"/"never": these used to read as accepted too.
+    ("cannot be accepted", "rejected"),  # one word - \bnot\b never sees it
+    ("Cannot accept", "rejected"),
+    ("can't accept", "rejected"),
+    ("No accepted determination", "rejected"),
+    ("no valid determination", "rejected"),
+    ("no acceptance", "rejected"),
+    ("None accepted", "rejected"),
+    # The adverb is the same word: the negation binds to it, not to "determined".
+    ("Not correctly determined", "rejected"),
+    ("not validly determined", "rejected"),
 ]
 
 REJECTED = [
@@ -43,9 +76,15 @@ REJECTED = [
     ("Invalid record", "rejected"),
     ("Erroneous", "rejected"),
     ("Accepted then rejected", "rejected"),
+    ("not correct - rejected", "rejected"),
+    ("not correct – rejected", "rejected"),
+    ("in-valid", "rejected"),
+    ("incorrectly determined", "rejected"),
+    ("Incorrectly identified", "rejected"),
 ]
 
-#: Negating VERIFICATION means it has not been done yet - not that it failed.
+#: Negating that a determination HAPPENED means it has not been done yet - not
+#: that it failed. "not determined" belongs here, not with the rejections.
 UNCONFIRMED = [
     ("Unconfirmed", "unconfirmed"),
     ("unconfirmed record", "unconfirmed"),
@@ -71,6 +110,30 @@ UNCONFIRMED = [
     ("to be verified", "unconfirmed"),
     ("to be confirmed", "unconfirmed"),
     ("unconfirmed but accepted", "unconfirmed"),
+    # A negated determination, raised in review: "determined" used to read as accepted.
+    ("not determined", "unconfirmed"),
+    ("Not determined", "unconfirmed"),
+    ("undetermined", "unconfirmed"),
+    ("Undetermined", "unconfirmed"),
+    ("un-determined", "unconfirmed"),
+    ("never determined", "unconfirmed"),
+    ("has not been determined", "unconfirmed"),
+    ("not yet determined", "unconfirmed"),
+    ("not yet accepted", "unconfirmed"),
+    ("hasn't yet been verified", "unconfirmed"),
+    ("Indeterminate", "unconfirmed"),
+    ("disconfirmed", "unconfirmed"),
+    ("non-verified", "unconfirmed"),
+    ("Not valid – awaiting verification", "unconfirmed"),
+    ("not verified but accepted", "unconfirmed"),
+    # Negations other than "not"/"never" in front of a PROCESS word.
+    ("cannot be verified", "unconfirmed"),
+    ("cannot be confirmed", "unconfirmed"),
+    ("Cannot be determined", "unconfirmed"),
+    ("no confirmed identification", "unconfirmed"),
+    ("None verified", "unconfirmed"),
+    ("without being verified", "unconfirmed"),
+    ("without verification", "unconfirmed"),
 ]
 
 ACCEPTED = [
@@ -84,6 +147,12 @@ ACCEPTED = [
     ("Correct", "accepted"),
     ("Valid", "accepted"),
     ("Determined", "accepted"),
+    # A negation of something that is not a determination word negates nothing.
+    ("Accepted – not a duplicate", "accepted"),
+    ("Accepted – no comment", "accepted"),
+    ("Accepted without comment", "accepted"),
+    ("Determined by expert", "accepted"),
+    ("Correctly determined", "accepted"),
 ]
 
 #: Real BRERC data contains values a parser cannot read. They must not count.
@@ -97,11 +166,26 @@ UNKNOWN = [
     ("n/a", "unknown"),
     ("?", "unknown"),
     ("unknown", "unknown"),
+    ("not a duplicate", "unknown"),
+    ("none", "unknown"),
+    ("Cannot say", "unknown"),
+    ("no further action", "unknown"),
 ]
 
 ALL = NEGATED_ACCEPTANCE + REJECTED + UNCONFIRMED + ACCEPTED + UNKNOWN
 
-_NEGATED = re.compile(r"\b(?:not|non|never|un|dis)[\s-]*(?:been[\s-]+)?accept", re.IGNORECASE)
+#: Deliberately independent of, and laxer than, the patterns in etl.contract:
+#: ANY negation within two words of ANY word that reads as a determination.
+#: If the implementation ever lets one of these through as "accepted", this
+#: net catches it whatever the per-list expectation says.
+_STEM = r"(?:accept|correct|valid|verif|confirm|check|determin)"
+_NEGATED = re.compile(
+    r"(?:\b(?:not|never|no|none|cannot|without)\b|n['’]t)[\s\-–—]*(?:\w+\s+){0,2}"
+    + _STEM
+    + r"|\b(?:un|non|dis|in)[\s\-–—]*"
+    + _STEM,
+    re.IGNORECASE,
+)
 
 
 class TestVerifiedCorpus(unittest.TestCase):
@@ -130,17 +214,20 @@ class TestVerifiedCorpus(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(normalise_verified(raw), want)
 
-    def test_the_corpus_is_the_size_the_client_table_declares(self):
-        self.assertEqual(len(ALL), 63)
+    def test_the_corpus_size_is_pinned(self):
+        # The client twin (web/src/lib/api/verified.test.ts, arriving with the
+        # web port) must declare the same length. Update both together.
+        self.assertEqual(len(ALL), 121)
 
-    def test_nothing_carrying_a_negated_acceptance_is_ever_accepted(self):
+    def test_nothing_carrying_a_negation_is_ever_accepted(self):
         # The single property that matters: a public map claims a verified record
         # has been checked by somebody. Reading a turned-down record as verified
         # breaks that claim, so it is asserted as a property, not case by case.
-        for raw, _ in ALL:
-            if _NEGATED.search(raw):
-                with self.subTest(raw=raw):
-                    self.assertNotEqual(normalise_verified(raw), "accepted")
+        negated = [raw for raw, _ in ALL if _NEGATED.search(raw)]
+        self.assertGreater(len(negated), 40, "the net is not catching the corpus")
+        for raw in negated:
+            with self.subTest(raw=raw):
+                self.assertNotEqual(normalise_verified(raw), "accepted")
 
     def test_non_string_values_degrade_rather_than_raising(self):
         for value in (None, 42, 3.5, True, [], {}):

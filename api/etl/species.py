@@ -1,4 +1,11 @@
-"""Resolve a scientific name to a BRERC species number and its sensitivity.
+"""PUBLICATION CORE — stdlib safety boundary; NOT yet on the live nightly path.
+
+Resolve a scientific name to a BRERC species number and its sensitivity.
+
+The species resolution that runs today is etl/matching/species.py (pandas, via
+etl.job -> etl.nightly_pipeline). This module becomes the authority when the
+trusted connector and atomic loader ports (later PRs) wire etl/pipeline.py in.
+Until then the pandas module is retained, behaviour-frozen.
 
 WHY THIS IS ARCHITECTURALLY REQUIRED
 ------------------------------------

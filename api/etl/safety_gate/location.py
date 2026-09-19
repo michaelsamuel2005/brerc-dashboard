@@ -1,4 +1,10 @@
 """
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline, through
+etl.aggregation.counts and etl.safety_gate.public_output (both import
+os_grid_square). Being superseded by etl/gridref.py (publication core), which
+parses and coarsens references without OSGridConverter. Do not add safety logic
+here; change etl/gridref.py and keep this file behaviour-frozen.
+
 Converts British National Grid easting and northing coordinates into OS National Grid 
 reference strings truncated to specific square sizes (10km, 1km, 100m), 
 and builds privacy-compliant coarse localities for public reporting.

@@ -1,4 +1,12 @@
 """
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline, which imports
+this module directly (so do etl.reconciliation.streaming and
+etl.safety_gate.rules). Being superseded by the publication core: etl/cleaning.py
+is its stdlib namesake (exploratory only), and the column-name standardisation
+done here is replaced by the explicit ColumnMap in etl/pipeline.py. Do not add
+safety logic here; change the publication core and keep this file
+behaviour-frozen.
+
 Cleans raw input dataframes by standardising column names 
 (stripping whitespace, lowering case, and replacing spaces with underscores).
 """
