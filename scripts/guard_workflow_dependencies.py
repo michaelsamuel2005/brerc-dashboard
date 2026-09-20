@@ -16,6 +16,7 @@ from pathlib import Path
 
 WORKFLOW_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     ".github/workflows/ci.yml": (
+        "Caddyfile",
         "api/.dockerignore",
         "api/Dockerfile",
         "api/LICENSE",
@@ -51,6 +52,8 @@ WORKFLOW_DEPENDENCIES: dict[str, tuple[str, ...]] = {
         "db/b7_tiles.sql",
         "db/migrations/0001_publication_store.sql",
         "db/roles.sql",
+        "docker-compose.yml",
+        "docs/PUBLIC_SERVING_ARCHITECTURE.md",
         "scripts/guard_no_data_files.py",
         "scripts/guard_workflow_dependencies.py",
         "scripts/test_guard_no_data_files.py",
@@ -72,6 +75,7 @@ WORKFLOW_DEPENDENCIES: dict[str, tuple[str, ...]] = {
         "web/scripts/guard-bundle.mjs",
         "web/scripts/guard-forbidden.mjs",
         "web/src",
+        "web/src/lib/api/endpoints.ts",
         "web/tsconfig.a11y.json",
         "web/tsconfig.json",
         "web/vite.config.ts",

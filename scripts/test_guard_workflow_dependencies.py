@@ -24,8 +24,12 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/loader_tests/test_postgis16_destination_integration.py",
                 "api/loader_tests/setup_postgis16_destination.sh",
                 "api/loader_tests/setup_postgres16_e2e_source.sh",
+                "Caddyfile",
                 "db/migrations/0001_publication_store.sql",
                 "db/roles.sql",
+                "docker-compose.yml",
+                "docs/PUBLIC_SERVING_ARCHITECTURE.md",
+                "web/src/lib/api/endpoints.ts",
             }.issubset(dependencies)
         )
         self.assertTrue(

@@ -191,12 +191,50 @@ check(
     "Alcedo atthis has no records and should not appear",
 )
 
+# vitality/abundance/sex_stage are supplied by the source (see e2e_source_mock.sql)
+# but are not in PUBLIC_COLUMNS (api/etl/safety_gate/public_output.py). Check this
+# structurally against the BASE table, not just the public view: if it holds here,
+# it cannot leak through any view built on top of it either.
+base_columns = {
+    r["column_name"]
+    for r in query(
+        url_for(UI_DB),
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'occurrence_public';",
+    )
+}
+leaked_columns = {"vitality", "abundance", "sex_stage"} & base_columns
+check(
+    "vitality/abundance/sex_stage have no column in the destination base table",
+    not leaked_columns,
+    f"found: {leaked_columns}",
+)
+
 # ---------------------------------------------------------------------------
 # STEPS 8-9: new records, then the incremental load
 # ---------------------------------------------------------------------------
 step("8 & 9", "Add new records, then run the incremental load")
 before = len(records)
+
+# content_hash is computed FROM reconciliation.hash_columns, which includes
+# vitality/abundance/sex_stage (config/safety.yaml). It is stored on the base
+# table (db/b6_schema.sql) precisely so a change to one of these non-public
+# fields is still provably detected, even though the raw values never reach
+# the destination themselves. Capture R001's hash before mutating it.
+r001_hash_before = query(
+    url_for(UI_DB), "SELECT content_hash FROM occurrence_public WHERE record_id = 'R001';"
+)[0]["content_hash"]
+
 with psycopg.connect(url_for(SOURCE_DB), autocommit=True) as conn:
+    # Change ONLY a non-public field on an existing record, with a fresh
+    # date_mdb_modified so it falls inside the incremental window. Nothing
+    # publicly visible about R001 changes — this isolates whether
+    # vitality/abundance/sex_stage genuinely feed the change-detection hash,
+    # as opposed to being dead configuration.
+    conn.execute(
+        "UPDATE brerc_source.occurrences SET abundance = '99', "
+        "date_mdb_modified = NOW() WHERE unique_no = 'R001';"
+    )
     for i in range(1, 13):
         conn.execute(
             """
@@ -240,6 +278,19 @@ check(
     "still no forbidden columns after the incremental load",
     not ({"recorder1", "comments", "eastings", "northings"} & set(after_rows[0]))
     if after_rows else False,
+)
+
+# Prove the abundance-only change on R001 was actually picked up: the record
+# stayed within the incremental window (fresh date_mdb_modified) and its
+# stored content_hash — built from hash_columns, including abundance — must
+# now differ, even though abundance itself never reaches this table.
+r001_hash_after = query(
+    url_for(UI_DB), "SELECT content_hash FROM occurrence_public WHERE record_id = 'R001';"
+)[0]["content_hash"]
+check(
+    "R001's abundance-only change was picked up (content_hash changed)",
+    r001_hash_after != r001_hash_before,
+    f"hash unchanged: {r001_hash_after!r}",
 )
 
 # ---------------------------------------------------------------------------
