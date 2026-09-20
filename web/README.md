@@ -24,6 +24,13 @@ npm run build        # production build
 npm run e2e:install && npm run e2e   # browser: WebGL, keyboard, bidirectional sync, axe
 ```
 
+The browser suite's deterministic accessibility scenarios use synthetic MSW data. They
+do not replace the named manual review or the mocks-disabled deployed-build check. See
+the [accessibility release evidence procedure](../docs/ACCESSIBILITY_RELEASE_EVIDENCE.md)
+before approving a release. `npm run a11y:freeze` creates the exact-build evidence
+manifest after a clean production build and requires the deployed SHA, HTTPS URL and
+reviewed configuration inputs.
+
 ## What's here — P0–P3 (slice 1)
 **P0/P1:** strict TS, accessible shell, design tokens (AA), ESLint + `jsx-a11y`, the `guard`
 script, CI (`.github/workflows/ci.yml`); the `lib/api` Zod contract (single source of truth),

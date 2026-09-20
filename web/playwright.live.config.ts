@@ -5,7 +5,8 @@ const CI = process.env["CI"] === "true";
 
 // The workflow owns the real PostGIS-backed API and the production Vite preview.
 // Playwright deliberately starts neither and never substitutes a browser-specific
-// executable path: the installed @playwright/test runtime selects its own Chromium.
+// executable path: the installed @playwright/test runtime selects the browser for each
+// project. All three engines exercise the same mocks-disabled build and live API contract.
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /live_integration\.spec\.ts/,
@@ -24,6 +25,14 @@ export default defineConfig({
     {
       name: "live-chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "live-firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "live-webkit",
+      use: { ...devices["Desktop Safari"] },
     },
   ],
 });

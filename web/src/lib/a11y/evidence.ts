@@ -47,11 +47,14 @@ export const MANUAL_GATE_IDS = [
 export type ManualGateId = (typeof MANUAL_GATE_IDS)[number];
 
 export interface ManualGateAttestation {
-  readonly outcome: 'pass' | 'fail' | 'not-applicable';
+  readonly outcome: 'pass' | 'fail';
   readonly reviewer: string;
   readonly date: string;
   readonly environment: string;
   readonly evidence: string;
+  readonly commitSha: string;
+  readonly releaseManifestSha256: string;
+  readonly deployedUrl: string;
 }
 
 export type ManualGateResults =
@@ -72,6 +75,11 @@ export interface RunContext {
   readonly cameraLabel: string;
   readonly dependencyVersions: Readonly<Record<string, string>>;
   readonly inputHashes: Readonly<Record<string, string>>;
+  /** Present only for a final run bound to the frozen deployed release manifest. */
+  readonly releaseTarget?: {
+    readonly releaseManifestSha256: string;
+    readonly deployedUrl: string;
+  };
 }
 
 export interface AutomatedCheckInput {
@@ -152,7 +160,10 @@ export interface EvidenceBundle {
    * explicitly models it; `not-assessed` never passes.
    */
   readonly automatedGatesPassed: boolean;
-  /** Final approval. Cannot become true until automated, ledger and manual gates pass. */
+  /**
+   * Approval of this deterministic state-matrix scope. Overall deployment approval also
+   * requires the separate mocks-disabled three-engine live acceptance and owner sign-off.
+   */
   readonly releaseGatesPassed: boolean;
 }
 
@@ -193,7 +204,8 @@ const passes = (gate: GateResult): boolean =>
 
 const manualGate = (
   id: ManualGateId,
-  attestation: ManualGateAttestation | undefined
+  attestation: ManualGateAttestation | undefined,
+  context: RunContext
 ): GateResult => {
   if (!attestation) {
     return {
@@ -203,9 +215,36 @@ const manualGate = (
   }
   const suffix =
     `Reviewer: ${attestation.reviewer}; date: ${attestation.date}; ` +
-    `environment: ${attestation.environment}; evidence: ${attestation.evidence}`;
-  if (attestation.outcome === 'not-applicable') {
-    return { status: 'not-applicable', detail: suffix };
+    `environment: ${attestation.environment}; evidence: ${attestation.evidence}; ` +
+    `commit: ${attestation.commitSha}; manifest: ${attestation.releaseManifestSha256}; ` +
+    `deployed URL: ${attestation.deployedUrl}`;
+  if (!context.treeClean) {
+    return {
+      status: 'fail',
+      detail: `${id}: manual approval cannot be attached to a dirty source tree. ${suffix}`
+    };
+  }
+  if (attestation.commitSha !== context.commitSha) {
+    return {
+      status: 'fail',
+      detail: `${id}: attestation commit does not match this run. ${suffix}`
+    };
+  }
+  if (!context.releaseTarget) {
+    return {
+      status: 'fail',
+      detail: `${id}: this run is not bound to a frozen deployed release target. ${suffix}`
+    };
+  }
+  if (
+    attestation.releaseManifestSha256 !==
+      context.releaseTarget.releaseManifestSha256 ||
+    attestation.deployedUrl !== context.releaseTarget.deployedUrl
+  ) {
+    return {
+      status: 'fail',
+      detail: `${id}: attestation target does not match this run's frozen release target. ${suffix}`
+    };
   }
   return {
     status: attestation.outcome,
@@ -290,7 +329,7 @@ export function buildEvidence(input: BuildEvidenceInput): EvidenceBundle {
   };
 
   const manual = Object.fromEntries(
-    MANUAL_GATE_IDS.map(id => [id, manualGate(id, input.manual?.[id])])
+    MANUAL_GATE_IDS.map(id => [id, manualGate(id, input.manual?.[id], input.context)])
   ) as unknown as Record<ManualGateId, GateResult>;
 
   const releaseGates = {
@@ -306,7 +345,7 @@ export function buildEvidence(input: BuildEvidenceInput): EvidenceBundle {
   const releaseGatesPassed =
     automatedGatesPassed &&
     passes(releaseGates.ledgerResolved) &&
-    Object.values(manual).every(passes);
+    Object.values(manual).every(gate => gate.status === 'pass');
 
   const automatedBlockers = Object.entries(automatedGates)
     .filter(([, gate]) => !passes(gate))

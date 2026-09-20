@@ -20,7 +20,24 @@ const nonEmpty = (value: unknown): value is string =>
 
 const isGate = (value: unknown): value is ManualGateId =>
   typeof value === 'string' &&
-  (MANUAL_GATE_IDS as readonly string[]).includes(value);
+    (MANUAL_GATE_IDS as readonly string[]).includes(value);
+
+const isCommitSha = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+
+const isSha256 = (value: unknown): value is string =>
+  typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' &&
+      url.username === '' && url.password === '' && url.hash === '';
+  } catch {
+    return false;
+  }
+}
 
 function validDate(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -58,7 +75,7 @@ export function parseManualGateFile(raw: unknown): ManualGateResults {
     const outcome = value['outcome'];
     const problems: string[] = [];
     if (!isGate(gate)) problems.push('invalid-gate');
-    if (outcome !== 'pass' && outcome !== 'fail' && outcome !== 'not-applicable') {
+    if (outcome !== 'pass' && outcome !== 'fail') {
       problems.push('invalid-outcome');
     }
     if (!nonEmpty(value['reviewer'])) problems.push('missing-reviewer');
@@ -67,6 +84,11 @@ export function parseManualGateFile(raw: unknown): ManualGateResults {
     if (!nonEmpty(value['evidence']) || value['evidence'].trim().length < 20) {
       problems.push('insufficient-evidence');
     }
+    if (!isCommitSha(value['commitSha'])) problems.push('invalid-commit-sha');
+    if (!isSha256(value['releaseManifestSha256'])) {
+      problems.push('invalid-release-manifest-sha256');
+    }
+    if (!isHttpsUrl(value['deployedUrl'])) problems.push('invalid-deployed-url');
     if (isGate(gate) && output[gate]) problems.push('duplicate-gate');
 
     if (problems.length > 0) {
@@ -75,15 +97,21 @@ export function parseManualGateFile(raw: unknown): ManualGateResults {
     }
 
     if (isGate(gate) &&
-        (outcome === 'pass' || outcome === 'fail' || outcome === 'not-applicable') &&
+        (outcome === 'pass' || outcome === 'fail') &&
         nonEmpty(value['reviewer']) && validDate(value['date']) &&
-        nonEmpty(value['environment']) && nonEmpty(value['evidence'])) {
+        nonEmpty(value['environment']) && nonEmpty(value['evidence']) &&
+        isCommitSha(value['commitSha']) &&
+        isSha256(value['releaseManifestSha256']) &&
+        isHttpsUrl(value['deployedUrl'])) {
       output[gate] = {
         outcome,
         reviewer: value['reviewer'],
         date: value['date'],
         environment: value['environment'],
-        evidence: value['evidence']
+        evidence: value['evidence'],
+        commitSha: value['commitSha'],
+        releaseManifestSha256: value['releaseManifestSha256'],
+        deployedUrl: value['deployedUrl']
       };
     }
   });

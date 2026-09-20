@@ -120,7 +120,7 @@ describe.each([
   it.each(TEXT)("$what reaches $min:1 (WCAG 1.4.3)", ({ fg, bg, min }) => {
     const ratio = contrast(tokens[fg]!, tokens[bg]!);
     expect(
-      Number(ratio.toFixed(2)),
+      ratio,
       `--${fg} (${tokens[fg]}) on --${bg} (${tokens[bg]}) is ${ratio.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(min);
   });
@@ -128,7 +128,7 @@ describe.each([
   it.each(NON_TEXT)("$what reaches $min:1 (WCAG 1.4.11)", ({ fg, bg, min }) => {
     const ratio = contrast(tokens[fg]!, tokens[bg]!);
     expect(
-      Number(ratio.toFixed(2)),
+      ratio,
       `--${fg} (${tokens[fg]}) on --${bg} (${tokens[bg]}) is ${ratio.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(min);
   });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
@@ -42,6 +42,12 @@ import {
 const BASE_URL = 'http://127.0.0.1:4173';
 const EVIDENCE_DIR = join(process.cwd(), 'test-results', 'a11y-evidence');
 const DATA_MODE = A11Y_CONFIG.dataMode;
+
+function manualResultsPath(): string {
+  const configured = process.env['A11Y_MANUAL_RESULTS_FILE']?.trim();
+  if (!configured) return join(process.cwd(), 'e2e', 'a11y-manual-results.json');
+  return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+}
 
 type Camera = (typeof A11Y_CONFIG.cameraSchedule)[number];
 
@@ -105,7 +111,13 @@ function dependencyVersions(): Record<string, string> {
     'axe-core'
   ];
   return Object.fromEntries(wanted.map(name => {
-    const version = lock.packages?.[`node_modules/${name}`]?.version ?? 'absent';
+    // @axe-core/playwright executes its own nested axe-core version. Recording the
+    // unrelated top-level transitive package made the evidence claim axe 3.x while
+    // the browser actually ran 4.x.
+    const packagePath = name === 'axe-core'
+      ? 'node_modules/@axe-core/playwright/node_modules/axe-core'
+      : `node_modules/${name}`;
+    const version = lock.packages?.[packagePath]?.version ?? 'absent';
     return [name, version];
   }));
 }
@@ -119,13 +131,15 @@ function inputHashes(): Record<string, string> {
     'package-lock.json',
     'e2e/a11y.config.ts',
     'e2e/a11y-resolutions.json',
-    'e2e/a11y-manual-results.json',
     'src/test/fixtures/index.ts'
   ];
-  return Object.fromEntries(files.map(file => [
-    file,
-    `sha256:${sha256(join(process.cwd(), file))}`
-  ]));
+  return {
+    ...Object.fromEntries(files.map(file => [
+      file,
+      `sha256:${sha256(join(process.cwd(), file))}`
+    ])),
+    'manual-results': `sha256:${sha256(manualResultsPath())}`
+  };
 }
 
 function allowedScopes(): ResolutionScopeVocabulary {
@@ -171,9 +185,17 @@ function loadResolutions() {
 
 function loadManualResults() {
   const raw = JSON.parse(
-    readFileSync(join(process.cwd(), 'e2e', 'a11y-manual-results.json'), 'utf8')
+    readFileSync(manualResultsPath(), 'utf8')
   ) as unknown;
   return parseManualGateFile(raw);
+}
+
+function releaseTarget(): RunContext['releaseTarget'] {
+  const releaseManifestSha256 =
+    process.env['A11Y_RELEASE_MANIFEST_SHA256']?.trim();
+  const deployedUrl = process.env['A11Y_DEPLOYED_URL']?.trim();
+  if (!releaseManifestSha256 || !deployedUrl) return undefined;
+  return { releaseManifestSha256, deployedUrl };
 }
 
 async function prepareScenario(page: Page, state: A11yState): Promise<void> {
@@ -476,6 +498,7 @@ async function writeEvidence(
 
   const browserName = testInfo.project.use.defaultBrowserType ?? 'unknown';
   const cameraLabel = camera?.id ?? A11Y_CONFIG.noMapCameraId;
+  const target = releaseTarget();
   const context: RunContext = {
     ...gitInfo(),
     dataMode: DATA_MODE,
@@ -490,7 +513,8 @@ async function writeEvidence(
     stateLabel: state,
     cameraLabel,
     dependencyVersions: dependencyVersions(),
-    inputHashes: inputHashes()
+    inputHashes: inputHashes(),
+    ...(target ? { releaseTarget: target } : {})
   };
   const scope: ResolutionScope = {
     project: context.projectName,

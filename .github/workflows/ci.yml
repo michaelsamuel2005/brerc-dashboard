@@ -401,14 +401,21 @@ jobs:
       - name: Install the live browser test runtime
         working-directory: web
         run: npm ci
-      - name: Install Chromium for the live publication acceptance
+      - name: Install Chromium, Firefox and WebKit for the live publication acceptance
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Build the mocks-disabled production web application
         working-directory: web
         run: |
           npm run build
           npm run guard:bundle
+      - name: Retain the exact guarded production artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-web-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 90
       - name: Run the mocks-disabled browser acceptance
         working-directory: web
         env:
@@ -500,7 +507,7 @@ jobs:
             ${{ runner.temp }}/brerc-live-diagnostics
             web/test-results
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
 
   # ---------------------------------------------------------------------------
   # BACKEND — API + database safety boundary
@@ -676,4 +683,4 @@ jobs:
             web/test-results
             web/playwright-report
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90

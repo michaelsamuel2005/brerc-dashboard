@@ -24,6 +24,7 @@
     "e2e:serialization": "playwright test --config playwright.serialization.config.ts",
     "e2e:all": "npm run e2e:serialization && npm run e2e",
     "e2e:install": "playwright install --with-deps chromium firefox webkit",
+    "a11y:freeze": "node scripts/freeze-accessibility-release.mjs",
     "a11y:mutate": "python3 mutation/run_disposable.py --output-dir test-results/a11y-mutation --verify-kills"
   },
   "dependencies": {
