@@ -2519,6 +2519,46 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             },
         )
 
+        store.close()
+        second_store, second_duplicate, second_summary = self._finalized(
+            rows,
+            policy=policy,
+            mode=DestinationLoadMode.REFRESH,
+            captured_at_utc="2026-08-14T14:00:00.000000Z",
+        )
+        try:
+            second_reused = second_store.activate(second_duplicate, second_summary)
+            self.assertEqual(second_reused.release_id, base_release)
+        finally:
+            second_store.close()
+
+        with self._connection("loader") as connection:
+            success_events = connection.execute(
+                """
+                SELECT job_id, release_id, count(*) AS n
+                FROM loader_control.notification_outbox
+                WHERE event_type = 'etl_succeeded'
+                GROUP BY job_id, release_id
+                """
+            ).fetchall()
+        self.assertEqual(
+            {(row["job_id"], row["release_id"], row["n"]) for row in success_events},
+            {
+                (base_handle.job_id, base_release, 1),
+                (duplicate.job_id, base_release, 1),
+                (second_duplicate.job_id, base_release, 1),
+            },
+        )
+
+        with self._connection("api") as connection:
+            latest_source_snapshot = connection.execute(
+                "SELECT source_data_as_of FROM serve.public_release"
+            ).fetchone()["source_data_as_of"]
+        self.assertEqual(
+            latest_source_snapshot,
+            datetime.fromisoformat("2026-08-14T14:00:00.000000+00:00"),
+        )
+
     def test_changed_refresh_stays_invisible_until_one_atomic_switch(self) -> None:
         policy = _policy()
         base_rows = (

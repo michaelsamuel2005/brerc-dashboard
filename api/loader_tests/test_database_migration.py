@@ -180,6 +180,8 @@ class DestinationMigrationContract(unittest.TestCase):
         self.assertIn("migration_key = '0002_sensitive_record_action'", sql)
         self.assertIn("migration_version = 3", sql)
         self.assertIn("migration_key = '0003_full_snapshot_refresh'", sql)
+        self.assertIn("notification_outbox_success_release_idx", sql)
+        self.assertIn("unsupported pre-release notification index detected", sql)
         self.assertIn("status NOT IN ('succeeded', 'failed', 'cancelled')", sql)
         self.assertIn("pg_try_advisory_xact_lock", sql)
         self.assertIn("'dashboard.main_data_dash'::text AS source_id", sql)
@@ -339,6 +341,8 @@ class DestinationMigrationContract(unittest.TestCase):
         reuse = sql[reuse_start:reuse_end]
         self.assertNotIn("DELETE FROM publication.", reuse)
         self.assertNotIn("DELETE FROM loader_control.release_manifest", reuse)
+        self.assertIn("ON CONFLICT (job_id, event_type) DO NOTHING", reuse)
+        self.assertNotIn("ON CONFLICT (release_id, event_type)", sql)
 
     def test_loader_can_only_execute_the_refresh_dispatcher(self):
         sql = self.full_snapshot_refresh_sql

@@ -41,6 +41,11 @@ BEGIN
     ) THEN
         RAISE EXCEPTION
             'BRERC migration history is not exactly 0001 plus 0002; refusing out-of-order migration 0003';
+    ELSIF pg_catalog.to_regclass(
+        'loader_control.notification_outbox_success_release_idx'
+    ) IS NOT NULL THEN
+        RAISE EXCEPTION
+            'unsupported pre-release notification index detected; reprovision the rehearsal destination from the reviewed migration sequence';
     END IF;
 END
 $migration_guard$;
@@ -1009,9 +1014,7 @@ BEGIN
             current_active_release_id,
             'etl_succeeded',
             'etl-operations'
-        ) ON CONFLICT (release_id, event_type)
-            WHERE event_type = 'etl_succeeded'
-            DO NOTHING;
+        ) ON CONFLICT (job_id, event_type) DO NOTHING;
 
         RETURN current_active_release_id;
     END IF;

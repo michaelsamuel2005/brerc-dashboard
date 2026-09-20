@@ -47,7 +47,9 @@ requires every refresh manifest to bind all eight comparative thresholds, and ex
 `loader_control.activate_release_candidate(uuid)` as the only activation function executable by
 `brerc_loader`. It revokes direct loader execution of the older activation function. Its
 pre-migration lock audit refuses to proceed while non-terminal ETL work exists; reapplication is
-also refused.
+also refused. Destinations created from an unreleased rehearsal version of migration `0001` that
+still contains `notification_outbox_success_release_idx` must be destroyed and reprovisioned from
+the reviewed migration sequence; migration `0003` detects that obsolete contract and refuses it.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS
