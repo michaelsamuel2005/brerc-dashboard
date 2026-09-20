@@ -24,15 +24,24 @@ TLS PostgreSQL 16 source
 Historical evidence from the archived canonical branch does not establish the
 ported implementation on protected `main`. A retained `status=passed` artifact
 whose `gitCommit` is the exact loader/store merge SHA is required before the
-five-million-row release blocker can be closed.
+five-million-row initial-release blocker can be closed.
 
 ## Scope limitation
 
-The current loader supports only the first release into an empty destination.
-It rejects a destination that already has an active release. The scale gate can
-therefore prove empty-to-complete atomic visibility, but it cannot prove
-old-release-to-new-release replacement. Replacement remains not applicable
-until the incremental/full-replacement protocol is approved and implemented.
+The loader now supports both a first `initial` release and atomic `refresh` from
+a newer complete source snapshot. The current scale harness still exercises
+only the initial path described above. It **cannot prove** the runtime,
+temporary-space, WAL, retained-base-release storage or atomic visibility of a
+five-million-row old-release-to-new-release replacement.
+
+Before scheduled refresh is accepted at BRERC scale, extend this manual gate to
+perform a changed complete-snapshot refresh and retain a separate green
+artifact. The refresh case must prove at least one update and one source removal,
+the prior release remaining visible until the switch, the new release becoming
+fully visible in one step, the prior release retiring, refresh thresholds being
+bound in the manifest, and failure leaving the prior release active. Run it from
+the **exact protected-`main` merge SHA** containing the refresh implementation;
+an earlier initial-only artifact is not sufficient.
 
 No real BRERC data is used. The generator creates deliberate synthetic cohorts:
 
@@ -154,8 +163,10 @@ or malformed argument produces a non-zero exit and only a fixed failure code.
 Never raise a budget merely to turn a red run green. Investigate the resource or
 correctness cause, agree a design/budget change, and rerun from a fresh target.
 
-Keep the production release blocker open until both of these exist:
+Keep the production scale blocker open until all of these exist:
 
-1. a green synthetic artifact reviewed by the project team; and
-2. a comparable green run on the intended BRERC-controlled infrastructure with
-   approved operational limits.
+1. a green initial synthetic artifact reviewed by the project team;
+2. a green changed-refresh synthetic artifact from the exact protected-`main`
+   refresh merge SHA; and
+3. comparable green initial and refresh runs on the intended BRERC-controlled
+   infrastructure with approved operational limits.

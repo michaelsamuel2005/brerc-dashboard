@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app import config
 from app.db import assert_serving_relation, serving_connection
 from app.models import CellDistribution, GridCell
-from app.release import load_active_release
+from app.release import load_active_release, release_identity
 
 router = APIRouter(prefix="/api", tags=["distribution"])
 
@@ -44,6 +44,7 @@ def distribution_cells(
         release = load_active_release(connection)
         if species is None:
             return CellDistribution(
+                **release_identity(release),
                 verificationAvailable=release.verification_available,
                 cells=[],
             )
@@ -72,6 +73,7 @@ def distribution_cells(
         cells.append(GridCell(**fields))
 
     return CellDistribution(
+        **release_identity(release),
         verificationAvailable=release.verification_available,
         cells=cells,
     )

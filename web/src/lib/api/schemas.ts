@@ -91,6 +91,16 @@ export const HealthSchema = z.object({ status: z.literal("ok"), version: z.strin
 const displayText = z.string().trim().min(1);
 const speciesSlug = z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid species slug");
 
+/** Identity attached to every response backed by an atomic publication release. */
+export const ReleaseIdentitySchema = z
+  .object({
+    releaseId: z.string().uuid(),
+    datasetVersion: displayText,
+  })
+  .strict();
+
+const releaseIdentityFields = ReleaseIdentitySchema.shape;
+
 export const SpeciesSortSchema = z.enum([
   "name-asc",
   "scientific-name-asc",
@@ -143,6 +153,7 @@ export const SpeciesListItemSchema = z
 
 export const SpeciesListPageSchema = z
   .object({
+    ...releaseIdentityFields,
     items: z.array(SpeciesListItemSchema),
     page: z.number().int().positive(),
     pageSize: z.number().int().positive(),
@@ -220,6 +231,7 @@ export const DescriptionSourceSchema = z
 
 export const SpeciesDetailSchema = z
   .object({
+    ...releaseIdentityFields,
     speciesId: displayText,
     slug: speciesSlug,
     scientificName: displayText,
@@ -342,6 +354,7 @@ export const RecordPublicationSchema = z
 
 export const RecordPageSchema = z
   .object({
+    ...releaseIdentityFields,
     publication: RecordPublicationSchema,
     items: z.array(RecordRowSchema),
     page: z.number().int().positive(),
@@ -440,6 +453,7 @@ export const GridCellSchema = z
 
 export const CellDistributionSchema = z
   .object({
+    ...releaseIdentityFields,
     verificationAvailable: z.boolean(),
     cells: z.array(GridCellSchema),
   })
@@ -471,6 +485,7 @@ export const MAX_PAGE_SIZE = 100;
 
 export const SummarySchema = z
   .object({
+    ...releaseIdentityFields,
     totalRecords: z.number().int().nonnegative(),
     totalSpecies: z.number().int().nonnegative(),
     yearRange: z.object({ min: z.number().int(), max: z.number().int() }).strict().nullable(),
@@ -532,6 +547,7 @@ export const SummarySchema = z
 
 export const ProvenanceSchema = z
   .object({
+    ...releaseIdentityFields,
     lastUpdated: z.string(),
     recordTotal: z.number().int().nonnegative(),
     sources: z.array(z.string()),
@@ -553,6 +569,7 @@ export const ProvenanceSchema = z
   .strict();
 
 export type Health = z.infer<typeof HealthSchema>;
+export type ReleaseIdentity = z.infer<typeof ReleaseIdentitySchema>;
 export type SpeciesSort = z.infer<typeof SpeciesSortSchema>;
 export type SpeciesGroupFacet = z.infer<typeof SpeciesGroupFacetSchema>;
 export type SpeciesListItem = z.infer<typeof SpeciesListItemSchema>;

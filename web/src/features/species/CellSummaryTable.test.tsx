@@ -4,7 +4,7 @@ import { axe } from "jest-axe";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import { CellSummaryTable } from "./CellSummaryTable";
-import { DEFAULT_SPECIES_ID } from "../../test/fixtures";
+import { DEFAULT_SPECIES_ID, fixtureReleaseIdentity } from "../../test/fixtures";
 import { server } from "../../test/msw/server";
 
 function renderIt(props: { speciesId: string; selectedCellId?: string | null; onSelectCell?: (id: string | null) => void }) {
@@ -64,6 +64,7 @@ describe("CellSummaryTable (map accessible equivalent + keyboard control)", () =
     server.use(
       http.get("*/api/distribution/cells", () =>
         HttpResponse.json({
+          ...fixtureReleaseIdentity,
           verificationAvailable: false,
           cells: [{ cellId: "ST5872", precisionMetres: 1000, recordCount: 2 }],
         }),

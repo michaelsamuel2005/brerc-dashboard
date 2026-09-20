@@ -1,4 +1,4 @@
-"""Validated, log-safe value objects shared with the future DB coordinator."""
+"""Validated, log-safe value objects shared with the database coordinator."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ class LoadMode(str, Enum):
     """Explicit operator commands; never represented by a persistent boolean."""
 
     INITIAL = "initial"
+    REFRESH = "refresh"
     INCREMENTAL = "incremental"
 
 
@@ -56,6 +57,7 @@ class LoaderRunReport:
     distribution_cells: int
     candidate_sha256: str
     activated: bool
+    reused_active_release: bool
 
     def __post_init__(self) -> None:
         _canonical_uuid(self.run_id, "run_id")
@@ -78,3 +80,7 @@ class LoaderRunReport:
             raise ValueError("candidate_sha256 must be a lowercase SHA-256 digest")
         if self.activated is not True:
             raise ValueError("a CLI success report must describe an activated release")
+        if type(self.reused_active_release) is not bool:
+            raise ValueError("reused_active_release must be a boolean")
+        if self.mode is LoadMode.INITIAL and self.reused_active_release:
+            raise ValueError("an initial release cannot reuse an active release")

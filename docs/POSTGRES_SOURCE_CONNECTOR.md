@@ -1,11 +1,10 @@
 # Trusted PostgreSQL source connector
 
-**Status:** Initial-load connector implemented and unit-tested with a synthetic DB-API
-driver. CI now provisions an entirely synthetic PostgreSQL 16 service with certificate-verified
-TLS and runs a real-driver integration gate; that new workflow must complete on GitHub before its
-result is claimed as executed evidence. The connector has not been run against BRERC's network or
-real records. Incremental loading, the public-database writer and public-release activation remain
-blocked.
+**Status:** Complete-snapshot connector implemented and unit-tested with a synthetic DB-API
+driver. CI provisions an entirely synthetic PostgreSQL 16 service with certificate-verified TLS
+and runs a real-driver integration gate. The connector has not been run against BRERC's network or
+real records. The public PostgreSQL/PostGIS writer and initial/refresh activation are integrated;
+incremental loading remains a separate blocked contract.
 
 **Source:** `dashboard.main_data_dash`
 
@@ -252,24 +251,26 @@ python -m ruff format --check .
 ```
 
 API CI has connector tests on Python 3.10 and 3.13 plus the independent PostgreSQL 16 TLS job; the
-bare Python matrix continues to run the dependency-free ETL suite. Until the new integration job
-has run green in GitHub Actions, treat it as implemented but not yet observed. It never requires
-access to BRERC.
+bare Python matrix continues to run the dependency-free ETL suite. The exact branch/head must be
+green in GitHub Actions before merge. These synthetic gates never require access to BRERC.
 
 ## Honest completion boundary
 
-This work completes the trusted **initial-source connector** and its unit-testable trust boundary.
-It does not make the dashboard publicly releasable and it does not complete a five-million-row
-production load. The current ETL ultimately materialises the extracted rows in memory; bounded
-database fetches prevent driver-level `fetchall`, but do not remove that whole-run memory cost.
-Chunked transformation/external staging and a representative performance test remain required
-before operating at BRERC's estimated scale.
+This work completes the trusted **complete-snapshot source connector** and its unit-testable trust
+boundary. Its historical method name, `extract_initial`, refers to the approved source extraction
+protocol: the same locked, repeatable-read, batched snapshot is now used by both the destination
+`initial` and `refresh` modes. The integrated loader transforms and stages bounded batches rather
+than retaining the complete source result in application memory.
+
+This does not by itself make the dashboard publicly releasable. The existing retained
+five-million-row evidence covers the initial path; a changed five-million-row refresh from the
+exact protected-`main` merge SHA, followed by a comparable run on the intended BRERC host, remains
+required before accepting scheduled refreshes at production scale.
 
 The following also remain separate blockers:
 
 - BRERC's live-view capture, named approval and independently confirmed environment;
-- catastrophic empty-result and count-drop activation thresholds;
-- public PostgreSQL/PostGIS writer, reconciliation and atomic release switching;
+- approved production initial bounds and all eight refresh thresholds;
 - `date_mdb_modified`, stable-key and deletion guarantees for incremental loading;
 - publication-policy decisions and any other blockers recorded in the source contract.
 

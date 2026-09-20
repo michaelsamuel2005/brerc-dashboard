@@ -12,7 +12,7 @@ from fastapi import APIRouter, Query
 from app import config
 from app.db import assert_serving_relation, serving_connection
 from app.models import PublicationFields, RecordPage, RecordPublication, RecordRow
-from app.release import ActiveRelease, load_active_release
+from app.release import ActiveRelease, load_active_release, release_identity
 
 router = APIRouter(prefix="/api", tags=["records"])
 
@@ -83,6 +83,7 @@ def list_records(
         publication = _publication(release)
         if species is None or not release.individual_records_available:
             return RecordPage(
+                **release_identity(release),
                 publication=publication,
                 items=[],
                 page=page,
@@ -101,6 +102,7 @@ def list_records(
             total = int(cursor.fetchone()["total"])
 
     return RecordPage(
+        **release_identity(release),
         publication=publication,
         items=[_row(row, release) for row in rows],
         page=page,

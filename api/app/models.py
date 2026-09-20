@@ -16,6 +16,23 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ReleaseIdentity(StrictModel):
+    """Identity carried by every response backed by an atomic release.
+
+    A repeatable-read transaction makes each individual response coherent.
+    Carrying the same identity on every public data response lets the browser
+    extend that guarantee across the several requests needed to render a page.
+    """
+
+    releaseId: str = Field(
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        )
+    )
+    datasetVersion: str = Field(min_length=1)
+
+
 class Health(StrictModel):
     status: Literal["ok"]
     version: str
@@ -47,7 +64,7 @@ class RecordRow(StrictModel):
     verified: str | None = None
 
 
-class RecordPage(StrictModel):
+class RecordPage(ReleaseIdentity):
     publication: RecordPublication
     items: list[RecordRow]
     page: int = Field(gt=0)
@@ -85,7 +102,7 @@ class SensitivityPolicy(StrictModel):
         return self
 
 
-class Provenance(StrictModel):
+class Provenance(ReleaseIdentity):
     lastUpdated: str
     recordTotal: int = Field(ge=0)
     sources: list[str]
@@ -107,7 +124,7 @@ class GridCell(StrictModel):
         return self
 
 
-class CellDistribution(StrictModel):
+class CellDistribution(ReleaseIdentity):
     verificationAvailable: bool
     cells: list[GridCell]
 
@@ -141,7 +158,7 @@ class YearRange(StrictModel):
         return self
 
 
-class Summary(StrictModel):
+class Summary(ReleaseIdentity):
     totalRecords: int = Field(ge=0)
     totalSpecies: int = Field(ge=0)
     yearRange: YearRange | None
@@ -196,7 +213,7 @@ class SpeciesFacets(StrictModel):
     groups: list[SpeciesGroupFacet]
 
 
-class SpeciesListPage(StrictModel):
+class SpeciesListPage(ReleaseIdentity):
     items: list[SpeciesListItem]
     page: int = Field(gt=0)
     pageSize: int = Field(gt=0)
@@ -239,7 +256,7 @@ class SpeciesStats(StrictModel):
         return self
 
 
-class SpeciesDetail(StrictModel):
+class SpeciesDetail(ReleaseIdentity):
     speciesId: str = Field(min_length=1)
     slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     scientificName: str = Field(min_length=1)

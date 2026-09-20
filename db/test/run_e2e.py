@@ -1,5 +1,10 @@
 """
-END-TO-END TEST RUNNER — steps 1 to 10 of the pipeline test.
+LEGACY END-TO-END TEST RUNNER — retained development coverage only.
+
+This exercises the superseded ``occurrence_public`` writer. It does not write
+the atomic ``serve.*`` store, does not update the current FastAPI/React
+dashboard and is not production or handover acceptance. The authoritative
+two-snapshot test is documented in ``docs/FULL_SNAPSHOT_REFRESH.md``.
 
 WHAT THIS DOES
 Stands up BOTH databases from scratch, runs the real ETL against them, and then
@@ -17,8 +22,8 @@ That is the part no previous test could reach.
 NOTHING REAL IS INVOLVED. Both databases are created fresh, used, and dropped.
 Your own brerc_ui database is never touched.
 
-HOW TO RUN
-    python db/test/run_e2e.py
+HOW TO RUN (ONLY WHEN INTENTIONALLY TESTING THE RETAINED LEGACY PATH)
+    BRERC_ENABLE_LEGACY_E2E_FOR_TESTS=1 python db/test/run_e2e.py
 
 You need a local PostgreSQL with PostGIS, and ADMIN_URL below pointing at it.
 """
@@ -32,6 +37,13 @@ import psycopg
 from psycopg.rows import dict_row
 
 REPO = Path(__file__).resolve().parents[2]
+
+if os.environ.get("BRERC_ENABLE_LEGACY_E2E_FOR_TESTS") != "1":
+    raise SystemExit(
+        "This is the superseded legacy E2E harness. Use the atomic refresh "
+        "acceptance in docs/FULL_SNAPSHOT_REFRESH.md. If you are deliberately "
+        "testing retained legacy code, set BRERC_ENABLE_LEGACY_E2E_FOR_TESTS=1."
+    )
 
 # A superuser connection used only to create/drop the two throwaway databases.
 ADMIN_URL = os.getenv(
@@ -125,6 +137,8 @@ step("5", "Run the initial load")
 env = dict(os.environ)
 env["E2E_SOURCE_URL"] = url_for(SOURCE_DB)
 env["E2E_UI_URL"] = url_for(UI_DB)
+env["APP_ENV"] = "test"
+env["BRERC_ENABLE_LEGACY_NIGHTLY_JOB_FOR_TESTS"] = "1"
 result = subprocess.run(
     [sys.executable, str(REPO / "db/test/_run_pipeline.py")],
     cwd=str(REPO / "api"), env=env, capture_output=True, text=True,

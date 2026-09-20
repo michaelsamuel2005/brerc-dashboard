@@ -11,6 +11,19 @@ from scripts.guard_workflow_dependencies import WORKFLOW_DEPENDENCIES, check
 
 
 class TestWorkflowDependencyGuard(unittest.TestCase):
+    def test_retained_legacy_e2e_is_explicitly_opted_in_by_ci(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        harness = (root / "db" / "test" / "run_e2e.py").read_text(encoding="utf-8")
+        opt_in = 'BRERC_ENABLE_LEGACY_E2E_FOR_TESTS: "1"'
+        self.assertIn(opt_in, workflow)
+        self.assertIn('os.environ.get("BRERC_ENABLE_LEGACY_E2E_FOR_TESTS")', harness)
+        self.assertIn(
+            "Run the retained legacy synthetic source-to-publication E2E test", workflow
+        )
+
     def test_ci_manifest_covers_the_publication_api_lifecycle(self) -> None:
         dependencies = set(WORKFLOW_DEPENDENCIES[".github/workflows/ci.yml"])
         self.assertTrue(
@@ -21,15 +34,33 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/brerc_source",
                 "api/package_tests",
                 "api/etl/streaming.py",
+                "api/loader_tests",
                 "api/loader_tests/test_postgis16_destination_integration.py",
                 "api/loader_tests/setup_postgis16_destination.sh",
                 "api/loader_tests/setup_postgres16_e2e_source.sh",
                 "Caddyfile",
+                "db/test/_run_pipeline.py",
+                "db/test/e2e_sensitive_species.csv",
+                "db/test/e2e_source_data.sql",
+                "db/test/e2e_source_mock.sql",
+                "db/test/run_e2e.py",
+                "deploy/refresh/README.md",
+                "deploy/refresh/brerc-loader-refresh.service.example",
+                "deploy/refresh/brerc-loader-refresh.timer.example",
+                "deploy/refresh/loader-runtime.env.example",
                 "db/migrations/0001_publication_store.sql",
+                "db/migrations/0002_sensitive_record_action.sql",
+                "db/migrations/0003_full_snapshot_refresh.sql",
                 "db/roles.sql",
                 "docker-compose.yml",
                 "docs/PUBLIC_SERVING_ARCHITECTURE.md",
                 "docs/RUN_LOCALLY.md",
+                "run-dashboard/app.py",
+                "run-dashboard/requirements-dev.txt",
+                "run-dashboard/requirements.txt",
+                "run-dashboard/static",
+                "run-dashboard/store.py",
+                "run-dashboard/tests",
                 "web/src/lib/api/endpoints.ts",
             }.issubset(dependencies)
         )

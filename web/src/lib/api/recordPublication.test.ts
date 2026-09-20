@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateOnlyRecordsFixture,
+  fixtureReleaseIdentity,
   recordsFixture,
 } from "../../test/fixtures";
 import { RecordPageSchema } from "./schemas";
@@ -18,6 +19,7 @@ const baseRow = {
 
 function page(overrides: Record<string, unknown> = {}) {
   return {
+    ...fixtureReleaseIdentity,
     publication: {
       mode: "individual-records",
       fields: {
@@ -45,6 +47,7 @@ describe("record publication contract", () => {
 
   it("represents aggregates-only honestly without pretending the species has no data", () => {
     const parsed = RecordPageSchema.parse({
+      ...fixtureReleaseIdentity,
       publication: {
         mode: "aggregates-only",
         fields: {

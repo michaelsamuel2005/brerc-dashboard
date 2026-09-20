@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from app.db import assert_serving_relation, serving_connection
 from app.models import Provenance, SensitivityPolicy
-from app.release import ActiveRelease, load_active_release
+from app.release import ActiveRelease, load_active_release, release_identity
 
 router = APIRouter(prefix="/api", tags=["meta"])
 
@@ -67,8 +67,8 @@ def provenance() -> Provenance:
             tiers = [int(row["precision_metres"]) for row in cursor.fetchall()]
 
     protected_records_mode, policy_note = _POLICY_PRESENTATION[release.sensitive_record_action]
-
     return Provenance(
+        **release_identity(release),
         lastUpdated=release.source_data_as_of or release.published_at or "",
         recordTotal=record_total,
         sources=[release.source_label] if release.source_label else [],

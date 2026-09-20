@@ -1,5 +1,5 @@
 // Typed functions for each apiContract endpoint. Thin wrappers over getJson + a schema.
-import { getJson, type QueryParams } from "./client";
+import { getJson, type GetJsonOptions, type QueryParams } from "./client";
 import {
   CellDistributionSchema,
   HealthSchema,
@@ -26,21 +26,35 @@ export interface SpeciesListParams extends QueryParams {
   pageSize?: number;
 }
 
-export const getHealth = (): Promise<Health> => getJson("/health", HealthSchema);
+export const getHealth = (options?: GetJsonOptions): Promise<Health> =>
+  getJson("/health", HealthSchema, undefined, options);
 
-export const getSpecies = (params?: SpeciesListParams): Promise<SpeciesListPage> =>
-  getJson("/species", SpeciesListPageSchema, params);
+export const getSpecies = (
+  params?: SpeciesListParams,
+  options?: GetJsonOptions,
+): Promise<SpeciesListPage> => getJson("/species", SpeciesListPageSchema, params, options);
 
-export const getSpeciesDetail = (speciesId: string): Promise<SpeciesDetail> =>
-  getJson(`/species/${encodeURIComponent(speciesId)}`, SpeciesDetailSchema);
+export const getSpeciesDetail = (
+  speciesId: string,
+  options?: GetJsonOptions,
+): Promise<SpeciesDetail> =>
+  getJson(`/species/${encodeURIComponent(speciesId)}`, SpeciesDetailSchema, undefined, options);
 
-export const getDistributionCells = (params?: QueryParams): Promise<CellDistribution> =>
-  getJson("/distribution/cells", CellDistributionSchema, params);
+export const getDistributionCells = (
+  params?: QueryParams,
+  options?: GetJsonOptions,
+): Promise<CellDistribution> =>
+  getJson("/distribution/cells", CellDistributionSchema, params, options);
 
-export const getRecords = (params?: QueryParams): Promise<RecordPage> =>
-  getJson("/records", RecordPageSchema, params);
+export const getRecords = (
+  params?: QueryParams,
+  options?: GetJsonOptions,
+): Promise<RecordPage> => getJson("/records", RecordPageSchema, params, options);
 
-export const getSummary = (params?: QueryParams): Promise<Summary> =>
-  getJson("/summary", SummarySchema, params);
+export const getSummary = (
+  params?: QueryParams,
+  options?: GetJsonOptions,
+): Promise<Summary> => getJson("/summary", SummarySchema, params, options);
 
-export const getProvenance = (): Promise<Provenance> => getJson("/meta/provenance", ProvenanceSchema);
+export const getProvenance = (options?: GetJsonOptions): Promise<Provenance> =>
+  getJson("/meta/provenance", ProvenanceSchema, undefined, options);

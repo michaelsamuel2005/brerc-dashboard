@@ -1,36 +1,29 @@
-The reconciliation module ensures that the public dashboard database (occurrence_public) stays precisely synchronised with incoming source data without requiring full table wipes on every run. By leveraging deterministic cryptographic hashing and set-based differential analysis, it identifies new records (inserts), modified rows (updates), and removed observations (deletes) before routing changes securely through the safety pipeline.
+# Legacy occurrence-table reconciliation
 
-File-by-File Breakdown:
-hashing.py (Content Hash Generation)
-- Computes deterministic SHA-256 hashes (add_content_hash) for every record using a fixed configuration of columns, normalising dates and text to prevent false updates due to minor formatting shifts.
+> **Historical development/test path only.** This package contains Ting Ting's
+> retained reconciliation implementation for the old `occurrence_public`
+> tables. The entry point that used it, `etl.job.nightly_job()`, is fail-closed
+> outside explicitly acknowledged development/tests and must never be scheduled
+> for the current dashboard.
 
-diff.py (Set Differential Analysis)
-- Compares source and database hash maps (diff_id_hash_maps) using fast Python set operations to isolate records requiring insertion, updating, or deletion.
+The production-shaped update command is `brerc-load refresh`. It reads one
+complete, locked source snapshot, creates and validates an isolated candidate,
+and atomically replaces the active `serve.*` release. `brerc-load incremental`
+remains blocked. A source deletion is represented by absence from that complete
+replacement snapshot, not by inferring a delete from a partial window. See
+[`../../../docs/FULL_SNAPSHOT_REFRESH.md`](../../../docs/FULL_SNAPSHOT_REFRESH.md).
 
-streaming.py (Memory-Safe Chunking)
-- Streams large source files from disk in configurable blocks (iter_source_chunks) or processes in-memory dataframes, cleaning headers and compiling master source hash maps.
+The historical implementation remains useful as regression-covered provenance:
 
-state.py (Database State Retrieval)
-- Queries the UI database (get_ui_map) to fetch all existing record IDs and their current content hashes, ensuring type compatibility (str mapping).
+- `hashing.py` produced deterministic content hashes.
+- `diff.py` classified insert/update/delete sets.
+- `streaming.py` processed source files in chunks.
+- `state.py` read the existing legacy database state.
+- `map_to_schema.py` mapped data into the legacy table shape.
+- `reconcile.py` coordinated the old two-pass diff.
+- `load.py` applied staged upserts and deletes directly to
+  `occurrence_public`.
 
-map_to_schema.py (Schema Mapping)
-- Transforms and formats safe internal dataframe columns into the exact column schema expected by the public-facing occurrence_public table.
-
-reconcile.py (Two-Pass Orchestration)
-- Coordinates the overall reconciliation lifecycle (reconcile), handling Pass 1 diffing and Pass 2 chunked processing, safety gate filtering, and persistence dispatch.
-
-The Reconciliation Flow
-When a new source dataset is processed, reconciliation executes through a robust, high-performance two-pass architecture:
-
-Pass 1 — Hash Mapping & Diffing (streaming.py, hashing.py, diff.py, db.py):
-- The source dataset is streamed in memory-safe chunks, cleaned, and assigned unique SHA-256 content hashes.
-- Existing records are fetched from the UI database (get_ui_map).
-- Set operations compare source IDs against database IDs to classify changes into inserts (brand-new rows), deletes (missing rows), and possible updates (matching IDs with potentially changed content hashes).
-
-Pass 2 — Processing & Synchronization (pipeline.py, load.py):
-- The pipeline streams source chunks a second time, filtering specifically for rows flagged as inserts or updates.
-- Identified change chunks are pushed through the complete safety pipeline (make_safe_for_publishing), which strips sensitive data, generalises spatial coordinates, and validates species numbers.
-- Safe records are stamped with ETL metadata and written to the database using high-performance staging tables and ON CONFLICT upserts.
-
-Database Purging (load.py):
-- Obsolete record IDs identified during Pass 1 deletes are purged from occurrence_public in a single efficient SQL operation (DELETE ... WHERE record_id = ANY(...)).
+These modules do not write the release-scoped `publication.*` tables consumed
+by FastAPI and do not populate the authoritative PostgreSQL run-history views.
+Preserving them and their authorship does not make them an operational fallback.

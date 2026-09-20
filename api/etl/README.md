@@ -19,22 +19,18 @@ cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 ```
 
 The publication safety modules listed below are **standard-library only** — no
-pandas and no third-party runtime dependency. Two safety authorities coexist
-temporarily during the release-stack transition:
+pandas and no third-party runtime dependency. The trusted connector and atomic
+release loader call `pipeline.py` or `streaming.py` and require an explicit,
+approval-bound `PublicationPolicy`.
 
-* The retained legacy command, `etl.job.nightly_job()`, calls
-  `nightly_pipeline.py` and reads `safety_gate/rules.py` plus
-  `config/safety.yaml`. It is not a supported authority for the reviewed public
-  release.
-* The trusted connector and atomic release loader call `pipeline.py` or
-  `streaming.py` and require an explicit, approval-bound `PublicationPolicy`.
-
-A decision in one path does not authorise the other. Do not run the legacy
-nightly command to create a public release; the complete-snapshot refresh port
-that follows this change disables that entry point before scheduled operation.
+The legacy nightly ETL remains in this package as `nightly_pipeline.py` and its
+established subpackages only for provenance and development/test coverage. Its
+`nightly_job()` entry point is blocked by default and always blocked in
+production; scheduled publication uses
+[`brerc-load refresh`](../../docs/FULL_SNAPSHOT_REFRESH.md). A decision in the
+legacy path does not authorise the publication path.
 `scripts/guard_stdlib_only.py` pins the exact publication-boundary file set so
-the paths can coexist temporarily without making a false package-wide dependency
-claim.
+the paths can coexist without making a false package-wide dependency claim.
 
 ## Modules
 

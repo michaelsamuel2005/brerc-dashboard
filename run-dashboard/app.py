@@ -1,10 +1,10 @@
 """
-Standalone read-only viewer for the ETL run-history log.
+Standalone read-only viewer for the authoritative ETL run-history view.
 
-Reads the SQLite database written by api/etl/run_history.py and serves it as
-JSON plus a small static HTML page. Deliberately kept separate from api/app
-(the public, read-only dashboard API) — this is an internal ops tool with no
-front-end or database dependency of its own.
+Reads ``serve.etl_job_status`` as a dedicated ``brerc_monitor`` login and
+serves it as JSON plus a small static HTML page. Deliberately kept separate
+from api/app (the public dashboard API) because this is an authenticated
+internal operations surface.
 
 Gated behind a single shared login (DASHBOARD_USERNAME / DASHBOARD_PASSWORD
 in .env — see .env.example) backed by a signed session cookie, so only
@@ -17,7 +17,6 @@ Then open http://127.0.0.1:8100/
 
 import os
 import secrets
-import sqlite3
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,33 +25,44 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+from store import (
+    RunHistoryConfigurationError,
+    RunHistoryUnavailable,
+    fetch_runs,
+    validated_dashboard_environment,
+)
 
-# Same path convention as api/etl/run_history.py: <repo root>/logs/etl_run_history.db
-DB_PATH = Path(__file__).resolve().parent.parent / "logs" / "etl_run_history.db"
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+try:
+    DASHBOARD_ENV = validated_dashboard_environment()
+except RunHistoryConfigurationError as error:
+    raise RuntimeError(str(error)) from None
+
 DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "").strip()
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+DASHBOARD_SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY", "").strip()
 
-# Fail closed: no default credentials. A dashboard that refuses to start is a
-# much better failure than one anyone can log into with admin/admin.
+# Fail closed: no default credentials, no implicit deployment mode, and no
+# ephemeral signing key in production. Local/test processes may use a random
+# per-process key, which deliberately invalidates sessions on restart.
 if not DASHBOARD_USERNAME or not DASHBOARD_PASSWORD:
     raise RuntimeError(
         "DASHBOARD_USERNAME and DASHBOARD_PASSWORD must both be set in "
         "run-dashboard/.env (see .env.example) — there is no default login."
     )
 
-# Falls back to a fresh random key each process start if not set — sessions
-# just won't survive a restart, which is fine for this tool and avoids a
-# hardcoded fallback secret living in source control.
-SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY") or secrets.token_hex(32)
+if DASHBOARD_ENV == "prod" and (
+    DASHBOARD_PASSWORD == "CHANGE_ME" or len(DASHBOARD_SECRET_KEY) < 32
+):
+    raise RuntimeError(
+        "production requires a changed dashboard password and a persistent "
+        "DASHBOARD_SECRET_KEY of at least 32 characters"
+    )
 
-# Same dev/prod convention as api/app/config.py's APP_ENV/IS_PROD. Controls
-# whether the session cookie is marked https_only — off in dev so login still
-# works over plain http on localhost, on wherever this is actually deployed.
-DASHBOARD_ENV = os.getenv("DASHBOARD_ENV", "dev").lower()
+SECRET_KEY = DASHBOARD_SECRET_KEY or secrets.token_hex(32)
 IS_PROD = DASHBOARD_ENV == "prod"
 
 app = FastAPI(title="BRERC ETL Run History")
@@ -64,46 +74,17 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def prevent_operational_response_caching(request: Request, call_next):
+    """Keep authenticated job metadata out of browser and proxy caches."""
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def _is_authenticated(request: Request) -> bool:
     return bool(request.session.get("authenticated"))
-
-
-# Columns added to the 'runs' table after its initial release. This
-# connection is read-only (can't ALTER TABLE to migrate it), so any column an
-# older database file predates is selected as NULL instead of erroring.
-_OPTIONAL_COLUMNS = (
-    "duration_seconds",
-    "error_message",
-    "error_summary",
-    "inserts",
-    "updates",
-    "deletes",
-)
-
-
-def _fetch_runs() -> list[dict]:
-    """Reads all run-history rows, most recent first. Empty if the job has never run."""
-    if not DB_PATH.exists():
-        return []
-
-    connection = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-    try:
-        connection.row_factory = sqlite3.Row
-
-        existing_columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
-        selected_columns = [
-            column if column in existing_columns else f"NULL AS {column}"
-            for column in _OPTIONAL_COLUMNS
-        ]
-
-        rows = connection.execute(
-            "SELECT run_number, job_name, job_type, date, load_no, status, "
-            f"{', '.join(selected_columns)} "
-            "FROM runs ORDER BY run_number DESC"
-        ).fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        connection.close()
 
 
 @app.get("/login")
@@ -112,10 +93,12 @@ def login_page() -> FileResponse:
 
 
 @app.post("/login")
-def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
-    valid = secrets.compare_digest(username, DASHBOARD_USERNAME) and secrets.compare_digest(
-        password, DASHBOARD_PASSWORD
-    )
+def login_submit(
+    request: Request, username: str = Form(...), password: str = Form(...)
+):
+    valid = secrets.compare_digest(
+        username, DASHBOARD_USERNAME
+    ) and secrets.compare_digest(password, DASHBOARD_PASSWORD)
 
     if not valid:
         return RedirectResponse("/login?error=1", status_code=303)
@@ -134,8 +117,12 @@ def logout(request: Request) -> RedirectResponse:
 def list_runs(request: Request) -> list[dict]:
     if not _is_authenticated(request):
         return JSONResponse({"detail": "Not authenticated"}, status_code=401)
-
-    return _fetch_runs()
+    try:
+        return fetch_runs()
+    except (RunHistoryConfigurationError, RunHistoryUnavailable):
+        return JSONResponse(
+            {"detail": "Authoritative ETL run history is unavailable"}, status_code=503
+        )
 
 
 @app.get("/")

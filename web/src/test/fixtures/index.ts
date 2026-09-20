@@ -171,6 +171,12 @@ const groupLabels: Readonly<Record<string, string>> = {
   reptile: "Reptiles",
 };
 
+/** One atomic synthetic release shared by every mock API response. */
+export const fixtureReleaseIdentity: { releaseId: string; datasetVersion: string } = {
+  releaseId: "00000000-0000-4000-8000-000000000001",
+  datasetVersion: "fixture-contract-v1",
+};
+
 export const speciesGroupFacets = Array.from(new Set(demoSpecies.map((species) => species.group)))
   .sort((a, b) => (groupLabels[a] ?? a).localeCompare(groupLabels[b] ?? b, "en-GB"))
   .map((value) => ({
@@ -252,6 +258,7 @@ export function buildSpeciesListPage({
 
   const start = (page - 1) * pageSize;
   return {
+    ...fixtureReleaseIdentity,
     items: ordered.slice(start, start + pageSize),
     page,
     pageSize,
@@ -279,6 +286,7 @@ export function speciesDetailFor(speciesId: string) {
       ? null
       : ([stats.firstYear, stats.lastYear] as [number, number]);
   return {
+    ...fixtureReleaseIdentity,
     speciesId: definition.speciesId,
     slug: definition.slug,
     scientificName: definition.scientificName,
@@ -314,6 +322,7 @@ export function speciesSummaryFor(speciesId: string) {
   const detail = speciesDetailFor(speciesId);
   if (!definition || !detail) return null;
   return {
+    ...fixtureReleaseIdentity,
     totalRecords: detail.stats.recordCount,
     totalSpecies: 1,
     yearRange: detail.stats.yearRange
@@ -354,7 +363,9 @@ export function recordsForSpecies(
       verification: true,
     },
   };
-  if (!definition) return { publication, items: [], page, pageSize, total: 0 };
+  if (!definition) {
+    return { ...fixtureReleaseIdentity, publication, items: [], page, pageSize, total: 0 };
+  }
   const matchingRecords = Object.entries(definition.matrix)
     .flatMap(([cellId, years]) =>
       Object.entries(years)
@@ -379,6 +390,7 @@ export function recordsForSpecies(
     .filter((record) => year === undefined || record.year === year);
   const start = (page - 1) * pageSize;
   return {
+    ...fixtureReleaseIdentity,
     publication,
     items: matchingRecords.slice(start, start + pageSize),
     page,
@@ -421,6 +433,7 @@ export const recordsFixture = recordsForSpecies(DEFAULT_SPECIES_ID) satisfies z.
 
 /** Honest response when BRERC approves aggregates but not individual occurrence rows. */
 export const aggregateOnlyRecordsFixture = {
+  ...fixtureReleaseIdentity,
   publication: {
     mode: "aggregates-only",
     fields: {
@@ -437,6 +450,7 @@ export const aggregateOnlyRecordsFixture = {
 } satisfies z.input<typeof RecordPageSchema>;
 
 export const cellsFixture = {
+  ...fixtureReleaseIdentity,
   verificationAvailable: true,
   cells: cellsFor(),
 } satisfies z.input<typeof CellDistributionSchema>;
@@ -445,6 +459,7 @@ export const cellsFixture = {
 export const speciesSummaryFixture = requiredSpeciesSummaryFor(DEFAULT_SPECIES_ID) satisfies z.input<typeof SummarySchema>;
 
 export const summaryFixture = {
+  ...fixtureReleaseIdentity,
   totalRecords: OVERALL_TOTAL_RECORDS,
   totalSpecies: demoSpecies.length,
   yearRange:
@@ -457,6 +472,7 @@ export const summaryFixture = {
 } satisfies z.input<typeof SummarySchema>;
 
 export const provenanceFixture = {
+  ...fixtureReleaseIdentity,
   lastUpdated: "2026-07-20",
   recordTotal: OVERALL_TOTAL_RECORDS,
   sources: ["BRERC verified records", "Consultancy submissions"],

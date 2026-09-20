@@ -1,0 +1,67 @@
+# EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
+# An operator must approve the host, inputs and schedule before copying it to
+# /etc/systemd/system/brerc-loader-refresh.service.
+
+[Unit]
+Description=BRERC atomic full-snapshot publication refresh
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/brerc/refresh/APPROVED_TO_SCHEDULE
+AssertFileIsExecutable=/opt/brerc-dashboard/current/bin/brerc-load
+AssertFileNotEmpty=/etc/brerc/refresh/loader.configuration.yaml
+AssertFileNotEmpty=/etc/brerc/refresh/source.configuration.yaml
+AssertFileNotEmpty=/etc/brerc/refresh/publication-policy.approved.json
+AssertFileNotEmpty=/etc/brerc/refresh/species-dictionary.approved.csv
+AssertFileNotEmpty=/etc/brerc/refresh/loader-runtime.env
+AssertFileNotEmpty=/etc/brerc/refresh/pg_service.conf
+AssertFileNotEmpty=/etc/brerc/refresh/source.pgpass
+AssertFileNotEmpty=/etc/brerc/refresh/target.pgpass
+AssertFileNotEmpty=/etc/brerc/refresh/source-ca.pem
+AssertFileNotEmpty=/etc/brerc/refresh/target-ca.pem
+
+[Service]
+Type=oneshot
+User=brerc-loader
+Group=brerc-loader
+UMask=0077
+WorkingDirectory=/opt/brerc-dashboard/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/brerc/refresh/loader-runtime.env
+UnsetEnvironment=PGPASSWORD
+ExecStart=/opt/brerc-dashboard/current/bin/brerc-load refresh --config /etc/brerc/refresh/loader.configuration.yaml
+TimeoutStartSec=2h15m
+TimeoutStopSec=30s
+KillMode=mixed
+Restart=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brerc-loader-refresh
+
+# The loader needs only filesystem reads, private temporary storage and TCP or
+# Unix-socket database connections. It is not permitted to gain privileges or
+# alter the host, deployed code, configuration, credentials or kernel state.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/brerc/refresh /opt/brerc-dashboard/current
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RemoveIPC=true

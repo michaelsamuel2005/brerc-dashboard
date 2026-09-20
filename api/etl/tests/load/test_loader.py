@@ -1,11 +1,11 @@
 from pathlib import Path
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 import pytest
 
 from etl.load.loader import (
-    load_safety_config,
     DEFAULT_CONFIG_PATH,
+    load_safety_config,
 )
 
 # --- load_safety_config tests ---
@@ -53,6 +53,14 @@ def test_load_safety_config_falls_back_to_the_example(mock_file, mock_yaml):
 
     mock_file.assert_called_once_with(example_path, "r")
     assert result == {"suppression_threshold": 5}
+
+
+def test_example_config_disables_the_legacy_incremental_path():
+    example_path = DEFAULT_CONFIG_PATH.with_suffix(DEFAULT_CONFIG_PATH.suffix + ".example")
+
+    config = load_safety_config(path=example_path)
+
+    assert config["load"]["incremental_check"] is False
 
 
 @patch("etl.load.loader.yaml.safe_load")

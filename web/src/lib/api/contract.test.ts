@@ -172,6 +172,35 @@ describe("C2 contract gate", () => {
     expect(() => ProvenanceSchema.parse(unordered)).toThrow();
   });
 
+  it("requires the atomic-release identity on every database-backed response", () => {
+    expect(parsed.provenance.releaseId).toBe(provenanceFixture.releaseId);
+    expect(parsed.provenance.datasetVersion).toBe(provenanceFixture.datasetVersion);
+
+    const dataContracts = [
+      [SpeciesListPageSchema, speciesListFixture],
+      [SpeciesDetailSchema, speciesDetailFixture],
+      [RecordPageSchema, recordsFixture],
+      [CellDistributionSchema, cellsFixture],
+      [SummarySchema, summaryFixture],
+      [ProvenanceSchema, provenanceFixture],
+    ] as const;
+    for (const [schema, fixture] of dataContracts) {
+      for (const field of ["releaseId", "datasetVersion"] as const) {
+        const missing = structuredClone(fixture) as Record<string, unknown>;
+        delete missing[field];
+        expect(() => schema.parse(missing), `${field} was optional`).toThrow();
+      }
+    }
+
+    const invalidRelease = structuredClone(provenanceFixture);
+    invalidRelease.releaseId = "not-a-release-id";
+    expect(() => ProvenanceSchema.parse(invalidRelease)).toThrow();
+
+    const blankDataset = structuredClone(provenanceFixture);
+    blankDataset.datasetVersion = "";
+    expect(() => ProvenanceSchema.parse(blankDataset)).toThrow();
+  });
+
   it("REJECTS malformed data loudly (missing required fields)", () => {
     expect(() => SpeciesListPageSchema.parse({ items: [], page: 1 })).toThrow();
   });
@@ -333,6 +362,8 @@ describe("C2 contract gate", () => {
 
     expect(() =>
       SummarySchema.parse({
+        releaseId: summaryFixture.releaseId,
+        datasetVersion: summaryFixture.datasetVersion,
         totalRecords: 0,
         totalSpecies: 0,
         yearRange: null,
@@ -410,6 +441,8 @@ describe("C2 contract gate", () => {
     >;
     cellsWithoutCounts.forEach((cell) => delete cell.verifiedCount);
     const availableWithoutCounts = {
+      releaseId: cellsFixture.releaseId,
+      datasetVersion: cellsFixture.datasetVersion,
       verificationAvailable: true,
       cells: cellsWithoutCounts,
     };
@@ -417,6 +450,8 @@ describe("C2 contract gate", () => {
 
     expect(() =>
       CellDistributionSchema.parse({
+        releaseId: cellsFixture.releaseId,
+        datasetVersion: cellsFixture.datasetVersion,
         verificationAvailable: false,
         cells: cellsWithoutCounts,
       }),

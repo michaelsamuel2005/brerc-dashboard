@@ -18,6 +18,7 @@ from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
+from psycopg import IsolationLevel
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
@@ -140,11 +141,15 @@ def assert_serving_relation(relation: str) -> str:
 
 
 def get_connection() -> psycopg.Connection:
-    """Open a bounded transaction-read-only API connection.
+    """Open a bounded, repeatable-read, transaction-read-only API connection.
 
     Kept as a compatibility entry point for the existing database safety tests;
     public routers use :func:`serving_connection`, which additionally verifies
-    the live session before yielding it.
+    the live session before yielding it. Repeatable read is important because a
+    route first reads the active release's capabilities and then reads one or
+    more serving views. If an atomic release switch commits between those SQL
+    statements, every statement in this request must still describe the same
+    release snapshot.
     """
     connection = psycopg.connect(
         get_database_url(),
@@ -155,6 +160,7 @@ def get_connection() -> psycopg.Connection:
             "-c default_transaction_read_only=on"
         ),
     )
+    connection.isolation_level = IsolationLevel.REPEATABLE_READ
     connection.read_only = True
     return connection
 
@@ -167,6 +173,7 @@ def serving_connection() -> Iterator[psycopg.Connection]:
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT current_setting('transaction_read_only') AS read_only, "
+                "current_setting('transaction_isolation') AS isolation_level, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_api', 'USAGE') AS is_api, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_loader', 'USAGE') AS is_loader, "
                 "pg_catalog.pg_has_role(current_user, 'brerc_martin', 'USAGE') AS is_martin, "
@@ -177,6 +184,8 @@ def serving_connection() -> Iterator[psycopg.Connection]:
             session = cursor.fetchone()
         if session is None or session.get("read_only") != "on":
             raise RuntimeError("publication database session is not read-only")
+        if session.get("isolation_level") != "repeatable read":
+            raise RuntimeError("publication database session is not repeatable-read")
         if (
             session.get("is_api") is not True
             or session.get("is_loader") is not False

@@ -1,0 +1,16 @@
+# EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
+# 02:30 UTC is illustrative, not approved. An operator must approve the exact
+# cadence, maintenance window and Persistent=true catch-up behaviour first.
+
+[Unit]
+Description=Example schedule for the BRERC full-snapshot publication refresh
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=0
+Unit=brerc-loader-refresh.service
+
+[Install]
+WantedBy=timers.target

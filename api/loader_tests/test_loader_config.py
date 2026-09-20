@@ -49,6 +49,14 @@ def template_document() -> dict[str, object]:
     # approved real activation bounds. Tests supply explicit synthetic bounds.
     document["runtime"]["initial_min_source_rows"] = 1
     document["runtime"]["initial_max_source_rows"] = 10_000_000
+    document["runtime"]["refresh_min_source_rows"] = 1
+    document["runtime"]["refresh_max_source_rows"] = 10_000_000
+    document["runtime"]["refresh_max_source_row_drop_bps"] = 1_000
+    document["runtime"]["refresh_max_source_row_growth_bps"] = 20_000
+    document["runtime"]["refresh_max_publication_basis_drop_bps"] = 1_000
+    document["runtime"]["refresh_max_species_drop_bps"] = 1_000
+    document["runtime"]["refresh_max_cell_drop_bps"] = 1_000
+    document["runtime"]["refresh_max_species_year_drop_bps"] = 1_000
     document["runtime"]["expected_target_environment_id"] = "11111111-1111-4111-8111-111111111111"
     return document
 
@@ -137,6 +145,14 @@ class ConfigCase(unittest.TestCase):
             )
             text = text.replace("REPLACE_WITH_APPROVED_INITIAL_MINIMUM", "1")
             text = text.replace("REPLACE_WITH_APPROVED_INITIAL_MAXIMUM", "10000000")
+            text = text.replace("REPLACE_WITH_APPROVED_REFRESH_MINIMUM", "1")
+            text = text.replace("REPLACE_WITH_APPROVED_REFRESH_MAXIMUM", "10000000")
+            text = text.replace("REPLACE_WITH_APPROVED_SOURCE_DROP_BPS", "1000")
+            text = text.replace("REPLACE_WITH_APPROVED_SOURCE_GROWTH_BPS", "20000")
+            text = text.replace("REPLACE_WITH_APPROVED_PUBLICATION_DROP_BPS", "1000")
+            text = text.replace("REPLACE_WITH_APPROVED_SPECIES_DROP_BPS", "1000")
+            text = text.replace("REPLACE_WITH_APPROVED_CELL_DROP_BPS", "1000")
+            text = text.replace("REPLACE_WITH_APPROVED_SPECIES_YEAR_DROP_BPS", "1000")
             path = Path(temporary_directory, "loader.yaml")
             path.write_text(text, encoding="utf-8")
             return load_loader_config(
@@ -166,14 +182,40 @@ class TestValidConfiguration(ConfigCase):
             "REPLACE_WITH_APPROVED_INITIAL_MAXIMUM",
         )
         self.assertEqual(
+            raw_template["runtime"]["refresh_min_source_rows"],
+            "REPLACE_WITH_APPROVED_REFRESH_MINIMUM",
+        )
+        self.assertEqual(
+            raw_template["runtime"]["refresh_max_source_rows"],
+            "REPLACE_WITH_APPROVED_REFRESH_MAXIMUM",
+        )
+        for key in (
+            "refresh_max_source_row_drop_bps",
+            "refresh_max_source_row_growth_bps",
+            "refresh_max_publication_basis_drop_bps",
+            "refresh_max_species_drop_bps",
+            "refresh_max_cell_drop_bps",
+            "refresh_max_species_year_drop_bps",
+        ):
+            self.assertIsInstance(raw_template["runtime"][key], str)
+            self.assertTrue(raw_template["runtime"][key].startswith("REPLACE_WITH_APPROVED_"))
+        self.assertEqual(
             raw_template["runtime"]["expected_target_environment_id"],
             "REPLACE_WITH_TARGET_ENVIRONMENT_UUID",
         )
         config = self.load_document(template_document())
-        self.assertEqual(config.version, "brerc-loader-v2")
+        self.assertEqual(config.version, "brerc-loader-v3")
         self.assertEqual(config.runtime.batch_size, 5000)
         self.assertEqual(config.runtime.initial_min_source_rows, 1)
         self.assertEqual(config.runtime.initial_max_source_rows, 10_000_000)
+        self.assertEqual(config.runtime.refresh_min_source_rows, 1)
+        self.assertEqual(config.runtime.refresh_max_source_rows, 10_000_000)
+        self.assertEqual(config.runtime.refresh_max_source_row_drop_bps, 1_000)
+        self.assertEqual(config.runtime.refresh_max_source_row_growth_bps, 20_000)
+        self.assertEqual(config.runtime.refresh_max_publication_basis_drop_bps, 1_000)
+        self.assertEqual(config.runtime.refresh_max_species_drop_bps, 1_000)
+        self.assertEqual(config.runtime.refresh_max_cell_drop_bps, 1_000)
+        self.assertEqual(config.runtime.refresh_max_species_year_drop_bps, 1_000)
         self.assertEqual(config.target_connection.mode, "service")
         self.assertEqual(
             config.source_config_path,
@@ -446,6 +488,47 @@ class TestExactContractAndSecrets(ConfigCase):
             with self.subTest(minimum=minimum, maximum=maximum):
                 self.assert_rejected(document)
 
+    def test_refresh_source_bounds_are_positive_ordered_and_bounded(self) -> None:
+        for minimum, maximum in (
+            (0, 1),
+            (1, 0),
+            (20, 10),
+            (1, 1_000_000_001),
+            (True, 10),
+        ):
+            document = template_document()
+            document["runtime"]["refresh_min_source_rows"] = minimum
+            document["runtime"]["refresh_max_source_rows"] = maximum
+            with self.subTest(minimum=minimum, maximum=maximum):
+                self.assert_rejected(document)
+
+    def test_refresh_drop_and_growth_tolerances_are_explicit_strict_bps(self) -> None:
+        drop_keys = (
+            "refresh_max_source_row_drop_bps",
+            "refresh_max_publication_basis_drop_bps",
+            "refresh_max_species_drop_bps",
+            "refresh_max_cell_drop_bps",
+            "refresh_max_species_year_drop_bps",
+        )
+        for key in drop_keys:
+            for value in (-1, 10_001, True, 1.5, "100"):
+                document = template_document()
+                document["runtime"][key] = value
+                with self.subTest(key=key, value=value):
+                    self.assert_rejected(document)
+
+        for value in (-1, 1_000_000_001, True, 1.5, "20000"):
+            document = template_document()
+            document["runtime"]["refresh_max_source_row_growth_bps"] = value
+            with self.subTest(key="refresh_max_source_row_growth_bps", value=value):
+                self.assert_rejected(document)
+
+    def test_refresh_growth_allows_more_than_one_hundred_percent(self) -> None:
+        document = template_document()
+        document["runtime"]["refresh_max_source_row_growth_bps"] = 1_000_000_000
+        config = self.load_document(document)
+        self.assertEqual(config.runtime.refresh_max_source_row_growth_bps, 1_000_000_000)
+
     def test_paths_are_absolute_pairwise_distinct_and_not_the_source_config(self) -> None:
         mutations = (
             {**ENVIRONMENT, "BRERC_TARGET_PASSFILE": "relative.pgpass"},
@@ -522,6 +605,18 @@ class TestExactContractAndSecrets(ConfigCase):
             dataclasses.replace(
                 config.runtime,
                 initial_min_source_rows=config.runtime.initial_max_source_rows + 1,
+            )
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(
+                config.runtime,
+                refresh_min_source_rows=config.runtime.refresh_max_source_rows + 1,
+            )
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(config.runtime, refresh_max_cell_drop_bps=10_001)
+        with self.assertRaises(LoaderConfigurationError):
+            dataclasses.replace(
+                config.runtime,
+                refresh_max_source_row_growth_bps=1_000_000_001,
             )
         with self.assertRaises(LoaderConfigurationError):
             dataclasses.replace(

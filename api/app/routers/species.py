@@ -21,7 +21,7 @@ from app.models import (
     SpeciesListPage,
     SpeciesStats,
 )
-from app.release import ActiveRelease, load_active_release
+from app.release import ActiveRelease, load_active_release, release_identity
 from app.slugs import species_slug
 
 router = APIRouter(prefix="/api", tags=["species"])
@@ -153,7 +153,7 @@ def list_species(
     parameters = _filter_parameters(q, group)
 
     with serving_connection() as connection:
-        load_active_release(connection)
+        release = load_active_release(connection)
         with connection.cursor() as cursor:
             cursor.execute(
                 _LIST_SQL_BY_SORT[sort],
@@ -168,6 +168,7 @@ def list_species(
             facet_rows = cursor.fetchall()
 
     return SpeciesListPage(
+        **release_identity(release),
         items=[_item(row, ambiguous) for row in rows],
         page=page,
         pageSize=page_size,
@@ -204,6 +205,7 @@ def species_detail(species_id: str) -> SpeciesDetail:
     record_count = int(row["total_records"])
     has_records = record_count > 0
     return SpeciesDetail(
+        **release_identity(release),
         speciesId=str(row["species_id"]),
         slug=species_slug(
             row["scientific_name"],

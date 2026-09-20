@@ -33,6 +33,11 @@ COLUMNS = ColumnMap(
     verified="verified",
 )
 
+SYNTHETIC_RELEASE_IDENTITY = {
+    "releaseId": "00000000-0000-4000-8000-000000000099",
+    "datasetVersion": "synthetic-etl-contract-v1",
+}
+
 
 def synthetic_row(record_id: str, grid_ref: str, year: int, verified: str) -> dict[str, object]:
     return {
@@ -78,8 +83,8 @@ def scenario(*, verification_available: bool) -> dict[str, object]:
     records, report = run_pipeline(rows, columns, policy=policy)
     preview = build_candidate_payloads(records, report, species_id="5088")
     return {
-        "cells": preview["cells"],
-        "records": preview["records"],
+        "cells": {**SYNTHETIC_RELEASE_IDENTITY, **preview["cells"]},
+        "records": {**SYNTHETIC_RELEASE_IDENTITY, **preview["records"]},
         "verificationAvailable": report.verification_available,
     }
 

@@ -1,7 +1,7 @@
 # Credential-free loader deployment template. Copy this to a protected location.
 # Every *_env value is an environment-variable NAME, never a credential.
 
-loader_config_version: brerc-loader-v2
+loader_config_version: brerc-loader-v3
 
 # The existing trusted source connector owns the source schema, projection and
 # read-only credentials. Keep its real configuration outside Git as well.
@@ -37,6 +37,20 @@ runtime:
   # The non-numeric placeholders deliberately keep this template non-runnable.
   initial_min_source_rows: REPLACE_WITH_APPROVED_INITIAL_MINIMUM
   initial_max_source_rows: REPLACE_WITH_APPROVED_INITIAL_MAXIMUM
+  # Refresh bounds are separate, required decisions. Never infer them from the
+  # initial load or silently default them in an unattended deployment.
+  refresh_min_source_rows: REPLACE_WITH_APPROVED_REFRESH_MINIMUM
+  refresh_max_source_rows: REPLACE_WITH_APPROVED_REFRESH_MAXIMUM
+  # Basis points are exact integers (100 = 1%; 10000 = 100%). Drop tolerances
+  # are bounded at 10000; source growth may be larger for a small baseline.
+  # Every tolerance is persisted in the immutable release manifest and
+  # rechecked by PostgreSQL.
+  refresh_max_source_row_drop_bps: REPLACE_WITH_APPROVED_SOURCE_DROP_BPS
+  refresh_max_source_row_growth_bps: REPLACE_WITH_APPROVED_SOURCE_GROWTH_BPS
+  refresh_max_publication_basis_drop_bps: REPLACE_WITH_APPROVED_PUBLICATION_DROP_BPS
+  refresh_max_species_drop_bps: REPLACE_WITH_APPROVED_SPECIES_DROP_BPS
+  refresh_max_cell_drop_bps: REPLACE_WITH_APPROVED_CELL_DROP_BPS
+  refresh_max_species_year_drop_bps: REPLACE_WITH_APPROVED_SPECIES_YEAR_DROP_BPS
   connect_timeout_seconds: 15
   lock_timeout_ms: 30000
   statement_timeout_ms: 3600000
