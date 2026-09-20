@@ -591,7 +591,7 @@ class _SafeInitialSnapshot:
         traceback: TracebackType | None,
     ) -> bool:
         cleanup_failed = self._cleanup()
-        if cleanup_failed:
+        if cleanup_failed and exception is None:
             raise _sanitise_exception(SourceCleanupFailed())
         return False
 

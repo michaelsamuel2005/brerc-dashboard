@@ -28,7 +28,7 @@ from uuid import UUID, uuid4
 
 from brerc_source import SourceConnectorConfig, TrustedPostgreSQLSourceConnector
 from brerc_source.config import SourceConfigError, load_source_config
-from brerc_source.errors import TrustedSourceConnectorError
+from brerc_source.errors import SourceProtocolError, TrustedSourceConnectorError
 from brerc_source.models import SafeSourceSnapshotEvidence, cursor_column_names, mapping_row
 from etl.pipeline import ColumnMap
 from etl.policy import InvalidPolicy, PolicyNotApproved, PublicationPolicy
@@ -590,19 +590,26 @@ def _run_initial_with_inputs(
         staged_rows = 0
         approved_minimum, approved_maximum = _source_count_bounds(config, mode)
         with snapshot_context as snapshot:
-            for batch in snapshot:
-                _check_deadline(deadline, target)
-                if not isinstance(batch, tuple) or not batch:
-                    raise LoaderCandidateInvalid()
-                maximum = config.runtime.batch_size
-                for start in range(0, len(batch), maximum):
+            try:
+                for batch in snapshot:
                     _check_deadline(deadline, target)
-                    chunk = batch[start : start + maximum]
-                    if staged_rows + len(chunk) > approved_maximum:
-                        raise LoaderSourceCountRejected()
-                    target.stage_batch(handle, chunk)
-                    staged_rows += len(chunk)
-            evidence = snapshot.evidence
+                    if not isinstance(batch, tuple) or not batch:
+                        raise LoaderCandidateInvalid()
+                    maximum = config.runtime.batch_size
+                    for start in range(0, len(batch), maximum):
+                        _check_deadline(deadline, target)
+                        chunk = batch[start : start + maximum]
+                        if staged_rows + len(chunk) > approved_maximum:
+                            raise LoaderSourceCountRejected()
+                        target.stage_batch(handle, chunk)
+                        staged_rows += len(chunk)
+                evidence = snapshot.evidence
+            except SourceProtocolError:
+                # A protocol failure while consuming candidate rows or their
+                # end-of-stream evidence means the snapshot itself violated
+                # the approved result contract.  Setup/session failures occur
+                # outside this block and remain infrastructure failures.
+                raise LoaderCandidateInvalid() from None
 
         _check_deadline(deadline, target)
 

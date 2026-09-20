@@ -1,17 +1,22 @@
+from pathlib import Path
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
-from unittest.mock import patch, MagicMock
+import yaml
 
 from etl.aggregation.counts import (
-    SUPPRESSION_THRESHOLD,
-    suppress_low_counts,
     aggregate_counts,
     build_public_aggregation,
+    suppress_low_counts,
 )
 
 
-def test_legacy_example_matches_safe_v1_k1_without_becoming_release_authority():
-    assert SUPPRESSION_THRESHOLD == 1
+def test_tracked_legacy_example_preserves_the_k2_safety_floor():
+    example = Path(__file__).resolve().parents[4] / "config" / "safety.yaml.example"
+    config = yaml.safe_load(example.read_text(encoding="utf-8"))
+    assert config["aggregation"]["suppression_threshold"] == 2
+
 
 # --- suppress_low_counts tests ---
 
@@ -56,9 +61,7 @@ def test_aggregate_counts_calculates_correct_totals(mock_grid_square):
             "date": ["01/01/2020", "15/06/2020"],
         }
     )
-    result = aggregate_counts(
-        df, "verified", "easting", "northing", "date", cell_size_m=1000
-    )
+    result = aggregate_counts(df, "verified", "easting", "northing", "date", cell_size_m=1000)
     assert len(result) == 1
     assert result.loc[0, "record_count"] == 2
     assert result.loc[0, "verified_count"] == 1
@@ -76,9 +79,7 @@ def test_aggregate_counts_drops_missing_coordinates(mock_grid_square):
             "date": ["01/01/2020"],
         }
     )
-    result = aggregate_counts(
-        df, "verified", "easting", "northing", "date", cell_size_m=1000
-    )
+    result = aggregate_counts(df, "verified", "easting", "northing", "date", cell_size_m=1000)
     assert len(result) == 0
 
 
@@ -94,9 +95,7 @@ def test_aggregate_counts_drops_invalid_dates(mock_grid_square):
             "date": ["invalid_date_string"],
         }
     )
-    result = aggregate_counts(
-        df, "verified", "easting", "northing", "date", cell_size_m=1000
-    )
+    result = aggregate_counts(df, "verified", "easting", "northing", "date", cell_size_m=1000)
     assert len(result) == 0
 
 
@@ -112,9 +111,7 @@ def test_aggregate_counts_calculates_cell_sw_corners(mock_grid_square):
             "date": ["01/01/2020"],
         }
     )
-    result = aggregate_counts(
-        df, "verified", "easting", "northing", "date", cell_size_m=1000
-    )
+    result = aggregate_counts(df, "verified", "easting", "northing", "date", cell_size_m=1000)
     assert result.loc[0, "cell_sw_easting"] == 1000
     assert result.loc[0, "cell_sw_northing"] == 2000
 

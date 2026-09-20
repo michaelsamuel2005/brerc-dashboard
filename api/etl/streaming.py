@@ -115,6 +115,7 @@ class StreamingTransformSession:
         "_finished",
         "_header",
         "_policy",
+        "_previous_source_id",
         "_report",
         "_secret",
         "_sensitivity_counts",
@@ -138,6 +139,7 @@ class StreamingTransformSession:
         self._header = header
         self._secret = reconciliation_secret
         self._finished = False
+        self._previous_source_id: Decimal | None = None
         self._sensitivity_counts: Counter[str] = Counter()
         report = PipelineReport()
         report.policy_version = policy.version
@@ -169,6 +171,14 @@ class StreamingTransformSession:
                     "SOURCE_RESULT_ROW_MISMATCH: row keys differ from the validated header"
                 )
             canonical_id = canonical_unique_no(row.get(self._columns.record_id))
+            source_id = Decimal(canonical_id)
+            # The source cursor orders this numeric key ascending. Enforcing
+            # that contract catches duplicates across batches in O(1) memory.
+            if self._previous_source_id is not None and source_id <= self._previous_source_id:
+                raise StreamingTransformError(
+                    "source identifiers must be strictly increasing after canonicalisation"
+                )
+            self._previous_source_id = source_id
             row[self._columns.record_id] = canonical_id
             if self._columns.sensitivity is not None:
                 raw_sensitivity = row.get(self._columns.sensitivity)

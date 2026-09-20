@@ -31,24 +31,34 @@ destination:
   schema: public
   table: occurrence_public
 
-# Public API's read-only connection (api/app/db.py). Deliberately its own
-# block, separate from 'destination' above: the API must connect with a
-# login inheriting only the reviewed `brerc_api` group role, never the ETL's
-# write credentials.
-# Sharing 'destination' here would mean the "read-only" API silently starts
-# writing on any host where safety.yaml wins over DATABASE_URL.
-# Production requires PostgreSQL certificate and hostname verification. Point
-# sslrootcert at the mounted BRERC/Council database CA certificate; never put a
-# private key or a password in this example file.
+# Public API's read-only connection (api/app/db.py).
+#
+# OPTIONAL — most setups leave this commented out. The API normally takes its
+# connection from DATABASE_URL, and container deployments always do: the API
+# image copies only app/, so this file is not present there. The ETL never
+# reads this block. Uncomment it only if you run the API straight from the
+# repository and prefer this controlled local configuration to api/.env.
+#
+# If you do uncomment it, set BOTH user and password, or neither. A half-filled
+# block raises "The api_readonly block is incomplete" rather than falling back
+# to DATABASE_URL.
+#
+# Deliberately its own block, separate from 'destination' above: the API must
+# connect with a login inheriting only the reviewed `brerc_api` group role,
+# never the ETL's write credentials. Sharing 'destination' here would mean the
+# "read-only" API silently starts writing wherever this file wins over
+# DATABASE_URL. Production requires PostgreSQL certificate and hostname
+# verification. Point sslrootcert at the mounted BRERC/Council database CA;
+# never put a private key or password in this example file.
 
-api_readonly:
-  dbhostname:
-  port:
-  dbname:
-  user:
-  password:
-  sslmode: verify-full
-  sslrootcert:
+# api_readonly:
+#   dbhostname:
+#   port:
+#   dbname:
+#   user:
+#   password:
+#   sslmode: verify-full
+#   sslrootcert:
 
 # Admin database connection. Set dbhostname, dbname, user and password together.
 # Used only for schema-mutating operations such as full rebuilds.
@@ -104,9 +114,10 @@ generalisation:
   default_sensitive_resolution_m: 1000
 
 aggregation:
-  # Legacy pandas preview only; the approval artifact is production authority.
-  # Safe-v1 has no additional sparse-cell suppression after safety gates (k=1).
-  suppression_threshold: 1
+  # Legacy pandas path only; it does not read the approval artifact and must not
+  # inherit safe-v1's k=1 decision. Retain the prior k=2 safety floor until the
+  # legacy command is disabled by the complete-snapshot refresh port.
+  suppression_threshold: 2
   cell_size_m: 1000
 
 species_resolutions: {}

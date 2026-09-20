@@ -24,6 +24,18 @@ npm run build        # production build
 npm run e2e:install && npm run e2e   # browser: WebGL, keyboard, bidirectional sync, axe
 ```
 
+## Optional review tooling
+
+- `npm run screenshots:review` captures desktop/mobile screenshots and browser
+  errors from `APP_URL` (or starts the mock dev server when it is absent). Its
+  ignored output is for visual review, not release evidence by itself.
+- `npm run a11y:mutate` runs the focused accessibility mutation harness in a
+  disposable copy. See [`mutation/README.md`](mutation/README.md); it is an
+  explicit long-running review activity, not a per-commit CI gate.
+
+CI syntax-checks both utilities. The mandatory unit, browser and accessibility
+jobs remain the release gates.
+
 ## What's here — P0–P3 (slice 1)
 **P0/P1:** strict TS, accessible shell, design tokens (AA), ESLint + `jsx-a11y`, the `guard`
 script, CI (`.github/workflows/ci.yml`); the `lib/api` Zod contract (single source of truth),
@@ -69,6 +81,9 @@ verifiedCount?}]}` — IDs, not geometry; `verifiedCount` is required only when 
 available) ·
 `/api/records` · `/api/meta/provenance` · `/api/health`
 
-## Next
-P3 slice 2 — MVT/PMTiles tiles + viewport fetch (once the backend tile endpoint is agreed with
-Victor) and a records-by-year chart (Recharts). Then P4 — multi-species browsing.
+## Map-serving decision
+
+Safe v1 follows one authoritative route for both the map and accessible table:
+`frontend → /api/distribution/cells → serve.public_distribution_cell`. It does
+not use Martin, MVT/PMTiles or `/tiles`; see
+[`PUBLIC_SERVING_ARCHITECTURE.md`](../docs/PUBLIC_SERVING_ARCHITECTURE.md).
