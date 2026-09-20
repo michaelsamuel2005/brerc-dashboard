@@ -28,7 +28,7 @@ from app.models import (
     RecordRow,
 )
 from app.release import ActiveRelease, load_active_release
-from app.routers import distribution, records, species, summary
+from app.routers import distribution, provenance, records, species, summary
 from app.slugs import SLUG_PATTERN, slugify, species_slug
 
 
@@ -102,6 +102,7 @@ def _release(**overrides: object) -> ActiveRelease:
         "place_available": True,
         "abundance_available": True,
         "record_type_available": True,
+        "sensitive_record_action": "withhold",
     }
     values.update(overrides)
     return ActiveRelease(**values)  # type: ignore[arg-type]
@@ -305,10 +306,12 @@ class TestReleaseSelection:
             "place_available": False,
             "abundance_available": False,
             "record_type_available": False,
+            "sensitive_record_action": "withhold",
         }
         release = load_active_release(ScriptedConnection([[row]]))
         assert release.mode == "aggregates-only"
         assert release.source_label == "BRERC"
+        assert release.sensitive_record_action == "withhold"
 
     @pytest.mark.parametrize("rows", [[], [{"release_id": "one"}, {"release_id": "two"}]])
     def test_missing_or_ambiguous_release_is_unavailable(self, rows: list[dict]) -> None:
@@ -330,10 +333,60 @@ class TestReleaseSelection:
             "place_available": False,
             "abundance_available": False,
             "record_type_available": False,
+            "sensitive_record_action": "withhold",
         }
         with pytest.raises(HTTPException) as error:
             load_active_release(ScriptedConnection([[row]]))
         assert error.value.status_code == 503
+
+    def test_unknown_sensitive_record_action_is_unavailable(self) -> None:
+        row = {
+            "release_id": "release",
+            "published_at": None,
+            "source_data_as_of": None,
+            "publication_policy_version": None,
+            "dataset_version": None,
+            "public_source_label": None,
+            "verification_available": False,
+            "individual_records_available": False,
+            "record_verification_available": False,
+            "place_available": False,
+            "abundance_available": False,
+            "record_type_available": False,
+            "sensitive_record_action": "unknown",
+        }
+        with pytest.raises(HTTPException) as error:
+            load_active_release(ScriptedConnection([[row]]))
+        assert error.value.status_code == 503
+
+
+class TestProvenance:
+    @pytest.mark.parametrize(
+        ("action", "public_mode", "note_fragment"),
+        [
+            ("withhold", "withheld", "counts are not published"),
+            ("generalise", "generalised", "generalised before publication"),
+        ],
+    )
+    def test_policy_copy_is_bound_to_the_active_release_action(
+        self, action: str, public_mode: str, note_fragment: str
+    ) -> None:
+        connection = ScriptedConnection(
+            [
+                {"record_total": 3},
+                [{"precision_metres": 1000}, {"precision_metres": 10000}],
+            ]
+        )
+        release = _release(sensitive_record_action=action)
+        serving_patch, release_patch = _patch_router(provenance, connection, release)
+        with serving_patch, release_patch:
+            result = provenance.provenance()
+
+        assert result.sensitivityPolicy.protectedRecordsMode == public_mode
+        assert result.sensitivityPolicy.publishedLocationTiersMetres == [1000, 10000]
+        assert note_fragment in result.sensitivityPolicy.note
+        if action == "withhold":
+            assert "generalis" not in result.sensitivityPolicy.note.casefold()
 
 
 class TestSummary:

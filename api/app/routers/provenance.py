@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.config import SENSITIVITY_POLICY_NOTE
 from app.db import assert_serving_relation, serving_connection
 from app.models import Provenance, SensitivityPolicy
 from app.release import ActiveRelease, load_active_release
@@ -24,6 +23,19 @@ SELECT DISTINCT precision_metres
 FROM {assert_serving_relation("serve.public_record")}
 ORDER BY precision_metres
 """  # noqa: S608 - checked constants
+
+_POLICY_PRESENTATION = {
+    "generalise": (
+        "generalised",
+        "Locations of records requiring sensitive-record protection are generalised before "
+        "publication. Precise coordinates are never released.",
+    ),
+    "withhold": (
+        "withheld",
+        "Records requiring sensitive-record protection are withheld from this public release. "
+        "Their locations and counts are not published, and precise coordinates are never released.",
+    ),
+}
 
 
 def _coverage_caveats(release: ActiveRelease) -> list[str]:
@@ -54,15 +66,17 @@ def provenance() -> Provenance:
             cursor.execute(_TIERS_SQL)
             tiers = [int(row["precision_metres"]) for row in cursor.fetchall()]
 
+    protected_records_mode, policy_note = _POLICY_PRESENTATION[release.sensitive_record_action]
+
     return Provenance(
         lastUpdated=release.source_data_as_of or release.published_at or "",
         recordTotal=record_total,
         sources=[release.source_label] if release.source_label else [],
         coverageCaveats=_coverage_caveats(release),
         sensitivityPolicy=SensitivityPolicy(
-            generalisationTiersMetres=tiers,
-            appliesToProtectedTaxa=True,
-            note=SENSITIVITY_POLICY_NOTE,
+            protectedRecordsMode=protected_records_mode,
+            publishedLocationTiersMetres=tiers,
+            note=policy_note,
         ),
         attributions=[],
     )

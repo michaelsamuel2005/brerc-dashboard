@@ -34,12 +34,50 @@ def build(batch_size: int, *, run_metadata: object = None) -> str:
     return digest.hexdigest()
 
 
+def build_public_release_digest(sensitive_record_action: str) -> str:
+    digest = ReleaseDigest(PUBLIC_RELEASE_DIGEST_TABLES)
+    release = PUBLIC_RELEASE_DIGEST_TABLES[0]
+    digest.begin(release.name, release.columns)
+    digest.rows(
+        (
+            (
+                "safe-v1",
+                "dataset-v1",
+                sensitive_record_action,
+                "none",
+                1,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                "BRERC",
+            ),
+        )
+    )
+    digest.end()
+    for table in PUBLIC_RELEASE_DIGEST_TABLES[1:]:
+        digest.begin(table.name, table.columns)
+        digest.rows(())
+        digest.end()
+    return digest.hexdigest()
+
+
 class TestReleaseDigest(unittest.TestCase):
     def test_real_public_profile_excludes_run_and_snapshot_timestamps(self):
         columns = PUBLIC_RELEASE_DIGEST_TABLES[0].columns
         self.assertNotIn("release_id", columns)
         self.assertNotIn("source_data_as_of", columns)
         self.assertNotIn("created_at", columns)
+
+    def test_real_public_profile_binds_the_sensitive_record_action(self):
+        columns = PUBLIC_RELEASE_DIGEST_TABLES[0].columns
+        self.assertEqual(columns[2], "sensitive_record_action")
+        self.assertNotEqual(
+            build_public_release_digest("generalise"),
+            build_public_release_digest("withhold"),
+        )
 
     def test_batch_boundaries_and_run_metadata_do_not_change_digest(self):
         self.assertEqual(build(1), build(2))

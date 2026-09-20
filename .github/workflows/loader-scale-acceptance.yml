@@ -193,6 +193,7 @@ jobs:
             "${POSTGIS_CONTAINER}" \
             ../db/roles.sql \
             ../db/migrations/0001_publication_store.sql \
+            ../db/migrations/0002_sensitive_record_action.sql \
             loader_tests/postgis16_destination_fixture.sql \
             "${RUNNER_TEMP}/brerc-loader-scale-target"
       - name: Execute the fail-closed scale acceptance

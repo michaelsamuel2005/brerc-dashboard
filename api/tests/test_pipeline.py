@@ -46,6 +46,7 @@ DEV_NO_VERIFICATION = dataclasses.replace(
     DEVELOPMENT_POLICY,
     version="development-without-verification",
     verification_publication_mode="unavailable",
+    sensitive_record_action="generalise",
     publish_record_verification=False,
 )
 
@@ -91,6 +92,7 @@ VIEW_POLICY = PublicationPolicy(
     record_type_safety_mode="not-used",
     row_level_records_mode="aggregates-only",
     verification_publication_mode="unavailable",
+    sensitive_record_action="generalise",
     ordinary_resolution_metres=100,
     default_sensitive_metres=10000,
     row_sensitive_resolution_metres=1000,
@@ -299,6 +301,97 @@ class TestMainDataDashSensitivityControl(unittest.TestCase):
             run([view_row()], wrong, policy=VIEW_POLICY)
 
 
+class TestSafeV1SensitiveRecordWithholding(unittest.TestCase):
+    """The approved safe-v1 shape excludes every sensitive-record axis.
+
+    These are pipeline tests rather than unit tests for ``generalise``: they
+    prove that withheld rows never become public ids, records, cells or counts.
+    """
+
+    POLICY = dataclasses.replace(
+        VIEW_POLICY,
+        version="safe-v1-withholding-test",
+        sensitive_record_action="withhold",
+        ordinary_resolution_metres=1000,
+        record_type_safety_mode="rules",
+        sensitive_record_type_metres={"bat roost": 10000},
+        record_type_vocabulary=frozenset({"field record", "bat roost"}),
+    )
+
+    def test_all_runtime_sensitivity_axes_are_absent_from_every_public_surface(self):
+        rows = [
+            view_row(unique_no="ordinary", sensitive="No"),
+            view_row(unique_no="row-yes", sensitive="Yes"),
+            view_row(unique_no="row-blank", sensitive=""),
+            view_row(
+                unique_no="taxon",
+                species_no=SENSITIVE_ID,
+                scientific_name="Allium sphaerocephalon",
+                common_name="Round-headed leek",
+                sensitive="No",
+            ),
+            view_row(unique_no="record-type", sensitive="No", record_type="bat roost"),
+        ]
+
+        records, report = run(rows, VIEW_COLUMNS, policy=self.POLICY)
+
+        self.assertEqual(
+            [record.record_id for record in records], [self.POLICY.public_record_id("ordinary")]
+        )
+        self.assertEqual(
+            [(record.grid_ref, record.precision_metres) for record in records], [("ST5872", 1000)]
+        )
+        self.assertEqual(report.withheld["sensitive-record-withheld"], 4)
+        self.assertEqual(report.records_public, 1)
+        self.assertEqual(report.sensitive_record_action, "withhold")
+        self.assertTrue(report.reconciles())
+        self.assertEqual(
+            [(cell.cell_id, cell.record_count) for cell in report.aggregation.cells],
+            [("ST5872", 1)],
+        )
+
+        payloads = build_candidate_payloads(records, report)
+        self.assertEqual(payloads["cells"]["cells"][0]["recordCount"], 1)
+        self.assertEqual(payloads["records"]["items"], [])
+        for private_value in ("row-yes", "row-blank", "taxon", "record-type"):
+            self.assertNotIn(private_value, str(payloads))
+
+    def test_dictionary_sensitivity_alone_withholds_without_spatial_output(self):
+        dictionary = SpeciesDictionary(
+            [SpeciesRecord(ORDINARY_ID, "Anguis fragilis", "Slow-worm", True)]
+        )
+
+        records, report = run(
+            [view_row(unique_no="dictionary-sensitive", sensitive="No")],
+            VIEW_COLUMNS,
+            policy=self.POLICY,
+            dictionary=dictionary,
+        )
+
+        self.assertEqual(records, [])
+        self.assertEqual(report.withheld, {"sensitive-record-withheld": 1})
+        self.assertEqual(report.aggregation.cells, ())
+        self.assertTrue(report.reconciles())
+
+    def test_k_one_retains_an_ordinary_singleton_and_never_sharpens_coarse_input(self):
+        fine, fine_report = run(
+            [view_row(unique_no="singleton", sensitive="No")],
+            VIEW_COLUMNS,
+            policy=self.POLICY,
+        )
+        coarse, coarse_report = run(
+            [view_row(unique_no="coarse", sensitive="No", grid_ref="ST57")],
+            VIEW_COLUMNS,
+            policy=self.POLICY,
+        )
+
+        self.assertEqual(self.POLICY.min_records_per_cell, 1)
+        self.assertEqual((fine[0].grid_ref, fine[0].precision_metres), ("ST5872", 1000))
+        self.assertEqual((coarse[0].grid_ref, coarse[0].precision_metres), ("ST57", 10000))
+        self.assertEqual(fine_report.records_suppressed, 0)
+        self.assertEqual(coarse_report.records_suppressed, 0)
+
+
 class TestThePolicyIsRequiredAndValidated(unittest.TestCase):
     def test_omitting_the_policy_is_a_type_error(self):
         with self.assertRaises(TypeError):
@@ -332,6 +425,7 @@ class TestReleasePayloadBoundary(unittest.TestCase):
             record_type_safety_mode="rules",
             row_level_records_mode="aggregates-only",
             verification_publication_mode="unavailable",
+            sensitive_record_action="generalise",
             sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
             sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
             ordinary_resolution_metres=100,
@@ -708,6 +802,7 @@ class TestSensitiveRecordTypes(unittest.TestCase):
     POLICY = PublicationPolicy(
         version="t",
         development_only=True,
+        sensitive_record_action="generalise",
         precision_mode="approved",
         suppression_mode="none",
         licensing_mode="not-applicable",
@@ -781,6 +876,7 @@ class TestLicenceGate(unittest.TestCase):
     POLICY = PublicationPolicy(
         version="t",
         development_only=True,
+        sensitive_record_action="generalise",
         precision_mode="approved",
         suppression_mode="none",
         licensing_mode="all-publication-allow-list",
@@ -824,6 +920,7 @@ class TestSuppressionIsConsistentAcrossTheWholeView(unittest.TestCase):
         record_type_safety_mode="not-used",
         row_level_records_mode="aggregates-only",
         verification_publication_mode="unavailable",
+        sensitive_record_action="generalise",
         ordinary_resolution_metres=100,
         min_records_per_cell=2,
         public_id_salt="x" * 32,

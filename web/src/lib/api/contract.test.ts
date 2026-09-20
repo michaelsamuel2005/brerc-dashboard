@@ -2,8 +2,8 @@
 // C2 CONTRACT GATE. Fails CI if a named private/source identifier, precise-coordinate or
 // sensitivity FIELD can enter a parsed payload, or if a record's gridRef is finer than its
 // stated precision. It cannot detect PII embedded in an otherwise allowed text value; the
-// server must construct those values from controlled policy labels. Server-side
-// generalisation remains the location-safety boundary (A3/A4).
+// server must construct those values from controlled policy labels. The server's
+// approval-bound withholding/generalisation action remains the location-safety boundary.
 // ---------------------------------------------------------------------------
 import { describe, expect, it } from "vitest";
 import { gridRefPrecisionMetres } from "../geo/gridref";
@@ -150,6 +150,26 @@ describe("C2 contract gate", () => {
     const items = extra.items as Array<Record<string, unknown>>;
     if (items[0]) items[0].eastingLabel = "anything";
     expect(() => RecordPageSchema.parse(extra)).toThrow();
+  });
+
+  it("reports withholding truthfully and rejects misleading or unordered policy metadata", () => {
+    expect(parsed.provenance.sensitivityPolicy).toMatchObject({
+      protectedRecordsMode: "withheld",
+      publishedLocationTiersMetres: [1_000, 10_000],
+    });
+    expect(parsed.provenance.sensitivityPolicy.note).not.toMatch(/generali[sz]/i);
+
+    const legacyClaim = structuredClone(provenanceFixture) as Record<string, unknown>;
+    legacyClaim.sensitivityPolicy = {
+      generalisationTiersMetres: [1_000, 10_000],
+      appliesToProtectedTaxa: true,
+      note: "Protected records are generalised.",
+    };
+    expect(() => ProvenanceSchema.parse(legacyClaim)).toThrow();
+
+    const unordered = structuredClone(provenanceFixture);
+    unordered.sensitivityPolicy.publishedLocationTiersMetres = [10_000, 1_000];
+    expect(() => ProvenanceSchema.parse(unordered)).toThrow();
   });
 
   it("REJECTS malformed data loudly (missing required fields)", () => {

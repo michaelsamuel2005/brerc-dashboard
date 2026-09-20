@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, cast
 
 from fastapi import HTTPException
 
@@ -23,6 +24,7 @@ class ActiveRelease:
     place_available: bool
     abundance_available: bool
     record_type_available: bool
+    sensitive_record_action: Literal["generalise", "withhold"]
 
     @property
     def mode(self) -> str:
@@ -33,7 +35,8 @@ _RELEASE_SQL = f"""
 SELECT release_id, published_at, source_data_as_of, publication_policy_version,
        dataset_version, public_source_label, verification_available,
        individual_records_available, record_verification_available,
-       place_available, abundance_available, record_type_available
+       place_available, abundance_available, record_type_available,
+       sensitive_record_action
 FROM {assert_serving_relation("serve.public_release")}
 """  # noqa: S608 - the relation is an allow-listed constant
 
@@ -49,6 +52,12 @@ def _as_database_bool(value: object) -> bool:
     if type(value) is not bool:
         raise HTTPException(status_code=503, detail="Publication capability state is invalid")
     return value
+
+
+def _as_sensitive_record_action(value: object) -> Literal["generalise", "withhold"]:
+    if value not in {"generalise", "withhold"}:
+        raise HTTPException(status_code=503, detail="Sensitive-record publication state is invalid")
+    return cast(Literal["generalise", "withhold"], value)
 
 
 def load_active_release(connection) -> ActiveRelease:
@@ -77,4 +86,5 @@ def load_active_release(connection) -> ActiveRelease:
         place_available=_as_database_bool(row["place_available"]),
         abundance_available=_as_database_bool(row["abundance_available"]),
         record_type_available=_as_database_bool(row["record_type_available"]),
+        sensitive_record_action=_as_sensitive_record_action(row["sensitive_record_action"]),
     )

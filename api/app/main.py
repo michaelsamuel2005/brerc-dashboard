@@ -16,7 +16,7 @@ from app.routers import distribution, health, provenance, records, species, summ
 app = FastAPI(
     title="BRERC Public Dashboard API",
     version="0.1.0",
-    description="Read-only API serving the active, generalised publication release.",
+    description="Read-only API serving the active public-safe publication release.",
     docs_url=None if IS_PROD else "/docs",
     redoc_url=None if IS_PROD else "/redoc",
     openapi_url=None if IS_PROD else "/openapi.json",

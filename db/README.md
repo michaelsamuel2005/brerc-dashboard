@@ -12,12 +12,15 @@ schema only: no client rows, credentials, hostnames, email addresses or private 
 |---|---|
 | `roles.sql` | Creates or verifies four non-login, least-privilege group roles. |
 | `migrations/0001_publication_store.sql` | Installs the versioned schemas, tables, constraints, indexes, PostGIS geometry and serving views. |
+| `migrations/0002_sensitive_record_action.sql` | Adds approval-bound sensitive-record action evidence to manifests, releases and the serving view. |
 
 Apply each file with a migration/administrator account and `ON_ERROR_STOP`:
 
 ```sh
 psql -X -v ON_ERROR_STOP=1 -f db/roles.sql "$BRERC_DESTINATION_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 -f db/migrations/0001_publication_store.sql \
+  "$BRERC_DESTINATION_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 -f db/migrations/0002_sensitive_record_action.sql \
   "$BRERC_DESTINATION_ADMIN_DSN"
 ```
 
@@ -29,6 +32,11 @@ Migration `0001` is one transaction and takes a transaction-scoped advisory lock
 the version only as its final statement. Re-running an installed migration raises an error. It
 does not use `CREATE TABLE IF NOT EXISTS` to make an unknown installation resemble the reviewed
 one. A partial failure rolls back the entire migration.
+
+Migration `0002` is also transactional and must follow exactly `0001`. It records whether the
+approved action generalises or withholds sensitive records in both the immutable manifest and
+public-release capabilities. Its deferred database check refuses a committed mismatch. Retained v1
+development releases are labelled `generalise`, the only action supported by policy artifact v1.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS

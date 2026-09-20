@@ -6,11 +6,16 @@ import hashlib
 import json
 from pathlib import Path
 
-from etl.policy import InvalidPolicy, PolicyNotApproved, PublicationPolicy
+from etl.policy import (
+    PUBLICATION_POLICY_ARTIFACT_FORMAT,
+    InvalidPolicy,
+    PolicyNotApproved,
+    PublicationPolicy,
+)
 
 from .errors import LoaderPolicyInvalid
 
-POLICY_ARTIFACT_FORMAT = "brerc-publication-policy/v1"
+POLICY_ARTIFACT_FORMAT = PUBLICATION_POLICY_ARTIFACT_FORMAT
 MAX_POLICY_ARTIFACT_BYTES = 1024 * 1024
 
 _ROOT_KEYS = frozenset({"artifactFormat", "status", "approval", "decisions"})
@@ -22,6 +27,13 @@ _APPROVAL_KEYS = frozenset(
         "evidenceReference",
         "approvedOn",
         "reviewDue",
+        "approvalAuthorityBasis",
+        "delegatingAuthorityName",
+        "delegatingAuthorityRole",
+        "delegatingAuthorityOrganisation",
+        "delegationScope",
+        "delegatedOn",
+        "delegationEvidenceReference",
         "approvalDigest",
     }
 )
@@ -35,6 +47,7 @@ _DECISION_KEYS = frozenset(
         "recordTypeSafetyMode",
         "rowLevelRecordsMode",
         "verificationPublicationMode",
+        "sensitiveRecordAction",
         "sensitiveSnapshotVersion",
         "sensitiveSnapshotSha256",
         "speciesDictionarySha256",
@@ -221,6 +234,15 @@ def parse_publication_policy_artifact(
             evidence_reference=_string(approval["evidenceReference"]),
             approved_on=_string(approval["approvedOn"]),
             review_due=_string(approval["reviewDue"]),
+            approval_authority_basis=_string(approval["approvalAuthorityBasis"]),
+            delegating_authority_name=_optional_string(approval["delegatingAuthorityName"]),
+            delegating_authority_role=_optional_string(approval["delegatingAuthorityRole"]),
+            delegating_authority_organisation=_optional_string(
+                approval["delegatingAuthorityOrganisation"]
+            ),
+            delegation_scope=_optional_string(approval["delegationScope"]),
+            delegated_on=_optional_string(approval["delegatedOn"]),
+            delegation_evidence_reference=_optional_string(approval["delegationEvidenceReference"]),
             approval_digest=_string(approval["approvalDigest"]),
             development_only=False,
             precision_mode=_string(decisions["precisionMode"]),
@@ -229,6 +251,7 @@ def parse_publication_policy_artifact(
             record_type_safety_mode=_string(decisions["recordTypeSafetyMode"]),
             row_level_records_mode=_string(decisions["rowLevelRecordsMode"]),
             verification_publication_mode=_string(decisions["verificationPublicationMode"]),
+            sensitive_record_action=_string(decisions["sensitiveRecordAction"]),
             sensitive_snapshot_version=_optional_string(decisions["sensitiveSnapshotVersion"]),
             sensitive_snapshot_sha256=_optional_string(decisions["sensitiveSnapshotSha256"]),
             species_dictionary_sha256=_optional_string(decisions["speciesDictionarySha256"]),

@@ -37,6 +37,7 @@ DEV = DEVELOPMENT_POLICY
 DEV_PROMOTING = PublicationPolicy(
     version="test-promoting",
     development_only=True,
+    sensitive_record_action="generalise",
     ordinary_resolution_metres=100,
     default_sensitive_metres=10000,
     coarsen_unpublishable_resolutions=True,
@@ -116,6 +117,7 @@ class TestDictionaryFlagIsUnionedNotSubstituted(unittest.TestCase):
         policy = PublicationPolicy(
             version="t",
             development_only=True,
+            sensitive_record_action="generalise",
             ordinary_resolution_metres=100,
             default_sensitive_metres=1000,
             sensitive_resolution_metres={" 6973a ": 10000},
@@ -247,6 +249,70 @@ class TestTheGateHolds(unittest.TestCase):
                         self.assertIn(rec.precision_metres, PUBLIC_RESOLUTIONS_METRES)
 
 
+class TestSafeV1WithholdsSensitiveRecords(unittest.TestCase):
+    POLICY = PublicationPolicy(
+        version="safe-v1-test",
+        development_only=True,
+        sensitive_record_action="withhold",
+        ordinary_resolution_metres=1000,
+        default_sensitive_metres=10000,
+        row_sensitive_resolution_metres=1000,
+        sensitive_record_type_metres={"bat roost": 10000},
+        public_id_salt="safe-v1-test-secret-material-32bytes",
+    )
+
+    def assert_withheld(self, record) -> None:
+        self.assertFalse(record.emit)
+        self.assertTrue(record.is_sensitive)
+        self.assertIsNone(record.grid_ref)
+        self.assertIsNone(record.precision_metres)
+        self.assertEqual(record.withheld_reason, "sensitive-record-withheld")
+
+    def test_each_independent_sensitivity_axis_is_withheld_without_geometry(self):
+        cases = (
+            {"species_id": KNOWN_SENSITIVE},
+            {"species_id": KNOWN_ORDINARY, "flagged_sensitive": True},
+            {"species_id": KNOWN_ORDINARY, "row_sensitive": True},
+            {"species_id": KNOWN_ORDINARY, "record_type": "bat roost"},
+        )
+        for values in cases:
+            species_id = values["species_id"]
+            options = {key: value for key, value in values.items() if key != "species_id"}
+            with self.subTest(values=values):
+                self.assert_withheld(
+                    generalise(
+                        "ST5877972166",
+                        species_id,
+                        policy=self.POLICY,
+                        known=True,
+                        **options,
+                    )
+                )
+
+    def test_every_snapshot_sensitive_taxon_is_withheld(self):
+        for species_id in sorted(SENSITIVE_SPECIES_IDS):
+            with self.subTest(species_id=species_id):
+                self.assert_withheld(
+                    generalise(
+                        "ST5877972166",
+                        species_id,
+                        policy=self.POLICY,
+                        known=True,
+                    )
+                )
+
+    def test_ordinary_records_use_one_kilometre_but_are_never_sharpened(self):
+        fine = generalise("ST5877972166", KNOWN_ORDINARY, policy=self.POLICY, known=True)
+        coarse = generalise("ST57", KNOWN_ORDINARY, policy=self.POLICY, known=True)
+        self.assertEqual((fine.grid_ref, fine.precision_metres), ("ST5872", 1000))
+        self.assertEqual((coarse.grid_ref, coarse.precision_metres), ("ST57", 10000))
+
+    def test_unknown_taxon_retains_the_identity_withholding_reason(self):
+        record = generalise("ST5877972166", "NEW-TAXON", policy=self.POLICY, known=False)
+        self.assertFalse(record.emit)
+        self.assertEqual(record.withheld_reason, "species-not-permitted")
+
+
 class TestGeneralisationBehaviour(unittest.TestCase):
     def test_sensitive_species_are_generalised_not_dropped(self):
         # The behaviour change from the previous filtering.py: the record survives.
@@ -291,6 +357,7 @@ class TestRowLevelSensitivity(unittest.TestCase):
     POLICY = PublicationPolicy(
         version="view-test",
         development_only=True,
+        sensitive_record_action="generalise",
         ordinary_resolution_metres=100,
         default_sensitive_metres=10000,
         row_sensitive_resolution_metres=1000,
@@ -434,6 +501,7 @@ class TestSensitiveRecordTypes(unittest.TestCase):
     POLICY = PublicationPolicy(
         version="test-record-types",
         development_only=True,
+        sensitive_record_action="generalise",
         ordinary_resolution_metres=100,
         default_sensitive_metres=10000,
         sensitive_record_type_metres={"bat roost": 10000, "field record": 1000},
@@ -462,6 +530,7 @@ class TestSensitiveRecordTypes(unittest.TestCase):
         policy = PublicationPolicy(
             version="t",
             development_only=True,
+            sensitive_record_action="generalise",
             ordinary_resolution_metres=100,
             sensitive_record_type_metres={"  Bat Roost  ": 10000},
             public_id_salt="test" * 8,

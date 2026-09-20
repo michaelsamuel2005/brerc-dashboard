@@ -1,8 +1,9 @@
 # BRERC source-view contract
 
-**Status:** The initial-load source contract and publication safety core are implemented in this
-port. The trusted connector and destination loader are separate reconciliation items and are not
-present here. Public release and incremental loading remain blocked.
+**Status:** The initial-load source contract, trusted connector, publication safety core and
+inactive destination loader are implemented in this integrated codebase. Safe-v1 production
+activation still requires the strict version-2 policy artifact, approved live-view identity,
+exact controlled inputs and live acceptance evidence. Incremental loading remains blocked.
 
 **Contract version:** `brerc-main-data-dash-2026-07-31`
 
@@ -26,21 +27,26 @@ Before a live database path may process a record, it must prove all of the follo
 7. `sensitive` maps exactly to the row-level safety control.
 8. Only `No` takes the ordinary-location path. `Yes`, null, blank, whitespace and unknown
    values fail closed as sensitive.
-9. A row marked sensitive is shown at exactly a 1 km floor; any coarser taxon or record-type
-   rule still wins.
+9. Under safe v1, a record classified as sensitive by the taxon snapshot, approved dictionary,
+   row flag or approved record type is withheld before a public geometry or public identifier is
+   created. Only an explicit row value of `No` can take the ordinary 1 km-or-coarser route.
 10. Configured record-type sensitivity rules require the exact `record_type` mapping and column;
    the rules cannot remain silently dormant, even for an empty result.
-11. A releasable payload requires a named, dated, unexpired approval bound to the exact
-    publication decisions used for that transformation. Development candidates cannot cross
-    this release boundary.
+11. A releasable payload requires exact `brerc-publication-policy/v2` bytes with a named, dated,
+    unexpired approval bound to the transformation. Direct approval identifies the BRERC
+    approver. Delegated approval identifies the actual approver/organisation plus the BRERC
+    delegator, scope, date and retained delegation evidence. Development candidates and v1
+    artifacts cannot cross this release boundary.
 12. Individual record rows are disabled unless BRERC explicitly approves them. Aggregated
     species-by-year grid cells can still be published without exposing row-level records.
-13. Map suppression is applied at species + year + cell + precision, so unrelated species or
-    years can never be combined merely to pass a minimum-count threshold.
-14. Development payloads are wrapped in a non-serialisable `CandidatePreview`. A future
-    public-database writer must accept only trusted connector output and invoke the release-gated
-    builder itself; accepting caller-provided rows or dictionaries would recreate a confused-deputy
-    path around the release attestation.
+13. The minimum-count mechanism is scoped to species + year + cell + precision, so unrelated
+    species or years can never be combined. Safe v1 binds `k=1`/`suppression_mode=none`, meaning
+    no additional sparse-cell suppression is applied after ineligible and sensitive rows have
+    been withheld.
+14. Development payloads are wrapped in a non-serialisable `CandidatePreview`. The integrated
+    public-database writer accepts only trusted connector output and invokes the release-gated
+    builder itself; accepting caller-provided rows or dictionaries would recreate a
+    confused-deputy path around the release attestation.
 
 The public output remains constructed from an allow-list. Raw `easting`, `northing`,
 `comments`, `bliss`, `place`, `precise_date`, `unique_no` and `sensitive` values do not gain
@@ -67,27 +73,34 @@ identity. The initial-load preflight therefore emits an explicit warning, and th
 refuses to build releasable payloads under this contract version.
 
 The deterministic capture SQL, exact-byte hashing profile, sanitised approval template and
-approval verifier are implemented. A valid approval is a full envelope: source version and
-independently pinned environment, exact definition and composite identity hashes, PostgreSQL
-version, view owner/options, reviewed and complete catalogue-column digests, capture-evidence
-digest and time, named BRERC approver, BRERC organisation and role, approval date and retained
-evidence reference.
+approval verifier are implemented. A valid source-view approval is a full envelope: source
+version and independently pinned environment, exact definition and composite identity hashes,
+PostgreSQL version, view owner/options, reviewed and complete catalogue-column digests,
+capture-evidence digest and time, named approver, approval date and retained evidence reference.
+Where publication authority is delegated, the separate version-2 publication-policy artifact
+must name the actual approver and organisation as well as the BRERC delegator, delegation scope,
+date and retained delegation evidence. A digest detects drift; it does not authenticate either
+person by itself.
 A bare 64-character hash cannot make this contract release-ready. The operator procedure is in
 [`VIEW_DEFINITION_APPROVAL.md`](VIEW_DEFINITION_APPROVAL.md).
 
 Before production extraction, BRERC must run that capture against its internal live view and
-approve the result. The future trusted connector must compare that identity and record safe
-structural checks such as row count and the observed `sensitive` vocabulary. A matching 39-column
-header alone is not production sign-off.
+approve the result. The trusted connector then compares that identity and records safe structural
+checks such as row count and the observed `sensitive` vocabulary. A matching 39-column header
+alone is not production sign-off.
 
 The lower-level Python entry point accepts metadata, headers and rows so the safety core can be
-tested without BRERC's network. Those values are not independent trust evidence. This port does
-not expose them as an approved production connector and does not contain a database writer.
+tested without BRERC's network. Those values are not independent trust evidence and cannot be
+substituted for the trusted connector's locked snapshot, live preflight and evidence object. The
+integrated destination writer accepts that trusted result; it does not turn caller-supplied test
+rows into production evidence.
 
-Before any future activation, the loader must compare the complete initial source count with
-approved bounds, reject an empty public candidate, and independently reconcile the safe ledger,
-suppression cohorts, aggregates, geometry, optional rows and manifest. BRERC must approve the
-bounds; they must not be guessed from the small development samples.
+Before any activation, the loader must compare the complete initial source count with approved
+bounds, reject an empty public candidate, and independently reconcile the safe ledger,
+suppression cohorts, aggregates, geometry, optional rows and manifest. Migration
+`0002_sensitive_record_action` also requires the immutable manifest and public-release row to
+carry the same approval-bound action. BRERC must approve the count bounds; they must not be
+guessed from the small development samples.
 
 ## Confirmed schema
 
@@ -166,20 +179,22 @@ release operation that activates the validated candidate.
 Before incremental mode is enabled, one immutable release manifest must also bind the actual
 load mode, source snapshot/as-of time, watermark window, observed view digest, fixed
 projection/query version, source and candidate counts/digests, and policy, contract and ETL
-versions. The successful watermark update and public-release activation must commit in the
-same database transaction; a failed job advances neither.
+versions, including the exact sensitive-record action. Migration 0002 stores that action on both
+the manifest and public-release row and refuses a committed mismatch. The successful watermark
+update and public-release activation must commit in the same database transaction; a failed job
+advances neither.
 
 ## Configuration boundary
 
-The future database adapter will read connection **environment-variable names**, source object
+The database adapter reads connection **environment-variable names**, source object
 names and mappings from a reviewed configuration file. Passwords, DSNs and real values must
-remain outside the repository. The connector configuration template is intentionally delivered
-with the separate connector port. Configuration is deployment input, not source approval.
+remain outside the repository. The tracked connector configuration template is deliberately
+non-runnable. Configuration is deployment input, not source approval.
 
 Configuration may select where the source lives, but it must not be able to disable:
 
 - the versioned schema check;
-- the `sensitive` mapping or 1 km row-level rule;
+- the `sensitive` mapping or approval-bound safe-v1 withholding action;
 - the private-field/public-field allow-list;
 - reconciliation or atomic release gates.
 
@@ -187,15 +202,18 @@ Those are reviewed safety controls, not deployment switches.
 
 ## Scope limitation
 
-This port validates the confirmed BRERC view contract, canonicalises its source key, and provides
-the fail-closed publication transformations and approval boundary. It does not connect to a live
-source, write a destination database, or switch a public release. Those mechanisms travel in later
-independent ports with their own PostgreSQL integration evidence.
+This integrated codebase validates the confirmed BRERC view contract, canonicalises its source
+key, reads through the trusted locked connector, transforms through the fail-closed boundary,
+stages an inactive destination candidate and can switch a fully reconciled release atomically.
+Those mechanisms have synthetic and PostgreSQL integration coverage; they have not been run
+against BRERC's live production source or an approved production destination.
 
 BRERC has not supplied an approved species dictionary artifact or digest. Until it does, a
 releasable run cannot treat a syntactically valid source species identifier as a known ordinary
 taxon. An absent runtime dictionary is never an implicit allow-list.
 
-It also does **not** perform an approved incremental window, deletion reconciliation,
-failure-email delivery, FastAPI serving, or Martin vector tiles. BRERC approval and representative
-runtime evidence remain mandatory before any production publication claim.
+It also does **not** supply an approved incremental window or deletion reconciliation, the live
+view capture, a retained production policy artifact, real BRERC credentials/data, or production
+acceptance evidence. FastAPI serving code being present does not make its inputs live. Martin (or
+an approved alternative), deployment monitoring/notifications and production infrastructure are
+separate operational decisions. No production publication is claimed.

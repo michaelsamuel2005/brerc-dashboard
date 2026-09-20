@@ -6,6 +6,7 @@ import dataclasses
 import json
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 from brerc_loader.errors import LoaderPolicyInvalid
@@ -74,6 +75,50 @@ class TestPolicyArtifact(unittest.TestCase):
         raw = self.write(document)
         with self.assertRaises(LoaderPolicyInvalid):
             self.load(raw)
+
+    def test_sensitive_action_is_required_and_bound(self):
+        document = self.policy.approval_artifact()
+        del document["decisions"]["sensitiveRecordAction"]
+        raw = self.write(document)
+        with self.assertRaises(LoaderPolicyInvalid):
+            self.load(raw)
+
+        document = self.policy.approval_artifact()
+        document["decisions"]["sensitiveRecordAction"] = "withhold"
+        raw = self.write(document)
+        with self.assertRaises(LoaderPolicyInvalid):
+            self.load(raw)
+
+    def test_v1_artifacts_are_rejected_instead_of_silently_upgraded(self):
+        document = self.policy.approval_artifact()
+        document["artifactFormat"] = "brerc-publication-policy/v1"
+        raw = self.write(document)
+        with self.assertRaises(LoaderPolicyInvalid):
+            self.load(raw)
+
+    def test_delegated_v2_artifact_round_trips_exactly(self):
+        today = date.today()
+        delegated = dataclasses.replace(
+            self.policy,
+            approval_digest=None,
+        ).with_delegated_approval(
+            approved_by="Michael Sebastian",
+            approver_role="Delegated publication decision owner",
+            approver_organisation="University project team",
+            evidence_reference="BRERC-SAFE-V1-TEST",
+            approved_on=today.isoformat(),
+            review_due=(today + timedelta(days=365)).isoformat(),
+            delegating_authority_name="Tim Corner",
+            delegating_authority_role="BRERC Head",
+            delegating_authority_organisation="BRERC",
+            delegation_scope="Safe-v1 publication decisions",
+            delegated_on=today.isoformat(),
+            delegation_evidence_reference="BRERC-DELEGATION-TEST",
+        )
+        document = delegated.approval_artifact()
+        raw = self.write(document)
+        self.secret = delegated.public_id_salt.encode("utf-8")
+        self.assertEqual(self.load(raw), delegated)
 
     def test_digest_consistent_but_semantically_invalid_policy_is_rejected(self):
         invalid = dataclasses.replace(

@@ -198,10 +198,22 @@ def generalise(
     taxon_sensitive = is_sensitive(
         species_id, flagged=flagged_sensitive
     ) or policy.has_sensitive_species_rule(normalised_id)
-    sensitive = taxon_sensitive or row_sensitive
     target = policy.resolution_for(normalised_id, sensitive=taxon_sensitive, known=known)
     if target is None:
-        return GeneralisedRecord(None, None, sensitive, "species-not-permitted")
+        return GeneralisedRecord(
+            None, None, taxon_sensitive or row_sensitive, "species-not-permitted"
+        )
+
+    # Record type is a third, independent sensitivity axis. It must be resolved
+    # before applying the policy action; otherwise an ordinary taxon attached to
+    # a protected nest/roost type could slip through the withholding decision.
+    by_type = policy.resolution_for_record_type(record_type)
+    sensitive = taxon_sensitive or row_sensitive or by_type is not None
+    # Only an explicit generalisation decision may emit a sensitive row. Both
+    # safe-v1's `withhold` action and an undecided action fail closed before any
+    # grid geometry or public identifier can be formed.
+    if sensitive and policy.sensitive_record_action != "generalise":
+        return GeneralisedRecord(None, None, True, "sensitive-record-withheld")
 
     if row_sensitive:
         # A row-level flag is an independent floor. It must not accidentally
@@ -212,12 +224,10 @@ def generalise(
             return GeneralisedRecord(None, None, True, "row-sensitivity-policy-missing")
         target = max(target, row_floor)
 
-    by_type = policy.resolution_for_record_type(record_type)
     if by_type is not None:
         # The record type is on BRERC's sensitive list, so the record IS
         # sensitive even where the species is not and even where the species
         # target already satisfies it.
-        sensitive = True
         target = max(target, by_type)
 
     if grid_ref is None or not str(grid_ref).strip():

@@ -1,8 +1,9 @@
 # BRERC public dashboard — publication decisions and sign-off record
 
-**Document version:** 0.1
-**Prepared:** 11 August 2026
-**Status:** Decision request — **not approved for public release**
+**Document version:** 0.2
+**Prepared:** 1 September 2026
+**Status:** Safe-v1 decision set selected and implemented; retained production approval artifact
+and live evidence outstanding — **not activated for public release**
 **Scope:** Public species distributions, aggregate statistics and any future occurrence rows
 
 ## Purpose
@@ -11,31 +12,36 @@ This record separates three things that must not be confused:
 
 - **Confirmed evidence** — facts supported by the supplied view definition, controlled lists
   or the implemented safety boundary.
-- **Proposed safe interim** — a conservative engineering setting. It is not permission to
-  publish.
-- **BRERC approval required** — the decision that the authorised BRERC data owner must record
-  before a production release can be activated.
+- **Selected safe v1** — the narrow initial-release decision now implemented in the safety
+  boundary. It does not by itself prove who approved it or activate production.
+- **Production evidence required** — the retained policy artifact, direct/delegated authority
+  evidence and live technical inputs that the loader must verify before activation.
 
 The prototype, a test fixture and the fact that the software can render a value are not
-publication approval. Blank sign-off fields mean **not approved**.
+production approval. Blank sign-off fields mean **no retained production evidence**. This
+document records the substantive safe-v1 choice; it does not invent names, dates or references
+that have not been supplied.
 
-## Recommended initial-release position
+## Selected initial-release position
 
-Subject to BRERC approving the underlying data licence, the recommended first release is:
+Subject to a retained version-2 approval artifact, the underlying data-licence decision and the
+live acceptance evidence, the selected first release is:
 
 1. aggregate distribution cells and aggregate year/species statistics only;
 2. ordinary public distribution at 1 km, never finer than the source record;
-3. the source `sensitive` rule and any approved coarser taxon or record-type rule applied
-   before aggregation;
-4. sparse cells suppressed consistently from every public view;
+3. **complete withholding of every sensitive record before public geometry or identifier
+   generation**, whether sensitivity comes from the taxon snapshot, approved dictionary, source
+   row or approved record-type rule;
+4. `k=1` with no additional sparse-cell suppression after the safety gate;
 5. no individual occurrence rows, exact record types, abundance, place names, comments,
    precise dates, source identifiers or coordinates;
-6. no photograph unless its rights and attribution have been documented per asset; and
+6. no photograph unless its rights and attribution have been documented per asset;
 7. no verification counts or occurrence-level verification verdicts while the confirmed source
    view has no verdict field; and
 8. no download or redistribution feature until that use is separately licensed.
 
-This position remains blocked from public activation until the sign-off table is completed.
+This position remains blocked from public activation until the version-2 artifact, authority
+chain and live evidence are complete and verified.
 
 ## 1. Location precision
 
@@ -44,40 +50,48 @@ This position remains blocked from public activation until the sign-off table is
 - The supplied source view contains `grid_ref`, precise `easting` and `northing`, and a
   row-level `sensitive` field. Precise coordinates are private inputs and are not public
   output fields.
-- The confirmed view rule states that a row marked sensitive has a **1 km minimum**. Only an
-  explicit `No` follows the non-sensitive route; blank, null or unfamiliar values fail closed.
-- Taxon, row-level and record-type protections are independent. Where several apply, the
-  **coarsest** required result must win.
+- The source material previously described the row-level flag as a 1 km rule. Safe v1 is
+  deliberately stricter: only an explicit `No` can enter the ordinary-location route; `Yes`,
+  blank, null, whitespace and unfamiliar values classify the row as sensitive and it is
+  withheld.
+- Taxon snapshot, approved dictionary, row-level and approved record-type protections are
+  independent. Any one of them is sufficient to withhold a safe-v1 row.
 - The current browser contract can draw 100 m, 1 km and 10 km grid squares. That is a technical
   capability, not permission to publish at those resolutions.
 - The current client cannot draw 2 km tetrads or letters-only 100 km references. The pipeline
   can recognise them as inputs but must not emit a shape the client cannot represent honestly.
 
-### Proposed safe interim
+### Selected safe v1
 
-| Case | Proposed treatment before BRERC approval |
+| Case | Safe-v1 treatment |
 |---|---|
 | Ordinary public distribution | 1 km minimum |
-| Source row `sensitive = Yes` | 1 km minimum; any approved coarser rule still wins |
-| Null, blank or unknown `sensitive` value | Treat as sensitive, never as ordinary |
-| Taxon or record type known to need protection but with no approved resolution | Withhold |
+| Source row `sensitive = Yes` | Withhold before geometry and public-id generation |
+| Null, blank or unknown `sensitive` value | Withhold; only explicit `No` is ordinary |
+| Taxon flagged by retained snapshot or approved dictionary | Withhold |
+| Record type classified sensitive by the approved rules | Withhold |
 | Unknown or unresolved taxon | Withhold |
 | Source record already coarser than the policy | Keep the source resolution; never sharpen |
 | 2 km or 100 km input that the client cannot draw | Withhold; do not silently re-label it |
 
-The proposed 1 km ordinary value replaces the prototype's possible 100 m output for the
-initial aggregate release. It does not authorise public occurrence rows at 1 km.
+The selected 1 km ordinary value replaces the prototype's possible 100 m output for the initial
+aggregate release. It does not authorise public occurrence rows at 1 km; safe v1 is
+aggregate-only.
 
-### BRERC approval required
+### Production evidence required
 
-BRERC must confirm:
+The retained artifact and live acceptance evidence must confirm:
 
-- the ordinary minimum public resolution;
-- whether 1 km is sufficient for every source row marked sensitive;
-- a versioned per-taxon schedule where a taxon requires more than the row-level rule;
-- the resolution for every sensitive record type;
-- the treatment of tetrads and 100 km references; and
-- the owner and review date of each sensitivity schedule.
+- ordinary minimum public resolution = 1 km;
+- sensitive-record action = `withhold` across all four classification axes;
+- aggregate-only output and no 100 m public occurrence route;
+- no sharpening of coarser source records and withholding of unrenderable references; and
+- exact versions/digests and owners of the taxon, dictionary and record-type evidence used to
+  classify sensitivity.
+
+Per-taxon and per-record-type **public** resolutions are not needed for safe v1 because classified
+sensitive rows do not emit. Approving generalised sensitive distributions later would be a new
+policy version, not a configuration tweak.
 
 ## 2. Record-data licence
 
@@ -187,25 +201,28 @@ unlicensed text.
 - Suppressing a map cell while leaving the same records in a table, chart or total does not
   protect the information. Suppression must be consistent across all public outputs.
 
-### Proposed safe interim
+### Selected safe v1
 
-- Keep the production suppression threshold **unset** and block public activation until BRERC
-  approves an exact value.
-- Once approved, apply suppression after safety generalisation and before building the public
-  map, accessible cell table, year series and totals.
-- Remove suppressed cohorts consistently; do not present them as zero.
-- Do not release a total or filter combination from which a suppressed value can be recovered
-  by subtraction.
+- Set `suppression_mode="none"` and `min_records_per_cell=1`.
+- Apply no extra count threshold after sensitive records and otherwise ineligible rows have been
+  withheld.
+- Publish only aggregate grid cells and aggregate statistics; this decision does not enable
+  individual occurrence rows.
+- Do not describe a missing sensitive record as a count-suppressed record: safety withholding and
+  minimum-count suppression are different controls and must remain distinguishable in evidence.
 
-No numerical threshold is inferred from the prototype, sample size or implementation default.
-Public activation remains blocked until BRERC chooses the threshold and confirms whether any
-taxon or record-type class needs a stronger rule.
+The exact previously proposed `k=5` cohort rule was modelled against the two supplied samples. It
+retained 390 of 1,916 records and only 23 of 272 occupied 1 km cells; when blank-licence exclusion
+was applied first, only 5 records and 1 cell survived. Safe v1 therefore selects `k=1`, avoiding
+an unmeasured near-empty map while relying on complete sensitive-record withholding and
+aggregate-only publication.
 
-### BRERC approval required
+### Production evidence required
 
-BRERC must confirm the default threshold, any class-specific thresholds, whether suppression is
-required across all years as well as individual years, and the public wording used when data are
-withheld.
+The version-2 artifact must bind `suppressionMode="none"` and
+`minRecordsPerCell=1`, and the production-candidate report must be reviewed before activation.
+Any later minimum-count or class-specific suppression is a new policy decision and must be
+modelled against the real candidate before approval.
 
 ## 6. Record-type safety and public display
 
@@ -236,11 +253,12 @@ The software already keeps two decisions separate:
 - Never infer safety from words inside the label.
 - Do not treat the 47-row extraction as an approved production list.
 - Before release, require a corrected, versioned 155-value list in which every value has an
-  explicit ordinary/sensitive classification and every sensitive value has an approved public
-  resolution.
+  explicit ordinary/sensitive classification.
 - Withhold an unknown, blank or newly introduced record type until that complete vocabulary is
   approved or BRERC confirms another fail-closed treatment.
-- Continue using approved record-type rules internally even when the label is not public.
+- Withhold every row whose approved record type is sensitive; do not generalise it into a public
+  square under safe v1.
+- Continue using approved record-type rules internally even though the exact label is not public.
 - Set public record-type display to **off** for the initial release.
 
 ### BRERC approval required
@@ -250,8 +268,8 @@ BRERC must:
 - resolve `C234/M234` and `C308/M308`;
 - confirm whether the live view's row-level `sensitive` value already incorporates record-type
   sensitivity;
-- approve the complete record-type classification and required resolution for each sensitive
-  type;
+- approve the complete record-type classification; safe v1 does not require a public resolution
+  for sensitive types because their rows are withheld;
 - name the list owner and review date; and
 - decide separately whether exact record-type labels may ever appear in public occurrence rows.
 
@@ -266,7 +284,7 @@ BRERC must:
 - The safety boundary supports a separate switch for occurrence rows and separate switches for
   higher-risk fields such as abundance and record type. These are off unless explicitly approved.
 
-### Proposed safe interim
+### Selected safe v1
 
 - Set individual occurrence rows to **off** for the initial release.
 - Publish the accessible aggregate grid-cell table as the map's non-visual equivalent.
@@ -276,11 +294,12 @@ BRERC must:
   fields, precision, licence, pagination, identifier scheme and retention behaviour before
   implementation.
 
-### BRERC approval required
+### Production evidence required
 
-BRERC must choose either aggregate-only publication or occurrence-row publication. If it chooses
-rows, it must approve an exact field allow-list and state whether abundance and record type are
-allowed. Approval of the map does not imply approval of rows.
+The version-2 artifact must bind `rowLevelRecordsMode="aggregates-only"` and every individual-row
+capability to off. A later request for occurrence rows is a new disclosure decision: it needs a
+new policy version, exact field allow-list, licence basis, privacy assessment and tests. Approval
+of the aggregate map does not imply approval of rows.
 
 ## 8. Verification publication
 
@@ -317,8 +336,14 @@ future column appearing in the view is not itself permission to expose it.
 ## 9. Release control
 
 - The approved values must be represented in one versioned publication policy.
-- The policy must record a named BRERC approver, approval date, review date and evidence
-  reference.
+- Production accepts only the strict `brerc-publication-policy/v2` artifact. Version 1 is
+  rejected because it did not bind the sensitive-record action or delegation chain.
+- A **direct** approval must record the actual named BRERC approver, BRERC role/organisation,
+  approval/review dates and retained evidence reference.
+- A **delegated** approval must record the actual person who exercised the authority and their
+  real role/organisation. It must separately identify the BRERC delegator, delegator role,
+  delegation scope/date and retained delegation evidence. A delegate must never be described as
+  a BRERC employee merely to satisfy a field.
 - Approval must be bound to the exact decision set. Changing precision, record or content
   licences, image/description provenance, suppression, record-type rules or row-level fields
   creates a new policy and requires renewed approval.
@@ -329,26 +354,32 @@ future column appearing in the view is not itself permission to expose it.
   genuine and retained. That verification and its reference must be recorded before activation.
 - A failed, incomplete, expired or blank approval must leave the currently active public release
   unchanged.
+- Migration `0002_sensitive_record_action` stores the selected `generalise`/`withhold` action on
+  both the immutable loader manifest and the public-release capability row. A deferred database
+  constraint refuses a committed mismatch, and the active serving view exposes the recorded
+  action. Existing pre-v2 development releases are labelled `generalise`; this historical
+  backfill is not evidence that safe v1 was active at that time.
 
 ## Sign-off table
 
-Complete every applicable row. Entering an approver on one row does not approve any other row.
-Blank cells mean **not approved**.
+Complete every applicable row when creating the retained production artifact. Entering an
+approver on one row does not evidence any other row. Blank cells mean **not retained as
+production approval**, even where this document already records the selected safe-v1 baseline.
 
-| ID | Decision | Proposed safe interim | BRERC-approved value / decision | Approver name and role | Approval date | Evidence / retained reference |
+| ID | Decision | Safe baseline / proposed interim | BRERC-approved value / decision | Approver name and role | Approval date | Evidence / retained reference |
 |---|---|---|---|---|---|---|
-| P-01 | Ordinary minimum public precision | 1 km |  |  |  |  |
-| P-02 | Row marked sensitive | 1 km minimum; coarser rule wins |  |  |  |  |
-| P-03 | Per-taxon sensitive resolutions | Withhold where the required resolution is unapproved |  |  |  |  |
+| P-01 | Ordinary minimum public precision | 1 km; never sharpen a coarser source |  |  |  |  |
+| P-02 | Sensitive-record action across taxon snapshot, dictionary, row flag and approved record type | Withhold before public geometry/id |  |  |  |  |
+| P-03 | Per-taxon sensitive public resolutions | Not applicable to safe v1; every sensitive row is withheld |  |  |  |  |
 | P-04 | Tetrad and 100 km inputs | Withhold |  |  |  |  |
 | L-01 | Record-data licence mode and codes for all current public surfaces | Empty composite allow-list; no public activation |  |  |  |  |
 | L-02 | Download/redistribution feature | Not implemented; disabled |  |  |  |  |
 | I-01 | Image sources and accepted licences | Fallback only |  |  |  |  |
 | D-01 | Species-description source, licence and approval | Omit description until all are supplied |  |  |  |  |
-| S-01 | Minimum records per species/year/cell/precision cohort | Unset; public activation blocked |  |  |  |  |
-| S-02 | Additional or class-specific suppression | None assumed; release blocked pending decision |  |  |  |  |
+| S-01 | Minimum records per species/year/cell/precision cohort | 1 (`suppression_mode=none`) |  |  |  |  |
+| S-02 | Additional or class-specific suppression | None in safe v1 |  |  |  |  |
 | R-01 | Corrected 155-value record-type classification | Required before release |  |  |  |  |
-| R-02 | Sensitive record-type resolutions | Withhold until approved |  |  |  |  |
+| R-02 | Sensitive record-type action | Withhold; no public resolution in safe v1 |  |  |  |  |
 | R-03 | Public display of exact record type | Off |  |  |  |  |
 | O-01 | Individual occurrence rows | Off; aggregates only |  |  |  |  |
 | O-02 | Abundance and other optional row fields | Off |  |  |  |  |
@@ -361,9 +392,13 @@ This final declaration is completed only after all blocking rows above have been
 | Field | Entry |
 |---|---|
 | Publication policy version |  |
+| Artifact format and exact SHA-256 | `brerc-publication-policy/v2`;  |
 | Authorised for public release |  |
-| BRERC approver name |  |
-| BRERC approver role |  |
+| Authority basis | direct / delegated |
+| Actual approver name, role and organisation |  |
+| BRERC delegator name and role (delegated only) |  |
+| Delegation scope and date (delegated only) |  |
+| Retained delegation evidence reference (delegated only) |  |
 | Approval date |  |
 | Review due date |  |
 | Retained approval/evidence reference |  |

@@ -40,6 +40,7 @@ def decision_ready_policy(**overrides) -> PublicationPolicy:
         "record_type_safety_mode": "not-used",
         "row_level_records_mode": "aggregates-only",
         "verification_publication_mode": "unavailable",
+        "sensitive_record_action": "generalise",
         "sensitive_snapshot_version": SENSITIVE_SNAPSHOT_VERSION,
         "sensitive_snapshot_sha256": SENSITIVE_SNAPSHOT_SHA256,
         # ``not-used`` is only valid for approval when the source's row-level
@@ -76,6 +77,26 @@ def approve(
     )
 
 
+def approve_by_delegation(policy: PublicationPolicy, **overrides) -> PublicationPolicy:
+    today = date.today()
+    values = {
+        "approved_by": "Michael Sebastian",
+        "approver_role": "Delegated publication decision owner",
+        "approver_organisation": "University project team",
+        "evidence_reference": "BRERC-SAFE-V1-APPROVAL-TEST",
+        "approved_on": today.isoformat(),
+        "review_due": (today + timedelta(days=90)).isoformat(),
+        "delegating_authority_name": "Tim Corner",
+        "delegating_authority_role": "BRERC Head",
+        "delegating_authority_organisation": "BRERC",
+        "delegation_scope": "Safe-v1 publication policy and implementation choices",
+        "delegated_on": (today - timedelta(days=1)).isoformat(),
+        "delegation_evidence_reference": "BRERC-DELEGATION-TEST-001",
+    }
+    values.update(overrides)
+    return policy.with_delegated_approval(**values)
+
+
 class TestOneSourceOfTruthForResolutions(unittest.TestCase):
     def test_the_policy_module_does_not_restate_the_resolution_set(self):
         # Restating it would let the two silently disagree, and the client would
@@ -96,10 +117,79 @@ class TestApproval(unittest.TestCase):
         policy = approve(decision_ready_policy())
         artifact = policy.approval_artifact()
 
-        self.assertEqual(artifact["artifactFormat"], "brerc-publication-policy/v1")
+        self.assertEqual(artifact["artifactFormat"], "brerc-publication-policy/v2")
         self.assertEqual(artifact["status"], "approved")
         self.assertEqual(artifact["approval"]["approvalDigest"], policy.approval_digest)
+        self.assertEqual(artifact["approval"]["approvalAuthorityBasis"], "direct")
+        for key in (
+            "delegatingAuthorityName",
+            "delegatingAuthorityRole",
+            "delegatingAuthorityOrganisation",
+            "delegationScope",
+            "delegatedOn",
+            "delegationEvidenceReference",
+        ):
+            self.assertIsNone(artifact["approval"][key])
         self.assertNotIn(policy.public_id_salt, repr(artifact))
+
+    def test_delegated_approval_records_both_parties_and_round_trips_in_the_artifact(self):
+        approved = approve_by_delegation(decision_ready_policy(sensitive_record_action="withhold"))
+        artifact = approved.approval_artifact()
+
+        self.assertTrue(approved.is_approved())
+        self.assertEqual(approved.approval_authority_basis, "delegated")
+        self.assertEqual(artifact["approval"]["approvedBy"], "Michael Sebastian")
+        self.assertEqual(artifact["approval"]["approverOrganisation"], "University project team")
+        self.assertEqual(artifact["approval"]["delegatingAuthorityName"], "Tim Corner")
+        self.assertEqual(artifact["approval"]["delegatingAuthorityOrganisation"], "BRERC")
+        self.assertEqual(artifact["decisions"]["sensitiveRecordAction"], "withhold")
+        self.assertEqual(approved.describe()["approvalAuthorityBasis"], "delegated")
+
+    def test_delegated_approval_requires_complete_trimmed_brerc_authority(self):
+        base = decision_ready_policy()
+        invalid = (
+            {"delegating_authority_name": ""},
+            {"delegating_authority_role": " Head "},
+            {"delegating_authority_organisation": "Consultancy"},
+            {"delegation_scope": ""},
+            {"delegation_evidence_reference": " evidence "},
+            {"delegated_on": "not-a-date"},
+            {"delegated_on": (date.today() + timedelta(days=1)).isoformat()},
+        )
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(PolicyNotApproved):
+                approve_by_delegation(base, **values)
+
+    def test_delegation_metadata_and_authority_basis_are_digest_bound(self):
+        import dataclasses
+
+        delegated = approve_by_delegation(decision_ready_policy())
+        direct = approve(decision_ready_policy())
+        self.assertNotEqual(delegated.approval_digest, direct.approval_digest)
+        for field_name, value in (
+            ("approval_authority_basis", "direct"),
+            ("delegating_authority_name", "Another person"),
+            ("delegating_authority_role", "Another role"),
+            ("delegating_authority_organisation", "Another organisation"),
+            ("delegation_scope", "Another scope"),
+            ("delegated_on", (date.today() - timedelta(days=2)).isoformat()),
+            ("delegation_evidence_reference", "ANOTHER-EVIDENCE-REF"),
+        ):
+            with self.subTest(field=field_name):
+                changed = dataclasses.replace(delegated, **{field_name: value})
+                self.assertFalse(changed.is_approved())
+
+    def test_direct_approval_cannot_carry_delegation_metadata(self):
+        import dataclasses
+
+        direct = approve(decision_ready_policy())
+        forged = dataclasses.replace(
+            direct,
+            delegating_authority_name="Tim Corner",
+            approval_digest=None,
+        )
+        forged = dataclasses.replace(forged, approval_digest=forged._expected_approval_digest())
+        self.assertFalse(forged.is_approved())
 
     def test_the_default_policy_is_not_approved(self):
         self.assertFalse(UNAPPROVED_POLICY.is_approved())
@@ -184,6 +274,7 @@ class TestApproval(unittest.TestCase):
             "record_type_safety_mode",
             "row_level_records_mode",
             "verification_publication_mode",
+            "sensitive_record_action",
         ):
             with self.subTest(field=field_name), self.assertRaises(PolicyNotApproved):
                 approve(dataclasses.replace(base, **{field_name: "undecided"}))
@@ -227,6 +318,7 @@ class TestApproval(unittest.TestCase):
             record_type_safety_mode="rules",
             row_level_records_mode="aggregates-only",
             verification_publication_mode="unavailable",
+            sensitive_record_action="generalise",
             sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
             sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
             ordinary_resolution_metres=100,
@@ -253,6 +345,7 @@ class TestApproval(unittest.TestCase):
             "record_type_safety_mode": "not-used",
             "row_level_records_mode": "publish",
             "verification_publication_mode": "publish",
+            "sensitive_record_action": "withhold",
             "sensitive_snapshot_version": "another-snapshot",
             "sensitive_snapshot_sha256": "0" * 64,
             "species_dictionary_sha256": "1" * 64,
@@ -310,6 +403,15 @@ class TestApproval(unittest.TestCase):
 
 
 class TestValidation(unittest.TestCase):
+    def test_approval_authority_basis_is_closed_to_known_values(self):
+        for value in ("", "implicit", None, True):
+            with self.subTest(value=value), self.assertRaises(InvalidPolicy):
+                PublicationPolicy(
+                    version="v",
+                    approval_authority_basis=value,
+                    public_id_salt="x" * 32,
+                ).validate()
+
     def test_an_undrawable_ordinary_resolution_is_rejected(self):
         for metres in (2000, 100000, 50000, 0, 42):
             with self.subTest(metres=metres), self.assertRaises(InvalidPolicy):
@@ -705,6 +807,7 @@ class TestPolicyVocabulariesAreCanonicalAndImmutable(unittest.TestCase):
             record_type_safety_mode="rules",
             row_level_records_mode="aggregates-only",
             verification_publication_mode="unavailable",
+            sensitive_record_action="generalise",
             sensitive_snapshot_version=SENSITIVE_SNAPSHOT_VERSION,
             sensitive_snapshot_sha256=SENSITIVE_SNAPSHOT_SHA256,
             public_id_salt="test" * 8,

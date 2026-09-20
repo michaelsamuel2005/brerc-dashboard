@@ -76,6 +76,7 @@ class SafeSourceSnapshotEvidence:
     contract_sha256: str
     policy_version: str
     policy_approval_digest: str
+    sensitive_record_action: str
     observed_species_dictionary_sha256: str
     observed_definition_sha256: str
     observed_identity_sha256: str
