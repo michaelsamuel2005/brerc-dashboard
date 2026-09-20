@@ -117,6 +117,19 @@ class DestinationMigrationContract(unittest.TestCase):
             with self.subTest(table=table):
                 _table_body(self.sql, table)
 
+    def test_notification_idempotency_is_per_terminal_job_not_per_release(self):
+        outbox = _table_body(self.sql, "loader_control.notification_outbox")
+        self.assertIn(
+            "CONSTRAINT notification_outbox_job_event_unique UNIQUE (job_id, event_type)",
+            outbox,
+        )
+        self.assertNotIn("notification_outbox_success_release_idx", self.sql)
+        self.assertNotIn("ON CONFLICT (release_id, event_type)", self.sql)
+        self.assertEqual(
+            self.sql.count("ON CONFLICT (job_id, event_type) DO NOTHING"),
+            5,
+        )
+
     def test_every_publication_table_has_release_provenance(self):
         tables = (
             "publication.public_release",
