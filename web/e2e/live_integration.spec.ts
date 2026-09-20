@@ -53,13 +53,16 @@ function bodyFor<T>(results: readonly ApiProbeResult[], path: string): T {
   return result.body as T;
 }
 
-test("the production build uses the protected live release, never browser mocks", async ({
-  page,
-}) => {
+test("the production build uses the protected live release, never browser mocks", async (
+  { page },
+  testInfo,
+) => {
   const apiResponses: { status: number; path: string }[] = [];
   const failedRequests: string[] = [];
   const consoleErrors: string[] = [];
   const workerRequests: string[] = [];
+  const legacyTileRequests: string[] = [];
+  const liveOrigin = new URL(String(testInfo.project.use.baseURL)).origin;
 
   // This is the only request interception in the suite. API and application requests
   // always reach the real preview/FastAPI/PostgreSQL stack.
@@ -74,6 +77,13 @@ test("the production build uses the protected live release, never browser mocks"
 
   page.on("request", (request) => {
     if (request.url().includes("mockServiceWorker")) workerRequests.push(request.url());
+    const url = new URL(request.url());
+    if (
+      url.origin === liveOrigin &&
+      (url.pathname === "/tiles" || url.pathname.startsWith("/tiles/"))
+    ) {
+      legacyTileRequests.push(request.url());
+    }
   });
   page.on("requestfailed", (request) => failedRequests.push(request.url()));
   page.on("response", (response) => {
@@ -225,6 +235,7 @@ test("the production build uses the protected live release, never browser mocks"
   });
   expect(serviceWorkerState).toEqual({ controlled: false, registrations: 0 });
   expect(workerRequests).toEqual([]);
+  expect(legacyTileRequests).toEqual([]);
   expect(apiResponses.filter(({ status }) => status !== 200)).toEqual([]);
   expect(failedRequests).toEqual([]);
   expect(consoleErrors).toEqual([]);

@@ -29,6 +29,7 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "db/roles.sql",
                 "docker-compose.yml",
                 "docs/PUBLIC_SERVING_ARCHITECTURE.md",
+                "docs/RUN_LOCALLY.md",
                 "web/src/lib/api/endpoints.ts",
             }.issubset(dependencies)
         )
@@ -51,11 +52,15 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "web/e2e/serialization.pw.test.ts",
                 "web/package-lock.json",
                 "web/package.json",
+                "web/mutation/config.json",
+                "web/mutation/mutate_inner.py",
+                "web/mutation/run_disposable.py",
                 "web/playwright.config.ts",
                 "web/playwright.live.config.ts",
                 "web/playwright.serialization.config.ts",
                 "web/scripts/guard-bundle.mjs",
                 "web/scripts/guard-forbidden.mjs",
+                "web/scripts/screenshots.mjs",
                 "web/tsconfig.a11y.json",
                 "web/tsconfig.json",
                 "web/vite.config.ts",
