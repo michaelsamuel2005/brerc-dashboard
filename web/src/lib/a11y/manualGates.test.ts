@@ -7,7 +7,10 @@ const valid = {
   reviewer: 'Named accessibility reviewer',
   date: '2026-07-26',
   environment: 'iPhone 15, iOS 20, Safari, VoiceOver',
-  evidence: 'Recorded transcript and issue checklist stored with the release evidence.'
+  evidence: 'Recorded transcript and issue checklist stored with the release evidence.',
+  commitSha: '2700a904178f707b6439ab1935d06d82eb2928cc',
+  releaseManifestSha256: `sha256:${'a'.repeat(64)}`,
+  deployedUrl: 'https://dashboard.brerc.org.uk/'
 };
 
 describe('manual gate file runtime boundary', () => {
@@ -36,5 +39,32 @@ describe('manual gate file runtime boundary', () => {
     expect(() => parseManualGateFile({
       attestations: [{ ...valid, gate: 'looksGood', outcome: 'waived' }]
     })).toThrow(/invalid-gate.*invalid-outcome/);
+  });
+  it('rejects not-applicable because every release gate requires observation', () => {
+    expect(() => parseManualGateFile({
+      attestations: [{ ...valid, outcome: 'not-applicable' }]
+    })).toThrow(/invalid-outcome/);
+  });
+  it('binds each attestation to an exact commit, release manifest and HTTPS URL', () => {
+    expect(() => parseManualGateFile({
+      attestations: [{
+        ...valid,
+        commitSha: 'short',
+        releaseManifestSha256: 'sha256:placeholder',
+        deployedUrl: 'http://localhost:4173/'
+      }]
+    })).toThrow(
+      /invalid-commit-sha.*invalid-release-manifest-sha256.*invalid-deployed-url/
+    );
+  });
+  it('rejects deployed URLs containing credentials or fragments', () => {
+    for (const deployedUrl of [
+      'https://reviewer:secret@dashboard.brerc.org.uk/',
+      'https://dashboard.brerc.org.uk/#internal-state'
+    ]) {
+      expect(() => parseManualGateFile({
+        attestations: [{ ...valid, deployedUrl }]
+      })).toThrow(/invalid-deployed-url/);
+    }
   });
 });

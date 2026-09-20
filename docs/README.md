@@ -14,6 +14,8 @@ the guide that matches what you need.
 | 🔄 [FULL_SNAPSHOT_REFRESH.md](FULL_SNAPSHOT_REFRESH.md) | Operator runbook for initial load, complete-snapshot refresh, real-stack synthetic rehearsal and remaining production gates. |
 | 🛠️ [Production serving](../deploy/production/README.md) | Reviewed React/API/private-monitor topology, hardened Linux service examples, target-host rehearsal, recovery and rollback. |
 | 🐧 [Target Linux acceptance](../deploy/validation/LINUX_ACCEPTANCE.md) | Compatibility, network/TLS, hardened-unit and sign-off procedure for BRERC's chosen Linux host. |
+| ♿ [Accessibility release evidence](ACCESSIBILITY_RELEASE_EVIDENCE.md) | Exact-build freeze, three-engine automation, nine named manual gates, defect/retest evidence and statement approval. |
+| 🧪 [Accessibility candidate status](ACCESSIBILITY_CANDIDATE_STATUS_2026-09-20.md) | Verified pre-release automated result and the remaining human/deployment boundary. |
 | 🔏 [VIEW_DEFINITION_APPROVAL.md](VIEW_DEFINITION_APPROVAL.md) | Capture and approve the exact PostgreSQL view identity without reading rows. |
 | 🐙 [GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Step‑by‑step guide to Git and GitHub — assumes **zero** prior experience. Start here if you've never branched, pushed, or opened a pull request. |
 | 🗂️ [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | What every folder in the repo is for, and where your work belongs. |

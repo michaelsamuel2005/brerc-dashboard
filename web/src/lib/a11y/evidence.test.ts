@@ -20,6 +20,13 @@ const CONTEXT: RunContext = {
   dependencyVersions: { 'maplibre-gl': '6.4.1', 'react-map-gl': '8.0.0' },
   inputHashes: { 'package-lock.json': 'sha256:test' }
 };
+const RELEASE_CONTEXT: RunContext = {
+  ...CONTEXT,
+  releaseTarget: {
+    releaseManifestSha256: `sha256:${'a'.repeat(64)}`,
+    deployedUrl: 'https://dashboard.brerc.org.uk/'
+  }
+};
 const PROVENANCE: Provenance = {
   url: 'http://localhost:5173/', timestamp: '2026-07-26T09:00:00.000Z',
   innerWidth: 320, innerHeight: 640, devicePixelRatio: 2, colorScheme: 'light',
@@ -67,7 +74,7 @@ const build = (targets: Parameters<typeof classifyTargets>[0], widthPx = 60,
                mapApplicable = true) => {
   const cells = assessMapCells(cellsCollection(widthPx));
   return buildEvidence({
-    context: CONTEXT, provenance: PROVENANCE, reflow, dragAlternatives: DRAG,
+    context: RELEASE_CONTEXT, provenance: PROVENANCE, reflow, dragAlternatives: DRAG,
     classification: classifyTargets(targets, { obstacles: cells.obstacles }),
     cells, mapApplicable, resolutions, scope: SCOPE,
     automated: {
@@ -86,7 +93,10 @@ const attestation = {
   reviewer: 'Named accessibility reviewer',
   date: '2026-07-26',
   environment: 'Documented browser, device and assistive technology',
-  evidence: 'Stored transcript, screenshots and completed manual procedure checklist.'
+  evidence: 'Stored transcript, screenshots and completed manual procedure checklist.',
+  commitSha: CONTEXT.commitSha,
+  releaseManifestSha256: `sha256:${'a'.repeat(64)}`,
+  deployedUrl: 'https://dashboard.brerc.org.uk/'
 };
 const ALL_MANUAL_PASSED: ManualGateResults = {
   screenReader: attestation,
@@ -161,6 +171,81 @@ describe('evidence bundle', () => {
       contrastSweep: { ...attestation, outcome: 'fail' }
     });
     expect(e.releaseGatesPassed).toBe(false);
+  });
+  it('rejects manual evidence collected for a different commit', () => {
+    resetIndexes();
+    const stale = {
+      ...ALL_MANUAL_PASSED,
+      screenReader: { ...attestation, commitSha: 'a'.repeat(40) }
+    };
+    const e = build([mk(0, 500, 44, 44)], 60, [], stale);
+    expect(e.gates.release.manual.screenReader.status).toBe('fail');
+    expect(e.gates.release.manual.screenReader.detail).toMatch(/does not match/);
+    expect(e.releaseGatesPassed).toBe(false);
+  });
+  it('rejects manual evidence for a different deployed manifest or URL', () => {
+    resetIndexes();
+    const stale = {
+      ...ALL_MANUAL_PASSED,
+      screenReader: {
+        ...attestation,
+        releaseManifestSha256: `sha256:${'b'.repeat(64)}`
+      }
+    };
+    const e = build([mk(0, 500, 44, 44)], 60, [], stale);
+    expect(e.gates.release.manual.screenReader.status).toBe('fail');
+    expect(e.gates.release.manual.screenReader.detail).toMatch(/target does not match/);
+    expect(e.releaseGatesPassed).toBe(false);
+  });
+  it('rejects manual approval when the run is not bound to a frozen target', () => {
+    resetIndexes();
+    const unbound = buildEvidence({
+      context: CONTEXT,
+      provenance: PROVENANCE,
+      reflow: REFLOW,
+      dragAlternatives: DRAG,
+      classification: classifyTargets([mk(0, 500, 44, 44)], { obstacles: [] }),
+      cells: assessMapCells(cellsCollection(60)),
+      mapApplicable: true,
+      resolutions: [],
+      scope: SCOPE,
+      automated: {
+        stateEntered: true,
+        textSpacing: true,
+        svgTextSpacing: true,
+        panAlternative: true,
+        axe: true
+      },
+      manual: ALL_MANUAL_PASSED
+    });
+    expect(unbound.gates.release.manual.screenReader.status).toBe('fail');
+    expect(unbound.gates.release.manual.screenReader.detail).toMatch(/not bound/);
+    expect(unbound.releaseGatesPassed).toBe(false);
+  });
+  it('rejects manual approval from a dirty source tree', () => {
+    resetIndexes();
+    const dirty = buildEvidence({
+      context: { ...RELEASE_CONTEXT, treeClean: false },
+      provenance: PROVENANCE,
+      reflow: REFLOW,
+      dragAlternatives: DRAG,
+      classification: classifyTargets([mk(0, 500, 44, 44)], { obstacles: [] }),
+      cells: assessMapCells(cellsCollection(60)),
+      mapApplicable: true,
+      resolutions: [],
+      scope: SCOPE,
+      automated: {
+        stateEntered: true,
+        textSpacing: true,
+        svgTextSpacing: true,
+        panAlternative: true,
+        axe: true
+      },
+      manual: ALL_MANUAL_PASSED
+    });
+    expect(dirty.gates.release.manual.screenReader.status).toBe('fail');
+    expect(dirty.gates.release.manual.screenReader.detail).toMatch(/dirty source tree/);
+    expect(dirty.releaseGatesPassed).toBe(false);
   });
   it('approves only when the ledger is clear AND every gate is explicitly true', () => {
     resetIndexes();
