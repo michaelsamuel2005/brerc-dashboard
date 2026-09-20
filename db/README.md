@@ -160,6 +160,45 @@ Do not update active publication rows in place, rename tables during a release, 
 watermark separately. The BRERC source transaction is read-only and separate; distributed two-phase
 commit is neither required nor desired.
 
+## Migration and release recovery
+
+Migration `0001` intentionally has no down migration. `db/roles.sql` and
+`0001_publication_store.sql` are each transactional, but they are applied as two
+separate administrator operations. A failure inside `0001` rolls back that
+migration completely; roles safely created by the preceding role script may
+remain. Correct the cause and rerun the exact reviewed files with
+`ON_ERROR_STOP`. Do not invent reverse `DROP` statements against a database that
+may contain release or audit evidence.
+
+Candidate construction and finalisation do not change public visibility. If a
+run fails before activation commits, the active release pointer is unchanged
+(and, before the first load, the serving views remain empty). The candidate is
+recorded with a fixed failure code and durable cleanup obligation; inactive
+payload cleanup is resumable and cannot remove the active release. Activation
+retires the previous release, activates the candidate, advances the source
+pointer and watermark, completes the job, queues the success event and removes
+job-scoped staging rows in one target-database transaction. An activation error
+rolls all of those changes back together.
+
+There is no supported post-activation pointer rollback in this migration or in
+the initial-load command. Never repair an incident by manually updating
+`loader_control.source_state`, changing release statuses, editing publication
+rows or dropping schemas. Stop scheduled loads; if unsafe or incorrect data is
+publicly visible, place the serving tier into the BRERC-approved maintenance
+state; preserve the database, job/release evidence and fixed operational logs;
+then recover through BRERC's tested whole-database backup/restore procedure or,
+once separately reviewed and deployed, activate a corrected complete-snapshot
+replacement. Reverify migration history, destination identity, active-release
+state, role memberships, TLS and API read-only access before restoring service.
+A restored copy used as a different logical environment must receive a new
+controlled `deployment_identity.environment_id` before loader credentials are
+enabled.
+
+A retained `retired` release is audit and recovery evidence, not a backup and
+not an authorisation to repoint production. This repository does not configure
+backup schedules, restore testing or retention; those remain BRERC operational
+controls.
+
 ## Watermarks and reconciliation
 
 The successful watermark is represented by:
