@@ -2,10 +2,11 @@
 
 WHY A POLICY OBJECT RATHER THAN CONSTANTS
 -----------------------------------------
-Earlier versions hard-coded the decisions that determine what the public sees:
-a 100 m floor, a blanket 10 km for sensitive taxa, place names published,
-original record ids published, no suppression. None of those are engineering
-choices - they are BRERC's to make, and several are irreversible once published.
+The decisions that determine what the public sees must not be hidden in code
+constants: examples include minimum public precision, sensitive-taxon
+resolutions, place-name and record-id publication, and suppression. None of
+those are engineering choices - they are BRERC's to make, and several are
+irreversible once published.
 
 So they live here, in a dated object with a named approver. `assert_approved()`
 is what a production release must call: it raises until a real approval is
