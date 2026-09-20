@@ -38,9 +38,17 @@ One shared username/password, set in `run-dashboard/.env` (copy from
 If either login value is missing, the dashboard refuses to start. There is no
 default username or password.
 
-If the ETL job hasn't run yet, the page shows "No runs recorded yet." — run
-it from `api/` with:
+## Legacy status — do not use for production publication
 
-```bash
-python -c "from etl.job import nightly_job; nightly_job()"
-```
+This version of the viewer reads the legacy SQLite log only. The legacy
+`etl.job.nightly_job()` writer targets obsolete tables, does not consume the
+signed publication-approval artifact and must not drive the reviewed
+publication store. Do not run that command as a production or nightly release
+procedure.
+
+The reviewed atomic loader writes the authoritative release and run state to
+PostgreSQL. Use the loader procedure in
+[`docs/POSTGRES_RELEASE_LOADER.md`](../docs/POSTGRES_RELEASE_LOADER.md). Until
+the PostgreSQL-backed internal viewer is integrated, inspect that authoritative
+run state through the controlled database/operator procedure rather than this
+legacy page.

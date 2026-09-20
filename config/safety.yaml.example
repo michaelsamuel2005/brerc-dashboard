@@ -112,9 +112,10 @@ generalisation:
   default_sensitive_resolution_m: 1000
 
 aggregation:
-  # Legacy pandas preview only; the approval artifact is production authority.
-  # Safe-v1 has no additional sparse-cell suppression after safety gates (k=1).
-  suppression_threshold: 1
+  # Legacy pandas path only; it does not read the approval artifact and must not
+  # inherit safe-v1's k=1 decision. Retain the prior k=2 safety floor until the
+  # legacy command is disabled by the complete-snapshot refresh port.
+  suppression_threshold: 2
   cell_size_m: 1000
 
 species_resolutions: {}
