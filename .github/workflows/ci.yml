@@ -168,6 +168,16 @@ jobs:
             --exclude app/species_info.py
       - name: Test the isolated API package and container boundary
         run: python -m pytest package_tests -q
+      - name: Confirm the archived root Compose stack fails closed by default
+        working-directory: ${{ github.workspace }}
+        run: |
+          test -z "$(docker compose config --services)"
+          test "$(docker compose --profile legacy-obsolete config --services | sort | tr '\n' ' ')" = "api db martin proxy "
+      - name: Build and inspect the isolated API image
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build --file api/Dockerfile --tag brerc-public-api-ci api
+          test "$(docker image inspect brerc-public-api-ci --format '{{.Config.User}}')" = "10001:10001"
       - name: Build the combined repository wheel
         run: python -m build --wheel
       - name: Install the wheel without source-tree fallback
@@ -532,6 +542,13 @@ jobs:
           python scripts/guard_stdlib_only.py
           python scripts/generate_browser_contract_fixture.py \
             --check ../contracts/etl-browser-contract-fixture.json
+      # Full source-to-publication test (db/test/run_e2e.py). Uses its own
+      # throwaway databases on the same service, so it can't collide with the
+      # steps above.
+      - name: Run the synthetic source-to-publication E2E test
+        env:
+          E2E_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: python ../db/test/run_e2e.py
 
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build
@@ -552,6 +569,12 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - name: Syntax-check optional review tooling
+        run: |
+          node --check scripts/screenshots.mjs
+          python3 -m py_compile mutation/run_disposable.py mutation/mutate_inner.py
+          python3 mutation/run_disposable.py --help >/dev/null
+          python3 -m json.tool mutation/config.json >/dev/null
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run guard

@@ -19,11 +19,22 @@ cd api && python3 -m unittest discover -s tests -t . -p 'test_*.py'
 ```
 
 The publication safety modules listed below are **standard-library only** — no
-pandas and no third-party runtime dependency. The existing nightly ETL remains
-in this package as `nightly_pipeline.py` and its established subpackages; it is
-not used as publication authority by the trusted connector or release loader.
-`scripts/guard_stdlib_only.py` pins the exact boundary file set so the two paths
-can coexist without making a false package-wide dependency claim.
+pandas and no third-party runtime dependency. Two safety authorities coexist
+temporarily during the release-stack transition:
+
+* The retained legacy command, `etl.job.nightly_job()`, calls
+  `nightly_pipeline.py` and reads `safety_gate/rules.py` plus
+  `config/safety.yaml`. It is not a supported authority for the reviewed public
+  release.
+* The trusted connector and atomic release loader call `pipeline.py` or
+  `streaming.py` and require an explicit, approval-bound `PublicationPolicy`.
+
+A decision in one path does not authorise the other. Do not run the legacy
+nightly command to create a public release; the complete-snapshot refresh port
+that follows this change disables that entry point before scheduled operation.
+`scripts/guard_stdlib_only.py` pins the exact publication-boundary file set so
+the paths can coexist temporarily without making a false package-wide dependency
+claim.
 
 ## Modules
 
@@ -34,7 +45,7 @@ can coexist without making a false package-wide dependency claim.
 | `sensitivity.py` | The multi-axis sensitivity gate: **withhold or generalise only as the explicit policy says** |
 | `contract.py` | Public allow-list types; verified-status parity with the client |
 | `aggregate.py` | Species + year + grid-cell aggregation, with an auditable report |
-| `pipeline.py` | The whole boundary. Explicit column mapping, nothing inferred |
+| `pipeline.py` | Replacement policy-bound transformation boundary; not the `nightly_job()` entry point |
 | `source_contract.py` | Exact live-view schema, safety mapping and load-mode preflight |
 | `identifiers.py` | Canonical private source identifiers and duplicate detection |
 | `species.py` | Authoritative species-id checks and safe dictionary resolution |
