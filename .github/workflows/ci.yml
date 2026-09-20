@@ -168,6 +168,16 @@ jobs:
             --exclude app/species_info.py
       - name: Test the isolated API package and container boundary
         run: python -m pytest package_tests -q
+      - name: Confirm the archived root Compose stack fails closed by default
+        working-directory: ${{ github.workspace }}
+        run: |
+          test -z "$(docker compose config --services)"
+          test "$(docker compose --profile legacy-obsolete config --services | sort | tr '\n' ' ')" = "api db martin proxy "
+      - name: Build and inspect the isolated API image
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build --file api/Dockerfile --tag brerc-public-api-ci api
+          test "$(docker image inspect brerc-public-api-ci --format '{{.Config.User}}')" = "10001:10001"
       - name: Build the combined repository wheel
         run: python -m build --wheel
       - name: Install the wheel without source-tree fallback

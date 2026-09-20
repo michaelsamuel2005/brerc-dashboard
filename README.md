@@ -98,6 +98,12 @@ brerc-dashboard/
 
 ## 🚀 Getting started
 
+> ⚠️ The root `docker-compose.yml` and `Caddyfile` are archived legacy
+> scaffolding. They use the obsolete sample schema and do **not** run the
+> current release-scoped dashboard. Do not use them for deployment, acceptance
+> or real BRERC data. The supported v1 data path is documented in
+> **[docs/PUBLIC_SERVING_ARCHITECTURE.md](docs/PUBLIC_SERVING_ARCHITECTURE.md)**.
+
 > 🆕 **New to Git or GitHub?** Don't worry — you're very welcome here. Start with
 > **[docs/GETTING_STARTED_GITHUB.md](docs/GETTING_STARTED_GITHUB.md)**, a
 > step‑by‑step walkthrough written for complete beginners. It explains every
@@ -134,6 +140,7 @@ git push -u origin <your-name>/<short-topic>
 | **[docs/GETTING_STARTED_GITHUB.md](docs/GETTING_STARTED_GITHUB.md)** | New to GitHub? Start here — a zero‑prior‑knowledge walkthrough. |
 | **[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** | How the repository is organised and what each folder does. |
 | **[docs/MAINTAINER_GUIDE.md](docs/MAINTAINER_GUIDE.md)** | For the BRERC staff member who maintains the dashboard after handover. |
+| **[docs/PUBLIC_SERVING_ARCHITECTURE.md](docs/PUBLIC_SERVING_ARCHITECTURE.md)** | Selected no-Martin v1 target for the API/browser integration stack. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How we branch, review, and merge. |
 
 More documentation lives in **[docs/](docs/)**.
