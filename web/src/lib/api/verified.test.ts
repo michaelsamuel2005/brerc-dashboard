@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // `verified` verdict classification — the shared corpus.
 //
-// This table is duplicated, case for case, in api/etl/test_verified_parity.py.
+// This table is duplicated, case for case, in api/tests/test_verified_parity.py.
 // The server normalises before sending and the client normalises again, so the
 // two implementations must agree exactly or the same record reads differently
 // depending on which side you ask. If you change one table, change the other.
@@ -13,8 +13,8 @@
 //     if (s.includes("accept")) return "accepted";
 //
 // "Not accepted" contains "accept" and no "reject", so it was classified
-// ACCEPTED. Measured against this corpus that implementation produced 10 false
-// accepts and returned "unknown" for 26 legible verdicts.
+// ACCEPTED. The expanded corpus also covers every other positive word, bound
+// and free-standing negations, punctuation, contractions and process negation.
 // ---------------------------------------------------------------------------
 import { describe, expect, it } from "vitest";
 import { normaliseVerified } from "./schemas";
@@ -33,6 +33,28 @@ const NEGATED_ACCEPTANCE: Array<[string, Verdict]> = [
     ["non-accepted", "rejected"],
     ["disaccepted", "rejected"],
     ["verified - not accepted", "rejected"],
+    ["Not valid", "rejected"],
+    ["NOT VALID", "rejected"],
+    ["not correct", "rejected"],
+    ["never correct", "rejected"],
+    ["non-valid", "rejected"],
+    ["un–accepted", "rejected"],
+    ["not a valid record", "rejected"],
+    ["not considered correct", "rejected"],
+    ["has never been correct", "rejected"],
+    ["hasn't been accepted", "rejected"],
+    ["wasn’t valid", "rejected"],
+    ["not correct determination", "rejected"],
+    ["Accepted but not correct", "rejected"],
+    ["cannot be accepted", "rejected"],
+    ["Cannot accept", "rejected"],
+    ["can't accept", "rejected"],
+    ["No accepted determination", "rejected"],
+    ["no valid determination", "rejected"],
+    ["no acceptance", "rejected"],
+    ["None accepted", "rejected"],
+    ["Not correctly determined", "rejected"],
+    ["not validly determined", "rejected"],
 ];
 
 const REJECTED: Array<[string, Verdict]> = [
@@ -46,6 +68,11 @@ const REJECTED: Array<[string, Verdict]> = [
     ["Invalid record", "rejected"],
     ["Erroneous", "rejected"],
     ["Accepted then rejected", "rejected"],
+    ["not correct - rejected", "rejected"],
+    ["not correct – rejected", "rejected"],
+    ["in-valid", "rejected"],
+    ["incorrectly determined", "rejected"],
+    ["Incorrectly identified", "rejected"],
 ];
 
 /** Negating VERIFICATION means it has not been done yet — not that it failed. */
@@ -74,6 +101,28 @@ const UNCONFIRMED: Array<[string, Verdict]> = [
     ["to be verified", "unconfirmed"],
     ["to be confirmed", "unconfirmed"],
     ["unconfirmed but accepted", "unconfirmed"],
+    ["not determined", "unconfirmed"],
+    ["Not determined", "unconfirmed"],
+    ["undetermined", "unconfirmed"],
+    ["Undetermined", "unconfirmed"],
+    ["un-determined", "unconfirmed"],
+    ["never determined", "unconfirmed"],
+    ["has not been determined", "unconfirmed"],
+    ["not yet determined", "unconfirmed"],
+    ["not yet accepted", "unconfirmed"],
+    ["hasn't yet been verified", "unconfirmed"],
+    ["Indeterminate", "unconfirmed"],
+    ["disconfirmed", "unconfirmed"],
+    ["non-verified", "unconfirmed"],
+    ["Not valid – awaiting verification", "unconfirmed"],
+    ["not verified but accepted", "unconfirmed"],
+    ["cannot be verified", "unconfirmed"],
+    ["cannot be confirmed", "unconfirmed"],
+    ["Cannot be determined", "unconfirmed"],
+    ["no confirmed identification", "unconfirmed"],
+    ["None verified", "unconfirmed"],
+    ["without being verified", "unconfirmed"],
+    ["without verification", "unconfirmed"],
 ];
 
 const ACCEPTED: Array<[string, Verdict]> = [
@@ -87,6 +136,11 @@ const ACCEPTED: Array<[string, Verdict]> = [
     ["Correct", "accepted"],
     ["Valid", "accepted"],
     ["Determined", "accepted"],
+    ["Accepted – not a duplicate", "accepted"],
+    ["Accepted – no comment", "accepted"],
+    ["Accepted without comment", "accepted"],
+    ["Determined by expert", "accepted"],
+    ["Correctly determined", "accepted"],
 ];
 
 /** Real BRERC data contains values a parser cannot read. They must not count. */
@@ -100,9 +154,19 @@ const UNKNOWN: Array<[string, Verdict]> = [
     ["n/a", "unknown"],
     ["?", "unknown"],
     ["unknown", "unknown"],
+    ["not a duplicate", "unknown"],
+    ["none", "unknown"],
+    ["Cannot say", "unknown"],
+    ["no further action", "unknown"],
 ];
 
 const ALL = [...NEGATED_ACCEPTANCE, ...REJECTED, ...UNCONFIRMED, ...ACCEPTED, ...UNKNOWN];
+
+// Deliberately independent of, and laxer than, the implementation patterns:
+// any supported negation within two words of any determination stem. This
+// catches a false acceptance even if an individual table expectation drifts.
+const NEGATED_DETERMINATION =
+  /(?:\b(?:not|never|no|none|cannot|without)\b|n['’]t)[\s\-–—]*(?:\w+\s+){0,2}(?:accept|correct|valid|verif|confirm|check|determin)|\b(?:un|non|dis|in)[\s\-–—]*(?:accept|correct|valid|verif|confirm|check|determin)/i;
 
 describe("normaliseVerified", () => {
   it.each(NEGATED_ACCEPTANCE)("a negated acceptance is a rejection: %j", (input, want) => {
@@ -126,25 +190,25 @@ describe("normaliseVerified", () => {
   });
 
   it("covers the whole shared corpus", () => {
-    expect(ALL).toHaveLength(63);
+    expect(ALL).toHaveLength(121);
   });
 
   it("NEVER reports accepted for anything carrying a negation", () => {
     // The single property that matters: a public map claims a verified record
     // has been checked by somebody. Reading a turned-down record as verified
     // breaks that claim, so this is asserted as a property, not case by case.
-    for (const [input] of ALL) {
-      if (/\b(?:not|non|never|un|dis)[\s-]*(?:been[\s-]+)?accept/i.test(input)) {
-        expect(normaliseVerified(input)).not.toBe("accepted");
-      }
+    const negated = ALL.filter(([input]) => NEGATED_DETERMINATION.test(input));
+    expect(negated.length).toBeGreaterThan(40);
+    for (const [input] of negated) {
+      expect(normaliseVerified(input)).not.toBe("accepted");
     }
   });
 
   it("degrades rather than throwing on a malformed value", () => {
     // z.string() guarantees a string inside the schema, but the function is
     // exported and a malformed response should not crash the render.
-    expect(normaliseVerified(undefined as unknown as string)).toBe("unknown");
-    expect(normaliseVerified(null as unknown as string)).toBe("unknown");
-    expect(normaliseVerified(42 as unknown as string)).toBe("unknown");
+    for (const value of [undefined, null, 42, 3.5, true, [], {}]) {
+      expect(normaliseVerified(value)).toBe("unknown");
+    }
   });
 });

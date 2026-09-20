@@ -70,7 +70,7 @@ for _attempt in $(seq 1 30); do
 done
 docker exec -u postgres "$container" pg_isready --dbname brerc_ui_integration >/dev/null
 
-# These are deliberately separate ON_ERROR_STOP applications.  A role,
+# These are deliberately five separate ON_ERROR_STOP applications.  A role,
 # migration or deployment-login error must stop provisioning before tests run.
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$roles_sql"

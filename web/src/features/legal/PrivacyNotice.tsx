@@ -39,10 +39,22 @@ function ProtectedRecordsNotice() {
       </p>
     );
   }
+  if (state.status === "error") {
+    return (
+      <p>
+        Sensitive records are never shown at their original precision: an approved release
+        either withholds them entirely or generalises their locations before publication.
+        Exact source coordinates and sensitive-status fields are not sent to your browser.
+        The active release&apos;s choice could not be retrieved.
+      </p>
+    );
+  }
   return (
     <p>
-      Sensitive records are handled according to the active publication policy. Precise
-      coordinates are not sent to your browser.
+      Sensitive records are never shown at their original precision: an approved release
+      either withholds them entirely or generalises their locations before publication.
+      Exact source coordinates and sensitive-status fields are not sent to your browser.
+      The active release&apos;s choice is still loading.
     </p>
   );
 }

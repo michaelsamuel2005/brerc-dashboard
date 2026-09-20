@@ -130,6 +130,32 @@ class TestStreamingTransform(unittest.TestCase):
         self.assertEqual(first.source_token, second.source_token)
         self.assertNotEqual(first.source_token, first.source_fingerprint)
 
+    def test_duplicate_canonical_source_ids_across_batches_fail_without_echoing_values(self):
+        transform = session()
+        transform.transform_batch((source_row(unique_no="1"),))
+
+        with self.assertRaises(StreamingTransformError) as caught:
+            transform.transform_batch((source_row(unique_no="1.00"),))
+
+        self.assertEqual(
+            str(caught.exception),
+            "source identifiers must be strictly increasing after canonicalisation",
+        )
+        report = transform.finish()
+        self.assertEqual(report.rows_in, 1)
+        self.assertEqual(report.records_public, 1)
+
+    def test_source_id_order_is_compared_numerically_and_must_not_regress(self):
+        transform = session()
+        transform.transform_batch((source_row(unique_no="2"),))
+        transform.transform_batch((source_row(unique_no="10"),))
+
+        with self.assertRaisesRegex(
+            StreamingTransformError,
+            "source identifiers must be strictly increasing after canonicalisation",
+        ):
+            transform.transform_batch((source_row(unique_no="9"),))
+
     def test_wrong_header_and_short_secret_fail_without_echoing_values(self):
         with self.assertRaises(StreamingTransformError):
             begin_streaming_transform(
