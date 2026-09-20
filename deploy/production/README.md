@@ -233,7 +233,10 @@ configuration directory as `root:root` mode `0644`. Then:
    loads, `/api/health` succeeds through the same public origin, API responses
    carry the same active `releaseId`, browser mocks are absent, the CSP header
    matches the approved basemap decision and the browser records no CSP
-   violation while every public route and the map are exercised.
+   violation while every public route and the map are exercised. Confirm
+   `/maplibre-gl-worker.cjs` returns `200`, a JavaScript `Content-Type` and
+   `X-Content-Type-Options: nosniff`; a missing or generic binary MIME type is a
+   failed gate because Firefox cannot initialise the map worker safely.
 4. Confirm the public hostname returns `404` for `/tiles`, `/tiles/anything`,
    `/run-dashboard` and `/run-dashboard/anything`; confirm port 8100 is not
    externally reachable.

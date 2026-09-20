@@ -81,6 +81,22 @@ server {
         add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: REPLACE_WITH_APPROVED_BASEMAP_ORIGIN; connect-src 'self' REPLACE_WITH_APPROVED_BASEMAP_ORIGIN; worker-src 'self' blob:; manifest-src 'self'" always;
     }
 
+    # MapLibre's pinned worker is deliberately emitted with a .cjs suffix, which
+    # MapLibre interprets as a request for a classic worker. Stock nginx does not
+    # assign .cjs a JavaScript MIME type; with nosniff enabled that would make the
+    # production browser reject it even though Vite's local server accepts it.
+    location = /maplibre-gl-worker.cjs {
+        try_files $uri =404;
+        default_type application/javascript;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: REPLACE_WITH_APPROVED_BASEMAP_ORIGIN; connect-src 'self' REPLACE_WITH_APPROVED_BASEMAP_ORIGIN; worker-src 'self' blob:; manifest-src 'self'" always;
+    }
+
     # React owns client-side routes; index.html must not be cached across an
     # atomic application release change.
     location / {

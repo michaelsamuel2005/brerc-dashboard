@@ -7,7 +7,10 @@
     "node": ">=20"
   },
   "scripts": {
+    "build:map-worker": "node scripts/build-maplibre-worker.mjs",
+    "predev": "npm run build:map-worker",
     "dev": "vite",
+    "prebuild": "npm run build:map-worker",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.a11y.json --noEmit",
@@ -48,6 +51,7 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "4.7.0",
+    "esbuild": "0.25.12",
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",

@@ -35,7 +35,7 @@ function walk(dir) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) {
       out.push(...walk(path));
-    } else if (/\.(js|mjs|css|html)$/.test(name)) {
+    } else if (/\.(js|mjs|cjs|css|html)$/.test(name)) {
       out.push(path);
     }
   }
@@ -55,6 +55,15 @@ try {
 // checks below are what prove nothing does. Exclude the file itself, not the
 // references to it.
 const bundles = files.filter((path) => !path.endsWith("mockServiceWorker.js"));
+const mapWorker = join(DIST, "maplibre-gl-worker.cjs");
+
+if (!bundles.includes(mapWorker) || statSync(mapWorker).size === 0) {
+  console.error(
+    "bundle guard FAILED — dist/maplibre-gl-worker.cjs is missing or empty; " +
+      "run the pinned map-worker build before packaging the frontend.",
+  );
+  process.exit(1);
+}
 
 const hits = [];
 for (const path of bundles) {

@@ -120,6 +120,17 @@ def test_public_vhost_serves_react_and_same_origin_api_only() -> None:
     assert "location ^~ /tiles/ { return 404; }" in public
     assert "location = /run-dashboard { return 404; }" in public
     assert "location ^~ /run-dashboard/ { return 404; }" in public
+    worker_location = re.search(
+        r"location = /maplibre-gl-worker\.cjs \{(?P<body>.*?)\n    \}",
+        public,
+        flags=re.DOTALL,
+    )
+    assert worker_location is not None
+    worker_body = worker_location.group("body")
+    assert "try_files $uri =404;" in worker_body
+    assert "default_type application/javascript;" in worker_body
+    assert 'Cache-Control "no-cache, no-store, must-revalidate" always;' in worker_body
+    assert 'X-Content-Type-Options "nosniff" always;' in worker_body
     assert "127.0.0.1:8100" not in public
     assert "martin" not in public.lower()
     csp_lines = [
@@ -128,9 +139,9 @@ def test_public_vhost_serves_react_and_same_origin_api_only() -> None:
         if line.strip().startswith("add_header Content-Security-Policy ")
     ]
     # nginx stops inheriting all parent add_header values as soon as a location
-    # declares one, so the server and all four header-setting locations require
+    # declares one, so the server and all five header-setting locations require
     # the complete CSP explicitly.
-    assert len(csp_lines) == 5
+    assert len(csp_lines) == 6
     for line in csp_lines:
         assert "default-src 'self'" in line
         assert "object-src 'none'" in line
