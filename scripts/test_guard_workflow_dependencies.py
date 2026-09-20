@@ -11,6 +11,19 @@ from scripts.guard_workflow_dependencies import WORKFLOW_DEPENDENCIES, check
 
 
 class TestWorkflowDependencyGuard(unittest.TestCase):
+    def test_retained_legacy_e2e_is_explicitly_opted_in_by_ci(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        harness = (root / "db" / "test" / "run_e2e.py").read_text(encoding="utf-8")
+        opt_in = 'BRERC_ENABLE_LEGACY_E2E_FOR_TESTS: "1"'
+        self.assertIn(opt_in, workflow)
+        self.assertIn('os.environ.get("BRERC_ENABLE_LEGACY_E2E_FOR_TESTS")', harness)
+        self.assertIn(
+            "Run the retained legacy synthetic source-to-publication E2E test", workflow
+        )
+
     def test_ci_manifest_covers_the_publication_api_lifecycle(self) -> None:
         dependencies = set(WORKFLOW_DEPENDENCIES[".github/workflows/ci.yml"])
         self.assertTrue(
