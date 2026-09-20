@@ -36,6 +36,7 @@ from brerc_loader.errors import (
     LoaderSourceCountRejected,
 )
 from brerc_loader.models import LoadMode
+from brerc_source.errors import SourceConnectionFailed, SourceProtocolError
 from brerc_source.models import SafeSourceSnapshotEvidence
 from connector_tests.test_postgres_connector import (
     CONNECTOR_DICTIONARY,
@@ -248,9 +249,13 @@ class FakeSafeSnapshot:
         batches: list[tuple[SafeDisposition, ...]],
         *,
         fail_after_batches: int | None = None,
+        source_failure: BaseException | None = None,
+        enter_failure: BaseException | None = None,
     ) -> None:
         self.batches = batches
         self.fail_after_batches = fail_after_batches
+        self.source_failure = source_failure
+        self.enter_failure = enter_failure
         self.entered = False
         self.closed = False
         self.exhausted = False
@@ -260,6 +265,8 @@ class FakeSafeSnapshot:
         self._evidence = evidence(len(rows), withheld=withheld)
 
     def __enter__(self):
+        if self.enter_failure is not None:
+            raise self.enter_failure
         self.entered = True
         return self
 
@@ -272,6 +279,8 @@ class FakeSafeSnapshot:
 
     def __next__(self):
         if self.fail_after_batches is not None and self.index == self.fail_after_batches:
+            if self.source_failure is not None:
+                raise self.source_failure
             raise RuntimeError("RAW-UNIQUE-001 at private source host")
         if self.index >= len(self.batches):
             self.exhausted = True
@@ -498,6 +507,8 @@ class CoordinatorCase(unittest.TestCase):
         policy: object | None = None,
         target: FakeTargetStore | None = None,
         fail_after_batches: int | None = None,
+        source_failure: BaseException | None = None,
+        source_enter_failure: BaseException | None = None,
         source_batch_size: int | None = None,
         dictionary: SpeciesDictionary | None = CONNECTOR_DICTIONARY,
         species_dictionary_artifact_sha256: str = SPECIES_DICTIONARY_ARTIFACT_SHA256,
@@ -513,7 +524,12 @@ class CoordinatorCase(unittest.TestCase):
                     batch_size=source_batch_size,
                 ),
             )
-        snapshot = FakeSafeSnapshot(batches, fail_after_batches=fail_after_batches)
+        snapshot = FakeSafeSnapshot(
+            batches,
+            fail_after_batches=fail_after_batches,
+            source_failure=source_failure,
+            enter_failure=source_enter_failure,
+        )
         if observed_dictionary_sha256 is not None:
             snapshot._evidence = dataclasses.replace(
                 snapshot._evidence,
@@ -1231,6 +1247,56 @@ class TestFailureAtomicity(CoordinatorCase):
         self.assertTrue(self.last_snapshot.closed)
         self.assertEqual(target.failed_codes, ["LOADER_EXECUTION_FAILED"])
         self.assertNotIn("RAW-UNIQUE-001", str(raised.exception))
+
+    def test_source_protocol_mismatch_rejects_the_candidate_not_the_infrastructure(self) -> None:
+        target = FakeTargetStore(self.coordinator)
+        with self.assertRaises(LoaderCandidateInvalid) as raised:
+            self.run_initial(
+                [(disposition(1),), (disposition(2),)],
+                target=target,
+                fail_after_batches=1,
+                source_failure=SourceProtocolError(),
+            )
+        self.assertEqual(raised.exception.code, "LOADER_CANDIDATE_INVALID")
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertIsNone(target.active_release)
+        self.assertFalse(target.activated)
+        self.assertTrue(target.closed)
+        self.assertTrue(self.last_snapshot.closed)
+        self.assertEqual(target.failed_codes, ["LOADER_CANDIDATE_INVALID"])
+
+    def test_non_protocol_source_failure_remains_an_execution_failure(self) -> None:
+        target = FakeTargetStore(self.coordinator)
+        with self.assertRaises(LoaderExecutionFailed) as raised:
+            self.run_initial(
+                [(disposition(1),), (disposition(2),)],
+                target=target,
+                fail_after_batches=1,
+                source_failure=SourceConnectionFailed(),
+            )
+        self.assertEqual(raised.exception.code, "LOADER_EXECUTION_FAILED")
+        self.assertIsNone(target.active_release)
+        self.assertFalse(target.activated)
+        self.assertTrue(target.closed)
+        self.assertTrue(self.last_snapshot.closed)
+        self.assertEqual(target.failed_codes, ["LOADER_EXECUTION_FAILED"])
+
+    def test_protocol_failure_during_source_setup_remains_an_execution_failure(self) -> None:
+        target = FakeTargetStore(self.coordinator)
+        with self.assertRaises(LoaderExecutionFailed) as raised:
+            self.run_initial(
+                [(disposition(1),)],
+                target=target,
+                source_enter_failure=SourceProtocolError(),
+            )
+        self.assertEqual(raised.exception.code, "LOADER_EXECUTION_FAILED")
+        self.assertIsNone(target.active_release)
+        self.assertFalse(target.activated)
+        self.assertTrue(target.closed)
+        self.assertFalse(self.last_snapshot.entered)
+        self.assertFalse(self.last_snapshot.closed)
+        self.assertEqual(target.failed_codes, ["LOADER_EXECUTION_FAILED"])
 
     def test_one_whole_run_deadline_cancels_and_keeps_candidate_invisible(self) -> None:
         # First value creates the deadline; the following values allow setup
