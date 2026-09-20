@@ -108,6 +108,13 @@ After a backup is restored as a different logical environment, an administrator
 must assign the clone a new environment UUID before enabling loader credentials.
 Copying the production UUID into a clone defeats this wrong-target safeguard.
 
+Migration 0001 intentionally has no in-place down migration. It creates a new,
+dedicated publication store without altering or dropping the retained legacy
+`public.*` tables, but reversing it safely cannot be reduced to dropping its new
+schemas after they may contain release evidence. Test installations that must be
+discarded are destroyed as complete dedicated databases; production recovery
+uses the procedure below.
+
 ## Database authority
 
 The destination migration/owner account is a trusted deployment boundary. The
@@ -207,6 +214,33 @@ The internal release-status view exposes the pending flag, and the next lock
 owner retries cleanup before any new work. If it still cannot purge safely, the
 new run stops with `LOADER_CLEANUP_PENDING`; public serving remains on the prior
 active release throughout.
+
+## Rollback and recovery
+
+Migration installation and release activation have different recovery rules:
+
+- Migration 0001 is one PostgreSQL transaction and must be applied with
+  `ON_ERROR_STOP`. A failed statement rolls back every change made by migration
+  0001; the separately applied group roles may remain and must be verified and
+  reused, not removed ad hoc. Correct the cause and reapply the unchanged
+  reviewed migration. Do not keep or repair a partially applied schema.
+- A candidate failure before activation does not move the active-release
+  pointer. Keep serving the prior release, preserve the fixed failure evidence,
+  and allow only the reviewed cleanup/recovery functions to clear inactive
+  candidate state.
+- A committed activation is authoritative and has no supported reverse-pointer
+  operation. If the newly active release is suspected, stop public serving and
+  scheduled loading, preserve the database and aggregate-only evidence, and
+  escalate to the named operator. Restore the complete destination from a
+  verified backup under the BRERC-owned recovery procedure, or—once the
+  complete-snapshot replacement process has separately passed review and
+  acceptance—build and atomically activate a corrected complete release.
+
+Never perform an ad-hoc `DROP`, edit
+`loader_control.source_state.active_release_id`, rewrite release/job statuses,
+or delete migration history to simulate rollback. After a restore, rerun the
+environment-identity, database-name, role, TLS and serving preflights before
+loader or API credentials are re-enabled.
 
 ## Tests and release evidence
 

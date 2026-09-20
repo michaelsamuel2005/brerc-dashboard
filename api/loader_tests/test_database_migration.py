@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = ROOT / "db" / "migrations" / "0001_publication_store.sql"
 ROLES_PATH = ROOT / "db" / "roles.sql"
 README_PATH = ROOT / "db" / "README.md"
+LOADER_RUNBOOK_PATH = ROOT / "docs" / "POSTGRES_RELEASE_LOADER.md"
 
 
 def _table_body(sql: str, qualified_name: str) -> str:
@@ -45,6 +46,7 @@ class DestinationMigrationContract(unittest.TestCase):
         cls.sql = MIGRATION_PATH.read_text(encoding="utf-8")
         cls.roles = ROLES_PATH.read_text(encoding="utf-8")
         cls.readme = README_PATH.read_text(encoding="utf-8")
+        cls.loader_runbook = LOADER_RUNBOOK_PATH.read_text(encoding="utf-8")
 
     def test_migration_is_transactional_and_version_guarded(self):
         self.assertRegex(self.sql, r"(?m)^BEGIN;$")
@@ -59,6 +61,26 @@ class DestinationMigrationContract(unittest.TestCase):
         )
         self.assertNotRegex(self.sql.upper(), r"\b(?:DROP|TRUNCATE)\b")
         self.assertNotIn("CREATE OR REPLACE VIEW", self.sql.upper())
+
+    def test_namespace_authority_and_recovery_contract_are_documented(self):
+        for relation in (
+            "publication.public_species",
+            "publication.public_record",
+            "publication.public_distribution_cell",
+            "public.public_species",
+            "public.public_records",
+            "public.distribution_cell",
+        ):
+            with self.subTest(relation=relation):
+                self.assertIn(relation, self.sql)
+        self.assertIn("operational SQL schema-qualified", self.sql)
+        self.assertIn("intentionally has no in-place down migration", self.sql)
+
+        self.assertIn("## Migration and release recovery", self.readme)
+        self.assertIn("no supported post-activation pointer rollback", self.readme)
+        self.assertIn("not an authorisation to repoint production", self.readme)
+        self.assertIn("## Rollback and recovery", self.loader_runbook)
+        self.assertIn("Never perform an ad-hoc `DROP`", self.loader_runbook)
 
     def test_postgis_and_four_schemas_are_explicit(self):
         self.assertIn("CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public", self.sql)

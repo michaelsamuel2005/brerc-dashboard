@@ -1,5 +1,13 @@
 -- BRERC destination publication store -- migration 0001.
 --
+-- NAMING AND AUTHORITY: this migration deliberately creates the release-scoped
+-- publication.public_species, publication.public_record and
+-- publication.public_distribution_cell tables alongside the legacy
+-- public.public_species, public.public_records and public.distribution_cell
+-- objects. The serve.* views below read only the publication.* store. Keep all
+-- operational SQL schema-qualified; the legacy public.* objects are not part
+-- of this release-loader serving path.
+--
 -- This database contains only generalised, publication-safe candidate state.
 -- It must never receive source coordinates, comments, unapproved/raw place text, sensitivity
 -- flags, source identifiers or credentials. The loader persists a separate,
@@ -8,6 +16,8 @@
 -- Apply with ON_ERROR_STOP enabled, after db/roles.sql. The whole migration is
 -- transactional. A second invocation fails at the explicit version guard; it
 -- never uses CREATE TABLE IF NOT EXISTS to reshape an existing installation.
+-- Migration 0001 intentionally has no in-place down migration. The reviewed
+-- rollback and recovery procedure is documented in docs/POSTGRES_RELEASE_LOADER.md.
 
 BEGIN;
 
