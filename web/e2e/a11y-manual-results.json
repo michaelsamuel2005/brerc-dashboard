@@ -1,0 +1,5 @@
+{
+  "$schemaVersion": 1,
+  "$comment": "Manual accessibility evidence. Keep attestations empty until the named reviewer has actually completed the procedure. Missing gates deliberately keep releaseGatesPassed=false without failing the automated browser suite.",
+  "attestations": []
+}

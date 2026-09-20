@@ -1,10 +1,11 @@
 // TanStack Query hooks — the only server-state surface. staleTime set; retry bounded and
 // disabled for 4xx client errors (no retry storms against a rate-limited API).
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { AsyncState } from "../../types";
 import { ApiError } from "./client";
 import * as api from "./endpoints";
 import type { QueryParams } from "./client";
+import type { SpeciesListParams } from "./endpoints";
 
 const STALE = 60_000;
 
@@ -16,12 +17,18 @@ function retry(failureCount: number, error: Error): boolean {
 export const useSummary = (params?: QueryParams) =>
   useQuery({ queryKey: ["summary", params], queryFn: () => api.getSummary(params), staleTime: STALE, retry });
 
-export const useSpeciesList = (params?: QueryParams) =>
-  useQuery({ queryKey: ["species", params], queryFn: () => api.getSpecies(params), staleTime: STALE, retry });
+export const useSpeciesList = (params?: SpeciesListParams) =>
+  useQuery({
+    queryKey: ["species", "list", params],
+    queryFn: () => api.getSpecies(params),
+    placeholderData: keepPreviousData,
+    staleTime: STALE,
+    retry,
+  });
 
 export const useSpeciesDetail = (speciesId: string | undefined) =>
   useQuery({
-    queryKey: ["species", speciesId],
+    queryKey: ["species", "detail", speciesId],
     queryFn: () => api.getSpeciesDetail(speciesId as string),
     enabled: Boolean(speciesId),
     staleTime: STALE,

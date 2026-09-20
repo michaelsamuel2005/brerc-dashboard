@@ -1,42 +1,29 @@
 // Accessible, plain-language loading / error / empty states. "No records here" is
 // meaningful information, not an error.
-import { useEffect, useState } from "react";
-
 export function LoadingState({ label = "content" }: { label?: string }) {
-  // A live region announces only when its text CHANGES after mount, not when
-  // it already has content on first render — so we start empty and fill it in.
-  const [announced, setAnnounced] = useState("");
-  useEffect(() => {
-    setAnnounced(`Loading ${label}…`);
-  }, [label]);
-
   return (
     <p role="status" aria-live="polite">
-      {announced}
+      Loading {label}…
     </p>
   );
 }
 
-export function ErrorState({ message, onRetry }: { message?: string; onRetry: () => void }) {
+export function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   return (
     <div role="alert">
       <p>Sorry — {message ?? "something went wrong loading this section."}</p>
-      <button type="button" onClick={onRetry}>
-        Try again
-      </button>
+      {onRetry ? (
+        // btn-ghost, not a bare <button>: unstyled it measured 71x21, under the 44px
+        // minimum. It is the only control on the page when a section has failed, so it is
+        // the one target that must not be hard to hit.
+        <button type="button" className="btn-ghost" onClick={onRetry}>
+          Try again
+        </button>
+      ) : null}
     </div>
   );
 }
 
 export function EmptyState({ message = "No records here." }: { message?: string }) {
-  const [announced, setAnnounced] = useState("");
-  useEffect(() => {
-    setAnnounced(message);
-  }, [message]);
-
-  return (
-    <p role="status" aria-live="polite">
-      {announced}
-    </p>
-  );
+  return <p>{message}</p>;
 }

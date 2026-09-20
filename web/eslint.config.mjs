@@ -6,7 +6,17 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**", "playwright-report/**", "test-results/**", "node_modules/**"] },
+  {
+    ignores: [
+      "dist/**",
+      "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+      "node_modules/**",
+      ".vite-cache/**",
+      "screenshots/**",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -24,6 +34,10 @@ export default tseslint.config(
   {
     files: ["**/*.test.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    files: ["e2e/**/*.{ts,tsx}"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
   {
     files: ["**/*.{mjs,js,cjs}", "*.config.{ts,js,mjs}"],

@@ -141,6 +141,7 @@ git push -u origin <your-name>/<short-topic>
 | **[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** | How the repository is organised and what each folder does. |
 | **[docs/MAINTAINER_GUIDE.md](docs/MAINTAINER_GUIDE.md)** | For the BRERC staff member who maintains the dashboard after handover. |
 | **[docs/PUBLIC_SERVING_ARCHITECTURE.md](docs/PUBLIC_SERVING_ARCHITECTURE.md)** | Selected no-Martin v1 target for the API/browser integration stack. |
+| **[docs/RUN_LOCALLY.md](docs/RUN_LOCALLY.md)** | Supported mock and live-API local development modes. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How we branch, review, and merge. |
 
 More documentation lives in **[docs/](docs/)**.

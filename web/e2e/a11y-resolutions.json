@@ -1,0 +1,4 @@
+{
+  "$comment": "Reviewer-attested resolutions for human-decision findings. Each scope requires project, viewport, state, camera and dataMode. The checksum detects stale evidence but is not a cryptographic signature. Deterministic WCAG/project/data-quality failures cannot be dismissed.",
+  "resolutions": []
+}

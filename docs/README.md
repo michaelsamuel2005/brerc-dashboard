@@ -13,6 +13,7 @@ the guide that matches what you need.
 | 🧾 [SOURCE_CONTRACT.md](SOURCE_CONTRACT.md) | Reviewed source-view shape, evidence, and release blockers. |
 | 🔏 [VIEW_DEFINITION_APPROVAL.md](VIEW_DEFINITION_APPROVAL.md) | Capture and approve the exact PostgreSQL view identity without reading rows. |
 | 🐙 [GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Step‑by‑step guide to Git and GitHub — assumes **zero** prior experience. Start here if you've never branched, pushed, or opened a pull request. |
+| ▶️ [RUN_LOCALLY.md](RUN_LOCALLY.md) | Run the browser with synthetic mocks or through the live local FastAPI boundary. |
 | 🗂️ [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | What every folder in the repo is for, and where your work belongs. |
 | 🌱 [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md) | A friendly, non‑technical guide for the BRERC staff member who maintains the dashboard after the team leaves. |
 

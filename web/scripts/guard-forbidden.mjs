@@ -7,6 +7,10 @@ import { join } from "node:path";
 
 const ROOT = "src";
 // Distinctive server-only field names that must never reach client code/data.
+// Generic singular words such as `easting`, `northing` and `sensitive` are
+// intentionally enforced by the exact-key contract tests and strict runtime
+// schemas instead: they also occur legitimately in client-derived geometry and
+// public explanatory copy, so broad source-text regexes would be false positives.
 const FORBIDDEN = [/\bRecorder1\b/i, /\bBLISS\b/i, /\bEastings\b/i, /\bNorthings\b/i];
 const SECRET = [
   /\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{10,}/,

@@ -20,12 +20,41 @@ export function SpeciesPanel({ speciesId }: { speciesId: string }) {
     <article className="panel species-panel" aria-labelledby="species-heading">
       <AttributedImage image={s.image} name={name} />
       <div className="panel-body">
-        <h2 id="species-heading">
-          {name}
-          <span className="chip">{s.group}</span>
-        </h2>
+        <div className="species-title-row">
+          <h2 id="species-heading">{name}</h2>
+          {/* Omitted entirely when ungrouped: an empty chip reads as a missing
+              value rather than as "this release publishes no grouping". */}
+          {s.group === null ? null : <span className="chip">{s.group}</span>}
+        </div>
         <p className="sci">{s.scientificName}</p>
-        {s.description ? <p className="desc">{s.description}</p> : null}
+        {s.description && s.descriptionSource ? (
+          <>
+            <p className="desc">{s.description}</p>
+            <p className="description-credit">
+              Source: {s.descriptionSource.sourceUrl ? (
+                <a href={s.descriptionSource.sourceUrl} target="_blank" rel="noreferrer">
+                  {s.descriptionSource.label}
+                </a>
+              ) : (
+                s.descriptionSource.label
+              )}
+              {s.descriptionSource.licence ? (
+                <>
+                  {" · "}
+                  {s.descriptionSource.licenceUrl ? (
+                    <a href={s.descriptionSource.licenceUrl} target="_blank" rel="noreferrer">
+                      {s.descriptionSource.licence}
+                    </a>
+                  ) : (
+                    s.descriptionSource.licence
+                  )}
+                </>
+              ) : null}
+            </p>
+          </>
+        ) : (
+          <p className="desc">Description unavailable.</p>
+        )}
         <div className="stats">
           <div className="stat">
             <div className="v">{s.stats.recordCount.toLocaleString("en-GB")}</div>
@@ -33,13 +62,19 @@ export function SpeciesPanel({ speciesId }: { speciesId: string }) {
           </div>
           <div className="stat">
             <div className="v">
-              {s.stats.yearRange[0]}–{s.stats.yearRange[1]}
+              {s.stats.yearRange ? `${s.stats.yearRange[0]}–${s.stats.yearRange[1]}` : "No records"}
             </div>
             <div className="k">Years</div>
           </div>
           <div className="stat">
-            <div className="v">{s.stats.verifiedCount.toLocaleString("en-GB")}</div>
-            <div className="k">Verified</div>
+            <div className="v">
+              {s.stats.verificationAvailable && s.stats.verifiedCount !== null
+                ? s.stats.verifiedCount.toLocaleString("en-GB")
+                : "Not available"}
+            </div>
+            <div className="k">
+              {s.stats.verificationAvailable ? "Verified" : "Verification unavailable"}
+            </div>
           </div>
         </div>
       </div>
