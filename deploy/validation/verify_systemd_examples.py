@@ -55,14 +55,24 @@ UNIT_SPECS = (
         "initial",
     ),
     UnitSpec(
+        "deploy/initial/brerc-loader-initial-quarantine.service.example",
+        "brerc-loader-initial-quarantine.service",
+        "initial-quarantine",
+    ),
+    UnitSpec(
         "deploy/refresh/brerc-loader-refresh.service.example",
         "brerc-loader-refresh.service",
         "refresh",
     ),
     UnitSpec(
+        "deploy/refresh/brerc-loader-refresh-approval-guard.service.example",
+        "brerc-loader-refresh-approval-guard.service",
+        "approval-guard",
+    ),
+    UnitSpec(
         "deploy/refresh/brerc-loader-refresh-quarantine.service.example",
         "brerc-loader-refresh-quarantine.service",
-        "quarantine",
+        "refresh-quarantine",
     ),
     UnitSpec(
         "deploy/refresh/brerc-loader-refresh.timer.example",
@@ -207,7 +217,9 @@ def _validate_service_common(unit: UnitFile, spec: UnitSpec) -> list[str]:
     _expect_one(unit, problems, "Service", "StandardError", "journal")
 
     expected_families = (
-        "AF_UNIX" if spec.kind == "quarantine" else "AF_UNIX AF_INET AF_INET6"
+        "AF_UNIX"
+        if spec.kind in {"initial-quarantine", "refresh-quarantine", "approval-guard"}
+        else "AF_UNIX AF_INET AF_INET6"
     )
     _expect_one(
         unit,
@@ -222,7 +234,7 @@ def _validate_service_common(unit: UnitFile, spec: UnitSpec) -> list[str]:
     if re.search(r"\b(?:docker-compose|Caddyfile|nightly_job|b6_schema)\b", unit.text):
         problems.append("legacy/demo deployment mechanisms are forbidden")
 
-    for key in ("ExecStart", "ExecStartPre", "ExecStartPost"):
+    for key in ("ExecStart", "ExecStartPre", "ExecStartPost", "ExecStop"):
         for command in unit.values("Service", key):
             unprefixed = command.lstrip("-+!@:")
             if not unprefixed.startswith("/"):
@@ -339,7 +351,11 @@ def _validate_run_dashboard(unit: UnitFile, problems: list[str]) -> None:
 
 
 def _validate_initial(unit: UnitFile, problems: list[str]) -> None:
+    _expect_one(
+        unit, problems, "Unit", "OnFailure", "brerc-loader-initial-quarantine.service"
+    )
     _expect_one(unit, problems, "Service", "Type", "oneshot")
+    _expect_one(unit, problems, "Service", "RemainAfterExit", "yes")
     _expect_one(unit, problems, "Service", "User", "brerc-loader")
     _expect_one(unit, problems, "Service", "Group", "brerc-loader")
     _expect_one(unit, problems, "Service", "Restart", "no")
@@ -351,15 +367,16 @@ def _validate_initial(unit: UnitFile, problems: list[str]) -> None:
         "EnvironmentFile",
         "/etc/brerc/refresh/loader-runtime.env",
     )
-    _expect_one(
-        unit,
-        problems,
-        "Service",
-        "ExecStartPre",
-        "+/usr/bin/python3 "
-        f"/opt/brerc-dashboard/releases/{ARTIFACT_TOKEN}/deploy/initial/"
-        "consume_initial_approval.py",
+    approval_command = (
+        "!/usr/bin/env -i /usr/bin/python3 -I "
+        "/usr/local/libexec/brerc/consume-initial-approval.py "
+        f"--expected-artifact-id {ARTIFACT_TOKEN}"
     )
+    prestart = unit.values("Service", "ExecStartPre")
+    if prestart.count(approval_command) != 1 or prestart[-1:] != [approval_command]:
+        problems.append("initial approval must be the final, isolated root pre-start")
+    if any(value.startswith(("+", "!!")) for value in prestart):
+        problems.append("initial pre-start must not bypass the service sandbox")
     _expect_one(
         unit,
         problems,
@@ -382,6 +399,15 @@ def _validate_initial(unit: UnitFile, problems: list[str]) -> None:
         )
 
 
+def _validate_initial_quarantine(unit: UnitFile, problems: list[str]) -> None:
+    _validate_root_marker_unit(
+        unit,
+        problems,
+        marker="/etc/brerc/initial-approval/APPROVED_TO_INITIAL",
+        writable="/etc/brerc/initial-approval",
+    )
+
+
 def _validate_refresh(unit: UnitFile, problems: list[str]) -> None:
     _expect_one(
         unit, problems, "Unit", "OnFailure", "brerc-loader-refresh-quarantine.service"
@@ -391,7 +417,7 @@ def _validate_refresh(unit: UnitFile, problems: list[str]) -> None:
         problems,
         "Unit",
         "ConditionPathExists",
-        "/etc/brerc/refresh/APPROVED_TO_SCHEDULE",
+        "/run/brerc/refresh/APPROVED_TO_SCHEDULE",
     )
     _expect_one(unit, problems, "Service", "Type", "oneshot")
     _expect_one(unit, problems, "Service", "User", "brerc-loader")
@@ -416,7 +442,9 @@ def _validate_refresh(unit: UnitFile, problems: list[str]) -> None:
     _expect_absent(unit, problems, "Service", "ReadWritePaths")
 
 
-def _validate_quarantine(unit: UnitFile, problems: list[str]) -> None:
+def _validate_root_marker_unit(
+    unit: UnitFile, problems: list[str], *, marker: str, writable: str
+) -> None:
     _expect_one(unit, problems, "Service", "Type", "oneshot")
     _expect_one(unit, problems, "Service", "User", "root")
     _expect_one(unit, problems, "Service", "Group", "root")
@@ -427,16 +455,64 @@ def _validate_quarantine(unit: UnitFile, problems: list[str]) -> None:
         problems,
         "Service",
         "ExecStart",
-        "/usr/bin/rm -f -- /etc/brerc/refresh/APPROVED_TO_SCHEDULE",
+        f"/usr/bin/rm -f -- {marker}",
     )
     _expect_one(
         unit,
         problems,
         "Service",
         "ReadWritePaths",
-        "/etc/brerc/refresh",
+        writable,
     )
     _expect_absent(unit, problems, "Service", "EnvironmentFile")
+    if "Install" in unit.sections:
+        problems.append("quarantine must not be enabled independently")
+
+
+def _validate_refresh_quarantine(unit: UnitFile, problems: list[str]) -> None:
+    _validate_root_marker_unit(
+        unit,
+        problems,
+        marker="/run/brerc/refresh/APPROVED_TO_SCHEDULE",
+        writable="-/run/brerc/refresh",
+    )
+
+
+def _validate_approval_guard(unit: UnitFile, problems: list[str]) -> None:
+    _expect_one(unit, problems, "Service", "Type", "oneshot")
+    _expect_one(unit, problems, "Service", "User", "root")
+    _expect_one(unit, problems, "Service", "Group", "root")
+    _expect_one(unit, problems, "Service", "RemainAfterExit", "yes")
+    _expect_one(unit, problems, "Service", "Restart", "no")
+    _expect_one(unit, problems, "Service", "PrivateNetwork", "true")
+    _expect_one(
+        unit, problems, "Service", "ExecStart", "/usr/bin/test -d /run/brerc/refresh"
+    )
+    _expect_one(
+        unit,
+        problems,
+        "Service",
+        "ExecStop",
+        "/usr/bin/rm -f -- /run/brerc/refresh/APPROVED_TO_SCHEDULE",
+    )
+    _expect_one(unit, problems, "Service", "ReadWritePaths", "-/run/brerc/refresh")
+    _expect_one(
+        unit,
+        problems,
+        "Unit",
+        "Before",
+        "brerc-loader-refresh.timer sleep.target systemd-soft-reboot.service shutdown.target",
+    )
+    _expect_one(
+        unit,
+        problems,
+        "Unit",
+        "Conflicts",
+        "sleep.target systemd-soft-reboot.service",
+    )
+    _expect_absent(unit, problems, "Service", "EnvironmentFile")
+    if "Install" in unit.sections:
+        problems.append("approval guard must be started only by the timer")
 
 
 def _validate_timer(unit: UnitFile) -> list[str]:
@@ -446,7 +522,13 @@ def _validate_timer(unit: UnitFile) -> list[str]:
     if "EXAMPLE ONLY." not in "\n".join(unit.text.splitlines()[:5]):
         problems.append("the first five lines must identify the timer as EXAMPLE ONLY")
     _expect_one(unit, problems, "Timer", "OnCalendar", "*-*-* 02:30:00 UTC")
-    _expect_one(unit, problems, "Timer", "Persistent", "true")
+    _expect_one(unit, problems, "Timer", "Persistent", "false")
+    _expect_one(
+        unit, problems, "Unit", "BindsTo", "brerc-loader-refresh-approval-guard.service"
+    )
+    _expect_one(
+        unit, problems, "Unit", "After", "brerc-loader-refresh-approval-guard.service"
+    )
     _expect_one(unit, problems, "Timer", "AccuracySec", "1min")
     _expect_one(unit, problems, "Timer", "RandomizedDelaySec", "0")
     _expect_one(
@@ -473,11 +555,16 @@ def validate_unit_text(spec: UnitSpec, text: str) -> list[str]:
         "run-dashboard": _validate_run_dashboard,
         "initial": _validate_initial,
         "refresh": _validate_refresh,
-        "quarantine": _validate_quarantine,
+        "initial-quarantine": _validate_initial_quarantine,
+        "approval-guard": _validate_approval_guard,
+        "refresh-quarantine": _validate_refresh_quarantine,
     }
     validators[spec.kind](unit, problems)
 
-    if spec.kind != "quarantine" and ARTIFACT_TOKEN not in unit.text:
+    if (
+        spec.kind in {"public-api", "run-dashboard", "initial", "refresh"}
+        and ARTIFACT_TOKEN not in unit.text
+    ):
         problems.append("immutable artifact placeholder is required")
     return problems
 
@@ -617,7 +704,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     suffix = " and Linux systemd parser" if args.systemd_analyze else ""
-    print(f"OK: 6 BRERC systemd examples passed the repository contract{suffix}.")
+    print(
+        f"OK: {len(UNIT_SPECS)} BRERC systemd examples passed the repository contract{suffix}."
+    )
     print(
         "NOTE: target-host acceptance still requires deploy/validation/LINUX_ACCEPTANCE.md."
     )

@@ -46,8 +46,11 @@ non-writable layout:
 ```text
 /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/
   bin/brerc-load               loader entry point in its reviewed runtime
-  deploy/initial/              approval consumer used by the initial unit
-  deploy/validation/           release-evidence verifier and fixed SQL
+  deploy/initial/              source of the separately installed approval helper
+                               and first-load procedure; never execute the
+                               root helper from the release tree
+  deploy/refresh/              guarded full-snapshot refresh procedure
+  deploy/validation/           success/failure evidence verifiers and fixed SQL
   web/dist/                    built React artifact
   api-runtime/                 API-only artifact
     app/                       api/app only
@@ -67,10 +70,16 @@ document and test this boundary even when the host uses a Python virtual
 environment instead of a container. The run-history runtime is a different
 artifact and Unix account; never merge it into the public API runtime.
 
-Record the source commit, the SHA-256 of every artifact, the installed unit and
-nginx configuration digests, and the dependency lock evidence. Directories and
-files under the immutable release must be owned by the deployment owner and
-not writable by `brerc-api` or `brerc-monitor-ui`.
+Record the source commit, the SHA-256 of every artifact (including the
+standalone root approval helper copied to
+`/usr/local/libexec/brerc/consume-initial-approval.py`), the installed unit
+and nginx configuration digests, and the dependency lock evidence. Follow
+`deploy/initial/README.md` to install and audit that helper as root-owned,
+non-writable code before an initial attempt; the unit must invoke that fixed
+copy through its reviewed empty-environment pre-start command, never execute
+root code from the application release tree. Directories and files under the
+immutable release must be owned by the deployment owner and not writable by
+`brerc-api`, `brerc-monitor-ui` or `brerc-loader`.
 
 ## Build and approve the release artifacts
 
@@ -145,14 +154,16 @@ child as `root:root` mode `0644`. Supply the following files out of band from
 BRERC's approved secret/configuration manager; never put their values in Git,
 tickets, screenshots, shell history or acceptance output:
 
-- `/etc/brerc/production/api/api.pgpass`, the API libpq service file and trusted
-  PostgreSQL CA, each `root:brerc-api` mode `0440`; the service file contains no
-  password and the passfile contains only the API login's database password;
+- `/etc/brerc/production/api/api.pgpass`, owned by `brerc-api:brerc-api` mode
+  `0600`, containing only the API login's database password; the API libpq
+  service file and trusted PostgreSQL CA remain `root:brerc-api` mode `0440`;
 - `/etc/brerc/production/monitor/run-dashboard.secrets.env`, `root:root` mode
   `0400` and containing
   `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD` and `DASHBOARD_SECRET_KEY`;
-- `/etc/brerc/production/monitor/monitor.pgpass`, the monitor libpq service file
-  and trusted PostgreSQL CA, each `root:brerc-monitor-ui` mode `0440`; and
+- `/etc/brerc/production/monitor/monitor.pgpass`, owned by
+  `brerc-monitor-ui:brerc-monitor-ui` mode `0600`, containing only the monitor
+  login's database password; the monitor libpq service file and trusted
+  PostgreSQL CA remain `root:brerc-monitor-ui` mode `0440`; and
 - the public/internal TLS private keys, readable by nginx only.
 
 Both web services use libpq service mode, so tracked environments contain
@@ -168,8 +179,9 @@ files override `Environment=` values. The monitor environment must also omit
 Render `api-pg-service.conf.example` and `monitor-pg-service.conf.example` into
 the two paths above. Reject any rendered profile containing `password=`, an IP
 address in place of the certificate's approved database hostname, or another
-login/database. Each passfile must be mode `0440` or stricter and contain only
-the one matching login entry.
+login/database. Each passfile must have no group/world permissions (mode
+`0600`); libpq ignores insecure password files on Unix. Do not make a
+root-owned `0600` passfile that the unprivileged service account cannot read.
 
 Before either web service starts, run the catalogue-only audit from the
 destination database owner session. Use controlled deployment variables for
@@ -192,16 +204,21 @@ output; do not retain a connection string.
 ## Render and validate on the target Linux host
 
 Work in a root-only staging directory. Replace every placeholder, but keep the
-immutable release path identical in the two units and public nginx file. Before
-installing anything:
+immutable release path identical in the two web-service units, the loader units
+and public nginx file. Before installing anything:
 
 1. Verify the protected-main commit, artifact digests, root ownership and lack
    of service-account write access. Verify that the API-only artifact cannot
    import any write-capable repository package.
-2. Copy the two unit examples to temporary names ending in `.service`. Run
-   `systemd-analyze verify` on both rendered files using the target host's
-   systemd version. Treat every unknown or ignored directive as a failed gate.
-3. Review `systemd-analyze security` for both rendered services on that host.
+2. Copy the two web-service unit examples to temporary names ending in
+   `.service`. Independently stage both initial units and all four refresh
+   units as their runbooks require. Run `systemd-analyze verify` against all
+   eight rendered units together on the target host's systemd version; this
+   must resolve every `OnFailure`, guard and timer dependency. Treat every
+   unknown or ignored directive as a failed gate. Audit the fixed root helper
+   using `namei -l` and its approved digest, as required by the initial
+   runbook; systemd syntax checking alone cannot establish its provenance.
+3. Review `systemd-analyze security` for all seven rendered services on that host.
    Record the report and every approved exception; do not weaken a directive
    merely to improve the score or silence a compatibility error.
 4. Copy the nginx examples to temporary names ending in `.conf`, render the
@@ -220,20 +237,28 @@ and approval record without retaining secrets or private connection details.
 
 ## Install and controlled rehearsal
 
-Only after the target-host review passes, copy the rendered units to
-`/etc/systemd/system/` and the two vhosts to the distribution's nginx
-configuration directory as `root:root` mode `0644`. Then:
+Only after the target-host review passes, copy the rendered API and viewer
+units to `/etc/systemd/system/` and the two vhosts to the distribution's nginx
+configuration directory as `root:root` mode `0644`. Install the separate
+initial, initial-quarantine, refresh, refresh-quarantine, refresh-approval-guard
+and refresh-timer units only by their respective reviewed runbooks; do not
+enable either loader service or the timer as part of the web-service install.
+Keep the public vhost dark or restricted to the approved review network until
+the first publication and all release gates have passed. Then:
 
-1. Run `systemctl daemon-reload`, `systemctl cat` for both units and `nginx -t`.
+1. Run `systemctl daemon-reload`, `systemctl cat` for both web-service units and
+   `nginx -t`.
    Compare the displayed files with the approved digests.
 2. Start the API and run-history services without enabling them. Confirm their
    systemd invocation IDs, unprivileged users, immutable working directories
    and loopback listeners. Inspect only invocation-scoped journals.
-3. Start/reload nginx. From an external browser, confirm the React application
-   loads, `/api/health` succeeds through the same public origin, API responses
-   carry the same active `releaseId`, browser mocks are absent, the CSP header
-   matches the approved basemap decision and the browser records no CSP
-   violation while every public route and the map are exercised. Confirm
+3. Start/reload nginx with public access still blocked. From the approved
+   review network, confirm the React application loads and `/api/health`
+   succeeds through the same public origin and final HTTPS proxy. Confirm
+   browser mocks are absent, the CSP header matches the approved basemap decision and the
+   browser records no CSP violation while the static routes are exercised.
+   Do not require a populated release endpoint yet: the first `initial` load
+   has not occurred. Confirm
    `/maplibre-gl-worker.cjs` returns `200`, a JavaScript `Content-Type` and
    `X-Content-Type-Options: nosniff`; a missing or generic binary MIME type is a
    failed gate because Firefox cannot initialise the map worker safely.
@@ -244,15 +269,30 @@ configuration directory as `root:root` mode `0644`. Then:
    trusted certificate, rejects a disallowed source address, presents the
    dashboard login, rejects invalid credentials and shows only bounded run
    history after a valid login.
-6. Perform the one-time real `initial` load only through the reviewed hardened
-   unit and single-use approval process in `deploy/initial/README.md`. Reconcile
-   its invocation-scoped loader, database, API and mocks-off browser evidence.
-7. Perform one attended complete-snapshot `refresh` through the exact hardened
-   service described in `deploy/refresh/README.md`. Enable its timer only after
-   the changed-refresh evidence, schedule, dead-man monitor and failure route
-   are accepted.
-8. Reboot once in the controlled window, then repeat the listener, API,
-   authentication and release-identity checks before approving service enablement.
+6. With public access still blocked, perform the one-time real `initial` load
+   only through the reviewed hardened unit and single-use approval process in
+   `deploy/initial/README.md`. Retain its exact systemd invocation, database
+   window, monitor-role query, API and mocks-off browser evidence. An absent
+   marker or zero-job failure is not permission to retry; use the runbook's
+   quarantine and failed-attempt procedure.
+7. From the approved review network, now exercise every public route and the
+   map through the final proxy. Require the database evidence, both API
+   identity endpoints and browser to agree on the active `releaseId` and
+   `datasetVersion`. Do not open the public vhost because a static health check
+   alone passed.
+8. Perform attended changed, no-change and deliberate-failure complete-snapshot
+   `refresh` rehearsals exactly as `deploy/refresh/README.md` specifies. Its
+   root-owned approval guard and volatile `/run/brerc/refresh/APPROVED_TO_SCHEDULE`
+   marker govern the timer; `Persistent=false` prevents missed-run catch-up.
+   Do not enable recurring refresh until every invocation's evidence, the
+   schedule, dead-man monitor and failure route are accepted. A failed run
+   must leave the previous active release visible and the marker absent.
+9. Reboot once in the controlled window. Require the approval marker to remain
+   absent, inspect and stop any active refresh timer, then repeat the listener,
+   API, authentication and release-identity checks. Revalidate the host and
+   obtain explicit operator approval before re-arming the schedule; reboot is
+   not an implicit renewal. Test the soft-reboot/sleep disarm behavior if those
+   transitions are permitted on the host.
 
 After the retained evidence is accepted, enable the two long-running units with
 `systemctl enable --now brerc-public-api.service brerc-run-dashboard.service`,
@@ -278,8 +318,10 @@ private operational metadata.
   artifact. Run `systemd-analyze verify`, `nginx -t`, daemon-reload/restart and
   every public/private smoke check again. Never repoint a mutable symlink.
 - A failed `initial` must leave no active release; a failed `refresh` must leave
-  the previous active release visible. Follow the evidence and recovery steps
-  in the initial/refresh runbooks. Never repair a release pointer with manual
+  the previous active release visible. Stop/disarm the timer and approval guard
+  in the order specified by `deploy/refresh/README.md`, preserve the failed
+  service state until invocation-scoped evidence is captured, and follow the
+  initial/refresh recovery steps. Never repair a release pointer with manual
   SQL, run the legacy nightly job, use an obsolete schema or add a force flag.
 - A successful but semantically wrong data release requires an approved
   corrected complete snapshot. Database-level reactivation is a BRERC DBA

@@ -251,14 +251,21 @@ def test_legacy_root_stack_is_unambiguously_excluded_from_production() -> None:
     caddy = _text(ROOT_CADDY)
     assert compose.startswith(
         "# =============================================================================\n"
-        "# LEGACY LOCAL DEMONSTRATION ONLY \u2014 NOT A PRODUCTION DEPLOYMENT."
+        "# ARCHIVED LEGACY DEMONSTRATION \u2014 NOT A SUPPORTED DEPLOYMENT OR ACCEPTANCE PATH."
     )
-    assert "deploy/production/ and deploy/validation/" in compose
+    assert "deploy/production/" in compose
+    assert compose.count('profiles: ["legacy-obsolete"]') == 4
+    assert "normal\n# `docker compose up` selects no service" in compose
     assert "APP_ENV: ${APP_ENV:-prod}" not in compose
-    assert caddy.startswith(
-        "# LEGACY LOCAL PLACEHOLDER ONLY \u2014 NOT A PRODUCTION REVERSE PROXY."
-    )
+    assert caddy.startswith("# ARCHIVED LEGACY PLACEHOLDER \u2014 NOT A PRODUCTION REVERSE PROXY.")
     assert "deploy/production/" in caddy
+
+
+def test_libpq_password_files_are_private_and_readable_by_each_service() -> None:
+    runbook = " ".join(_text(README).split())
+    assert "api.pgpass`, owned by `brerc-api:brerc-api` mode `0600`" in runbook
+    assert "monitor.pgpass`, owned by `brerc-monitor-ui:brerc-monitor-ui` mode `0600`" in runbook
+    assert "libpq ignores insecure password files on Unix" in runbook
 
 
 def test_target_linux_record_cannot_treat_missing_evidence_as_approval() -> None:

@@ -68,11 +68,66 @@ class SystemdExampleContractTests(unittest.TestCase):
         problems = validator.validate_unit_text(spec, unsafe)
         self.assertTrue(any("OnFailure" in problem for problem in problems))
 
-    def test_initial_load_must_consume_approval_as_privileged_prestart(self) -> None:
+    def test_initial_load_must_consume_approval_as_isolated_root_prestart(self) -> None:
         spec = self._spec("initial")
-        unsafe = self._text("initial").replace("ExecStartPre=+", "ExecStartPre=")
+        unsafe = self._text("initial").replace(
+            "ExecStartPre=!/usr/bin/env -i /usr/bin/python3 -I ",
+            "ExecStartPre=+/usr/bin/python3 ",
+        )
         problems = validator.validate_unit_text(spec, unsafe)
-        self.assertTrue(any("ExecStartPre" in problem for problem in problems))
+        self.assertTrue(
+            any("approval" in problem or "sandbox" in problem for problem in problems)
+        )
+
+    def test_initial_failure_must_quarantine_the_marker(self) -> None:
+        spec = self._spec("initial")
+        unsafe = self._text("initial").replace(
+            "OnFailure=brerc-loader-initial-quarantine.service\n", ""
+        )
+        self.assertTrue(
+            any(
+                "OnFailure" in problem
+                for problem in validator.validate_unit_text(spec, unsafe)
+            )
+        )
+
+    def test_refresh_marker_must_live_in_runtime_state(self) -> None:
+        spec = self._spec("refresh")
+        unsafe = self._text("refresh").replace(
+            "ConditionPathExists=/run/brerc/refresh/APPROVED_TO_SCHEDULE",
+            "ConditionPathExists=/etc/brerc/refresh/APPROVED_TO_SCHEDULE",
+        )
+        self.assertTrue(
+            any(
+                "ConditionPathExists" in p
+                for p in validator.validate_unit_text(spec, unsafe)
+            )
+        )
+
+    def test_timer_requires_guard_and_never_catches_up_missed_runs(self) -> None:
+        spec = self._spec("timer")
+        unsafe = (
+            self._text("timer")
+            .replace("Persistent=false", "Persistent=true")
+            .replace("BindsTo=brerc-loader-refresh-approval-guard.service\n", "")
+        )
+        problems = validator.validate_unit_text(spec, unsafe)
+        self.assertTrue(any("Persistent" in problem for problem in problems))
+        self.assertTrue(any("BindsTo" in problem for problem in problems))
+
+    def test_guard_disarms_on_stop_and_covers_soft_reboot_and_sleep(self) -> None:
+        spec = self._spec("approval-guard")
+        unsafe = (
+            self._text("approval-guard")
+            .replace(
+                "ExecStop=/usr/bin/rm -f -- /run/brerc/refresh/APPROVED_TO_SCHEDULE",
+                "ExecStop=/usr/bin/true",
+            )
+            .replace("systemd-soft-reboot.service", "unused.target")
+        )
+        problems = validator.validate_unit_text(spec, unsafe)
+        self.assertTrue(any("ExecStop" in problem for problem in problems))
+        self.assertTrue(any("Before" in p or "Conflicts" in p for p in problems))
 
     def test_timer_cannot_silently_add_random_delay(self) -> None:
         spec = self._spec("timer")

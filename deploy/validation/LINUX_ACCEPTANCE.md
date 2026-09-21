@@ -18,13 +18,15 @@ GitHub's Ubuntu runner, systemd's own offline parser:
 ```sh
 python deploy/validation/verify_systemd_examples.py
 python deploy/validation/verify_systemd_examples.py --systemd-analyze
+python deploy/validation/verify_systemd_templates.py
 ```
 
-Those checks cover all six public-API, private-monitor, initial-load, refresh,
-quarantine and timer examples. They reject mutable release paths, unsafe
-listeners, missing failure quarantine and weakened sandboxing. They validate
-examples only; they do not install, start or accept a service and therefore do
-not replace any target-host step below.
+Together those checks cover all eight public-API, private-monitor,
+initial-load, initial-quarantine, refresh, refresh-approval-guard,
+refresh-quarantine and timer examples. They reject mutable release paths,
+unsafe listeners, missing failure quarantine, timer catch-up and weakened
+sandboxing. They validate examples only; they do not install, start or accept
+a service and therefore do not replace any target-host step below.
 
 ## Acceptance identity
 
@@ -38,6 +40,8 @@ Record without secrets or private endpoint values:
 - approved public and private hostname certificate fingerprints;
 - database migration history `0001` through `0004` and destination environment
   UUID through the restricted operational channel; and
+- the root-owned, non-symlink initial approval helper's installed path, owner,
+  parent-directory permissions and approved SHA-256; and
 - the approval record authorising this rehearsal.
 
 ## 1. Offline unit and artifact validation
@@ -64,21 +68,29 @@ sudo systemd-analyze verify \
   /etc/systemd/system/brerc-public-api.service \
   /etc/systemd/system/brerc-run-dashboard.service \
   /etc/systemd/system/brerc-loader-initial.service \
+  /etc/systemd/system/brerc-loader-initial-quarantine.service \
   /etc/systemd/system/brerc-loader-refresh.service \
+  /etc/systemd/system/brerc-loader-refresh-approval-guard.service \
   /etc/systemd/system/brerc-loader-refresh-quarantine.service \
   /etc/systemd/system/brerc-loader-refresh.timer
 sudo systemd-analyze security brerc-public-api.service
 sudo systemd-analyze security brerc-run-dashboard.service
 sudo systemd-analyze security brerc-loader-initial.service
+sudo systemd-analyze security brerc-loader-initial-quarantine.service
 sudo systemd-analyze security brerc-loader-refresh.service
+sudo systemd-analyze security brerc-loader-refresh-approval-guard.service
 sudo systemd-analyze security brerc-loader-refresh-quarantine.service
 sudo systemctl cat brerc-public-api.service brerc-run-dashboard.service \
-  brerc-loader-initial.service brerc-loader-refresh.service \
+  brerc-loader-initial.service brerc-loader-initial-quarantine.service \
+  brerc-loader-refresh.service brerc-loader-refresh-approval-guard.service \
   brerc-loader-refresh-quarantine.service brerc-loader-refresh.timer
 sudo systemctl show brerc-public-api.service brerc-run-dashboard.service \
-  brerc-loader-initial.service brerc-loader-refresh.service \
+  brerc-loader-initial.service brerc-loader-initial-quarantine.service \
+  brerc-loader-refresh.service brerc-loader-refresh-approval-guard.service \
+  brerc-loader-refresh-quarantine.service brerc-loader-refresh.timer \
   --property=FragmentPath --property=DropInPaths --property=User \
-  --property=Group --property=ExecStart --property=EnvironmentFiles
+  --property=Group --property=ExecStart --property=ExecStartPre \
+  --property=ExecStop --property=EnvironmentFiles
 sudo systemd-delta
 ```
 
@@ -91,6 +103,12 @@ do not assign `APP_ENV` or `DASHBOARD_ENV`; those modes are fixed to `prod` in
 the units and an environment-file assignment would override the fixed value.
 Also confirm the monitor environment does not assign
 `RUN_DASHBOARD_DATABASE_URL` and neither service receives `PGPASSWORD`.
+The initial unit's final pre-start must execute the approved helper at
+`/usr/local/libexec/brerc/consume-initial-approval.py` under its reviewed
+sandbox, not a copy mutable by a service account. The refresh timer must bind
+to the root-owned approval guard, use `Persistent=false`, and check only
+`/run/brerc/refresh/APPROVED_TO_SCHEDULE`. Confirm the guard removes that
+marker when stopped for shutdown, soft reboot, suspend or manual disarm.
 
 ## 2. Network, TLS and privilege boundary
 
@@ -126,7 +144,9 @@ and only one attempt. Require:
 
 - the root-owned approval marker is consumed before either database is opened;
 - a second start without a new approval fails;
-- systemd terminates successfully with one invocation-scoped loader result;
+- successful systemd execution remains `active (exited)` until evidence is
+  captured and the operator stops the unit; there is one invocation-scoped
+  loader result;
 - loader `runId`/`releaseId`/candidate digest, migration-0004 evidence and both
   API identity endpoints reconcile with `verify_release_evidence.py`;
 - a browser smoke test uses the production proxy/build with mocks disabled;
@@ -134,24 +154,39 @@ and only one attempt. Require:
 - the initial unit remains disabled and has no timer or automatic retry.
 
 A deliberate rejected-input rehearsal must leave no active release and the
-approval marker absent. A new attempt requires a new approval.
+approval marker absent. Confirm the initial-quarantine unit ran for a failed
+start, retain the exact failed invocation's manager properties and journal,
+and reconcile the database window with `verify_failed_attempt_evidence.py`.
+The verifier accepts a bounded zero-job outcome as failure evidence only; it
+does not authorise a retry. A new attempt requires investigation and approval.
 
 ## 4. Complete-snapshot refresh and rollback rehearsal
 
 With the initial release still dark:
 
 1. Run one approved **changed** complete-snapshot refresh through
-   `brerc-loader-refresh.service`. Confirm one atomic release switch and exact
-   database/API/browser identity agreement.
+   `brerc-loader-refresh.service`. Before arming, start the timer with the
+   marker absent, require its root-owned guard to be `active (exited)`, and
+   confirm the next scheduled trigger lies outside the controlled run window.
+   Confirm one atomic release switch and exact database/API/browser identity
+   agreement. Do not enable a recurring schedule yet.
 2. Run one approved **no-change** refresh. Require
    `reusedActiveRelease:true`, unchanged release identity and an advanced
    checked-through source time.
 3. Run one deliberate failing refresh (for example, a reviewed wrong-CA test).
    Confirm the previous release and safe counts remain visible, the quarantine
-   service removes `APPROVED_TO_SCHEDULE`, the timer cannot start more work and
-   the independent alert/dead-man path reports the failure.
+   service removes `/run/brerc/refresh/APPROVED_TO_SCHEDULE`, the timer cannot
+   start more work and the independent alert/dead-man path reports the failure.
+   Retain the failed invocation, its bounded database/journal evidence and
+   marker absence before any `reset-failed` or new attempt. A zero-job verdict
+   is not permission to retry.
 4. Correct the cause, obtain a new approval, perform one attended refresh and
-   only then re-arm the timer. Never move `serve.*` with manual SQL.
+   accept its evidence. Only then enable the timer while the marker is absent,
+   verify guard/timer state, and arm the schedule with a fresh approval marker.
+   On disarm, stop the timer and guard and confirm the marker is absent; preserve
+   a failed loader state for evidence before any reset. A boot, soft reboot or
+   suspend requires fresh operator review and re-arming. Never move `serve.*`
+   with manual SQL.
 5. Rehearse **code/proxy rollback** to a prior immutable, digest-verified build
    known to be compatible with the installed forward-only migrations. Confirm
    the active database release is not changed by a code rollback.

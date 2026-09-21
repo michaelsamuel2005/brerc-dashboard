@@ -22,6 +22,7 @@
 - API artifact SHA-256: `TBD`
 - Run-dashboard artifact SHA-256: `TBD`
 - Installed unit/config manifest SHA-256: `TBD`
+- Root-owned initial approval helper SHA-256 and approval reference: `TBD`
 - Linux distribution and version: `TBD`
 - Kernel version: `TBD`
 - systemd version: `TBD`
@@ -33,7 +34,11 @@
 - Unresolved-placeholder scan: `PASS / FAIL`
 - Immutable-path and ownership check: `PASS / FAIL`
 - `systemd-analyze verify` retained: `PASS / FAIL`
-- `systemd-analyze security` reviewed for every service: `PASS / FAIL`
+- All eight installed unit examples and their effective drop-ins reviewed: `PASS / FAIL`
+- `systemd-analyze security` reviewed for all seven services: `PASS / FAIL`
+- Initial approval helper is root-owned, fixed-path and digest-verified: `PASS / FAIL`
+- Refresh timer binds to the root-owned approval guard and has `Persistent=false`: `PASS / FAIL`
+- Guard disarms on shutdown, soft reboot, suspend and manual stop: `PASS / FAIL`
 - Installed-unit digest matches reviewed candidate: `PASS / FAIL`
 - No unexpected drop-ins (`systemd-delta` reviewed): `PASS / FAIL`
 - Environment files cannot override fixed production modes/DB path: `PASS / FAIL`
@@ -63,10 +68,14 @@
 - Fresh, root-controlled single-use approval recorded: `PASS / FAIL`
 - Exact installed `brerc-loader-initial.service` used: `PASS / FAIL`
 - Approval marker consumed before database access: `PASS / FAIL`
+- Successful initial unit retained `active (exited)` until evidence capture: `PASS / FAIL`
 - Second start without new approval failed: `PASS / FAIL`
 - Invocation-scoped terminal loader evidence verified: `PASS / FAIL`
 - Database/API/browser release and dataset identities reconciled: `PASS / FAIL`
 - Rejected-input rehearsal left no active release: `PASS / FAIL`
+- Failed initial triggered quarantine and removed its marker: `PASS / FAIL`
+- Failed-attempt verifier reconciled systemd, journal and bounded database window: `PASS / FAIL`
+- Zero-job evidence was not treated as permission to retry: `PASS / FAIL`
 
 Initial invocation ID: `TBD`
 Initial loader run ID: `TBD`
@@ -76,14 +85,18 @@ Initial dataset digest: `TBD`
 ## Complete-snapshot refresh and quarantine
 
 - Changed refresh atomically switched one release: `PASS / FAIL`
+- Timer/guard were active with marker absent before the controlled run: `PASS / FAIL`
+- Timer's next trigger was outside the controlled run window: `PASS / FAIL`
 - Changed refresh database/API/browser identities reconciled: `PASS / FAIL`
 - No-change refresh reused the active release: `PASS / FAIL`
 - No-change refresh advanced checked-through source time: `PASS / FAIL`
 - Deliberate failure kept previous release visible: `PASS / FAIL`
 - Failure invoked quarantine and removed schedule approval: `PASS / FAIL`
+- Failed invocation and bounded zero-or-one-job evidence retained before reset: `PASS / FAIL`
 - Timer could not start further work while disarmed: `PASS / FAIL`
 - Independent alert/dead-man path reported failure: `PASS / FAIL`
-- Corrected attended refresh passed before re-arm: `PASS / FAIL`
+- Corrected attended refresh passed and evidence was accepted before timer enablement/re-arm: `PASS / FAIL`
+- Reboot/soft-reboot/suspend transition left marker absent pending fresh approval: `PASS / FAIL`
 
 Changed-refresh invocation/run/release references: `TBD`
 No-change invocation/run reference: `TBD`
