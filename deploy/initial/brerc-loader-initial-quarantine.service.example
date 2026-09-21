@@ -1,30 +1,28 @@
-# EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
-# Install it alongside brerc-loader-refresh.service only after operator review.
-# Its sole write is removal of the refresh scheduling approval marker.
+# EXAMPLE ONLY. Install only beside the reviewed initial service.
+# Its sole write is removal of the one-attempt initial approval marker.
 
 [Unit]
-Description=Disarm BRERC publication refresh after a failed attempt
+Description=Disarm BRERC initial publication approval after a failed start
+AssertPathIsDirectory=/etc/brerc/initial-approval
 
 [Service]
 Type=oneshot
 User=root
 Group=root
 UMask=0077
-ExecStart=/usr/bin/rm -f -- /run/brerc/refresh/APPROVED_TO_SCHEDULE
+ExecStart=/usr/bin/rm -f -- /etc/brerc/initial-approval/APPROVED_TO_INITIAL
 Restart=no
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=brerc-loader-refresh-quarantine
+SyslogIdentifier=brerc-loader-initial-quarantine
 
-# The process needs root access only to unlink one root-controlled marker. The
-# exact rm command above accepts no operator input and invokes no shell.
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
 PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=-/run/brerc/refresh
+ReadWritePaths=/etc/brerc/initial-approval
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

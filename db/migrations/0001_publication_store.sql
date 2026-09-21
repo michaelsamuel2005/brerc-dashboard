@@ -1,5 +1,13 @@
 -- BRERC destination publication store -- migration 0001.
 --
+-- NAMING AND AUTHORITY: this migration deliberately creates the release-scoped
+-- publication.public_species, publication.public_record and
+-- publication.public_distribution_cell tables alongside the legacy
+-- public.public_species, public.public_records and public.distribution_cell
+-- objects. The serve.* views below read only the publication.* store. Keep all
+-- operational SQL schema-qualified; the legacy public.* objects are not part
+-- of this release-loader serving path.
+--
 -- This database contains only generalised, publication-safe candidate state.
 -- It must never receive source coordinates, comments, unapproved/raw place text, sensitivity
 -- flags, source identifiers or credentials. The loader persists a separate,
@@ -8,6 +16,8 @@
 -- Apply with ON_ERROR_STOP enabled, after db/roles.sql. The whole migration is
 -- transactional. A second invocation fails at the explicit version guard; it
 -- never uses CREATE TABLE IF NOT EXISTS to reshape an existing installation.
+-- Migration 0001 intentionally has no in-place down migration. The reviewed
+-- rollback and recovery procedure is documented in docs/POSTGRES_RELEASE_LOADER.md.
 
 BEGIN;
 
@@ -611,9 +621,6 @@ CREATE TABLE loader_control.notification_outbox (
 CREATE INDEX notification_outbox_delivery_idx
     ON loader_control.notification_outbox (status, available_at)
     WHERE status IN ('pending', 'delivery_failed');
-CREATE UNIQUE INDEX notification_outbox_success_release_idx
-    ON loader_control.notification_outbox (release_id, event_type)
-    WHERE event_type = 'etl_succeeded';
 
 -- One private, pseudonymous disposition per record and immutable release.
 -- Candidate ledgers are completed before activation, so a failed activation
@@ -2411,8 +2418,9 @@ BEGIN
                     MESSAGE = 'duplicate activation job could not reach success exactly once';
             END IF;
 
-            -- Attempt the transactional success event. The release-level unique
-            -- index suppresses a second delivery for an already-active release.
+            -- Attempt the transactional success event.  Idempotency belongs to
+            -- the terminal job, not the published release: later successful
+            -- refresh jobs may legitimately reuse this active release.
             INSERT INTO loader_control.notification_outbox (
                 notification_id,
                 job_id,
@@ -2425,9 +2433,7 @@ BEGIN
                 active_release_id,
                 'etl_succeeded',
                 'etl-operations'
-            ) ON CONFLICT (release_id, event_type)
-                WHERE event_type = 'etl_succeeded'
-                DO NOTHING;
+            ) ON CONFLICT (job_id, event_type) DO NOTHING;
 
             -- Do not put a multi-million-row purge inside the authoritative
             -- success transition. The durable flag makes cleanup resumable;
@@ -2573,9 +2579,7 @@ BEGIN
         candidate_release_id,
         'etl_succeeded',
         'etl-operations'
-    ) ON CONFLICT (release_id, event_type)
-        WHERE event_type = 'etl_succeeded'
-        DO NOTHING;
+    ) ON CONFLICT (job_id, event_type) DO NOTHING;
 
     DELETE FROM loader_stage.reconciliation_result
     WHERE job_id = candidate_job_id;

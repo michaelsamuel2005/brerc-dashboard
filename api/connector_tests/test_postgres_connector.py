@@ -84,7 +84,7 @@ CONNECTOR_DICTIONARY = SpeciesDictionary.from_rows(
 )
 
 
-class TestConnector:
+class _ConnectorProxy:
     """Test-only proxy that patches private module dependencies for one call."""
 
     def __init__(self, config, *, connection_factory, monotonic=None):
@@ -110,8 +110,8 @@ class TestConnector:
         return self._call(self.connector.preflight, **kwargs)
 
 
-def test_connector(config, *, connection_factory, monotonic=None):
-    return TestConnector(
+def make_connector(config, *, connection_factory, monotonic=None):
+    return _ConnectorProxy(
         config,
         connection_factory=connection_factory,
         monotonic=monotonic,
@@ -469,7 +469,7 @@ class TestConnectorSuccess(unittest.TestCase):
         connection = FakeConnection(
             row_batches=[[source_row("1.00"), source_row("2.00")], [source_row("3.00")], []]
         )
-        connector = test_connector(
+        connector = make_connector(
             connector_config(contract), connection_factory=lambda _: connection
         )
         result = connector.extract_initial(
@@ -510,7 +510,7 @@ class TestConnectorSuccess(unittest.TestCase):
             "scientific_name": "Synthetic unlisted species",
         }
         connection = FakeConnection(row_batches=[[unlisted], []])
-        records, report = test_connector(
+        records, report = make_connector(
             connector_config(contract),
             connection_factory=lambda _: connection,
         ).extract_initial(
@@ -526,7 +526,7 @@ class TestConnectorSuccess(unittest.TestCase):
     def test_zero_rows_still_validate_the_cursor_header(self):
         contract = approved_contract()
         connection = FakeConnection(row_batches=[[]])
-        result = test_connector(
+        result = make_connector(
             connector_config(contract), connection_factory=lambda _: connection
         ).extract_initial(
             source_contract=contract,
@@ -539,7 +539,7 @@ class TestConnectorSuccess(unittest.TestCase):
 
     def test_preflight_reads_no_source_row_and_reports_current_contract_not_ready(self):
         connection = FakeConnection(row_batches=[[source_row()]])
-        report = test_connector(
+        report = make_connector(
             connector_config(BRERC_MAIN_DATA_DASH),
             connection_factory=lambda _: connection,
         ).preflight(
@@ -731,6 +731,73 @@ class TestPrivateSafeSnapshot(unittest.TestCase):
         self.assertEqual(connection.rollback_calls, 1)
         self.assertEqual(connection.close_calls, 1)
 
+    def test_cleanup_failure_after_success_is_sanitised(self):
+        contract = approved_contract()
+        private_detail = "private-cleanup-detail-must-not-escape"
+        connection = FakeConnection(
+            row_batches=[[]],
+            adapter_detail=private_detail,
+            fail_rollback=True,
+        )
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        with (
+            patch(
+                "brerc_source.postgres._default_connection_factory",
+                return_value=connection,
+            ),
+            self.assertRaises(SourceCleanupFailed) as raised,
+            connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
+            ) as snapshot,
+        ):
+            list(snapshot)
+
+        self.assertNotIn(private_detail, str(raised.exception))
+        self.assertNotIn(private_detail, repr(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertEqual(connection.rollback_calls, 1)
+        self.assertEqual(connection.close_calls, 1)
+
+    def test_cleanup_failure_does_not_replace_body_exception(self):
+        contract = approved_contract()
+        private_detail = "private-cleanup-detail-must-not-escape"
+        connection = FakeConnection(
+            row_batches=[[source_row()], []],
+            adapter_detail=private_detail,
+            fail_rollback=True,
+        )
+        connector = TrustedPostgreSQLSourceConnector.from_config(connector_config(contract))
+        body_failure = SourceCancelled()
+        with (
+            patch(
+                "brerc_source.postgres._default_connection_factory",
+                return_value=connection,
+            ),
+            self.assertRaises(SourceCancelled) as raised,
+            connector._open_safe_initial_snapshot(
+                source_contract=contract,
+                columns=VIEW_COLUMNS,
+                policy=approved_policy(),
+                reconciliation_secret=b"reconciliation-secret-for-tests-32bytes",
+                dictionary=CONNECTOR_DICTIONARY,
+            ) as snapshot,
+        ):
+            next(snapshot)
+            raise body_failure
+
+        self.assertIs(raised.exception, body_failure)
+        self.assertNotIn(private_detail, str(raised.exception))
+        self.assertNotIn(private_detail, repr(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+        self.assertEqual(connection.rollback_calls, 1)
+        self.assertEqual(connection.close_calls, 1)
+
     def test_source_value_failure_is_sanitised_and_context_free(self):
         contract = approved_contract()
         private_identifier = "PRIVATE-INVALID-IDENTIFIER"
@@ -767,7 +834,7 @@ class TestFailClosedOrdering(unittest.TestCase):
             calls += 1
             return FakeConnection(row_batches=[])
 
-        connector = test_connector(
+        connector = make_connector(
             connector_config(BRERC_MAIN_DATA_DASH), connection_factory=factory
         )
         with self.assertRaises(SourceContractError):
@@ -784,7 +851,7 @@ class TestFailClosedOrdering(unittest.TestCase):
             row_batches=[[source_row()]],
             catalog=catalog_row(definition="SELECT changed_source"),
         )
-        connector = test_connector(
+        connector = make_connector(
             connector_config(contract), connection_factory=lambda _: connection
         )
         with self.assertRaises(SourceProtocolError) as raised:
@@ -805,7 +872,7 @@ class TestFailClosedOrdering(unittest.TestCase):
         observed["owner"] = "private-owner-name-must-not-escape"
         connection = FakeConnection(row_batches=[[source_row()]], catalog=observed)
         with self.assertRaises(SourceProtocolError) as raised:
-            test_connector(
+            make_connector(
                 connector_config(contract), connection_factory=lambda _: connection
             ).extract_initial(
                 source_contract=contract,
@@ -823,7 +890,7 @@ class TestFailClosedOrdering(unittest.TestCase):
         del observed["owner"]
         connection = FakeConnection(row_batches=[[source_row()]], catalog=observed)
         with self.assertRaises(SourceProtocolError) as raised:
-            test_connector(
+            make_connector(
                 connector_config(contract), connection_factory=lambda _: connection
             ).extract_initial(
                 source_contract=contract,
@@ -849,7 +916,7 @@ class TestFailClosedOrdering(unittest.TestCase):
             contract = approved_contract()
             connection = FakeConnection(row_batches=[[source_row()]], session=observed)
             with self.subTest(change=change), self.assertRaises(SourceProtocolError):
-                test_connector(
+                make_connector(
                     connector_config(contract),
                     connection_factory=lambda _, conn=connection: conn,
                 ).extract_initial(
@@ -866,7 +933,7 @@ class TestFailClosedOrdering(unittest.TestCase):
         contract = approved_contract()
         connection = FakeConnection(row_batches=[[source_row()]], row_header=PROJECTION[:-1])
         with self.assertRaises(SourceProtocolError) as raised:
-            test_connector(
+            make_connector(
                 connector_config(contract), connection_factory=lambda _: connection
             ).extract_initial(
                 source_contract=contract,
@@ -882,7 +949,7 @@ class TestFailClosedOrdering(unittest.TestCase):
         contract = approved_contract()
         connection = FakeConnection(row_batches=[[source_row()], [source_row("2.00")]])
         with self.assertRaises(SourceCancelled):
-            test_connector(
+            make_connector(
                 connector_config(contract), connection_factory=lambda _: connection
             ).extract_initial(
                 source_contract=contract,
@@ -903,7 +970,7 @@ class TestFailClosedOrdering(unittest.TestCase):
         )
         connection = FakeConnection(row_batches=[[source_row()]])
         with self.assertRaises(SourceTimedOut):
-            test_connector(
+            make_connector(
                 config,
                 connection_factory=lambda _: connection,
                 # Fourteen checks complete through the final empty fetch. Only
@@ -974,7 +1041,7 @@ class TestRedactionAndConfiguration(unittest.TestCase):
         for failure in ("fail_cursor_close", "fail_rollback", "fail_connection_close"):
             connection = FakeConnection(row_batches=[[]], **{failure: True})
             with self.subTest(failure=failure), self.assertRaises(SourceCleanupFailed):
-                test_connector(
+                make_connector(
                     connector_config(contract), connection_factory=lambda _, item=connection: item
                 ).extract_initial(
                     source_contract=contract,
@@ -990,7 +1057,7 @@ class TestRedactionAndConfiguration(unittest.TestCase):
     def test_malformed_factory_result_is_sanitised_and_no_rows_escape(self):
         contract = approved_contract()
         with self.assertRaises(SourceDatabaseFailed) as context:
-            test_connector(
+            make_connector(
                 connector_config(contract), connection_factory=lambda _: object()
             ).extract_initial(
                 source_contract=contract,
@@ -1022,7 +1089,7 @@ class TestRedactionAndConfiguration(unittest.TestCase):
             ),
         )
         with self.assertRaises(SourceDatabaseFailed) as context:
-            test_connector(config, connection_factory=lambda _: connection).extract_initial(
+            make_connector(config, connection_factory=lambda _: connection).extract_initial(
                 source_contract=contract,
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
@@ -1045,7 +1112,7 @@ class TestRedactionAndConfiguration(unittest.TestCase):
             return FakeConnection(row_batches=[])
 
         with self.assertRaises(SourceConfigurationError):
-            test_connector(config, connection_factory=factory).extract_initial(
+            make_connector(config, connection_factory=factory).extract_initial(
                 source_contract=contract,
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),
@@ -1077,7 +1144,7 @@ class TestRedactionAndConfiguration(unittest.TestCase):
             return FakeConnection(row_batches=[])
 
         with self.assertRaises(SourceConfigurationError):
-            test_connector(config, connection_factory=factory).extract_initial(
+            make_connector(config, connection_factory=factory).extract_initial(
                 source_contract=contract,
                 columns=VIEW_COLUMNS,
                 policy=approved_policy(),

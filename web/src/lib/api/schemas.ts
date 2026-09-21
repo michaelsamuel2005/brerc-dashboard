@@ -19,44 +19,55 @@ export const PUBLIC_MIN_PRECISION_METRES = 100;
 
 /** Normalise a raw `verified` verdict into an enum. Fail-safe on anything ambiguous.
  *
- *  ORDER IS LOAD-BEARING. The distinction a substring search gets wrong:
+ * ORDER IS LOAD-BEARING. Negating a determination's outcome is a rejection
+ * ("not accepted", "not valid"), while negating that determination happened is
+ * unconfirmed ("not verified", "not determined"). Only an unnegated positive
+ * determination may become accepted.
  *
- *    negating ACCEPTANCE   -> a rejection      ("not accepted", "unaccepted")
- *    negating VERIFICATION -> not yet done     ("not verified", "unconfirmed")
- *
- *  The previous implementation tested `s.includes("accept")` with no negation
- *  check before it, so "Not accepted" — which contains "accept" and no "reject" —
- *  was classified ACCEPTED. Measured against a 63-case corpus it produced 10 false
- *  accepts, each one showing a record a determiner actively turned down as
- *  verified, on a public map whose whole claim is that a verified record has been
- *  checked by somebody. It also returned "unknown" for 26 legible verdicts
- *  ("Verified", "Confirmed", "Provisional", "Awaiting verification", "Refused").
- *
- *  Kept in EXACT parity with `normalise_verified` in api/etl/contract.py. The two
- *  are asserted against a shared corpus; if you change one, change both.
+ * Kept in exact parity with `normalise_verified` in api/etl/contract.py and its
+ * 121-case corpus in api/tests/test_verified_parity.py. If one changes, all
+ * three must change together.
  */
-export function normaliseVerified(raw: string): "accepted" | "unconfirmed" | "rejected" | "unknown" {
-  // z.string() guarantees a string inside the schema, but this function is
-  // exported and a malformed response should degrade, not throw.
-  if (typeof raw !== "string") return "unknown";
-  const s = raw.trim();
-  if (s === "") return "unknown";
 
-  // 1. An active negative determination.
-  if (/\b(?:reject\w*|refus\w*|declin\w*|incorrect|invalid|erroneous)\b/i.test(s)) return "rejected";
-  // 2. Verification not completed. BEFORE the negated-acceptance test, so that
-  //    "unconfirmed" and "not verified" are not misread as rejections.
-  if (
-    /\b(?:unconfirm\w*|unverif\w*|provisional|uncertain|pending|await\w*|(?:not|never|un)[\s-]*(?:been[\s-]+)?(?:verif\w*|confirm\w*|check\w*)|needs?[\s-]+(?:verification|confirmation|checking|approval)|to[\s-]+be[\s-]+(?:verified|confirmed|checked))\b/i.test(s)
-  ) {
-    return "unconfirmed";
-  }
-  // 3. A negated acceptance. Only reached once the unconfirmed patterns missed.
-  if (/\b(?:not|non|never|un|dis)[\s-]*(?:been[\s-]+)?accept\w*/i.test(s)) return "rejected";
-  // 4. A positive determination — the ONLY path to "accepted".
-  if (/\b(?:accept\w*|verified|confirmed|correct|valid|determined)\b/i.test(s)) return "accepted";
-  // 5. Anything unrecognised. Real BRERC data contains values such as "BRERC (1)";
-  //    an unreadable verdict must never inflate a verified count.
+// Separator allowed between a negation and the word it negates: whitespace,
+// hyphen, en dash or em dash.
+const VERDICT_SEPARATOR = String.raw`[\s\-\u2013\u2014]`;
+
+// Every word that the fallback heuristic can read as acceptance. This exact
+// fragment is also used by the negation patterns so the vocabularies cannot
+// drift apart.
+const POSITIVE_VERDICT = String.raw`(?:accept\w*|verified|confirmed|correct(?:ly)?|valid(?:ly)?|determined)`;
+const VERIFICATION_PROCESS = String.raw`(?:verif\w*|confirm\w*|check\w*|determin\w*)`;
+const DETERMINATION_STEM = String.raw`(?:accept|correct|valid|verif|confirm|check|determin)`;
+const FREE_NEGATION = String.raw`(?:\b(?:not|never|no|none|cannot|without)\b|n['\u2019]t)`;
+
+// A free-standing negation binds to the nearest following determination word,
+// at most two words away. Bound un/non/dis prefixes must be joined directly or
+// with one of the separators above.
+const NEGATED_VERDICT = String.raw`(?:${FREE_NEGATION}${VERDICT_SEPARATOR}*(?:(?!${DETERMINATION_STEM})\w+\s+){0,2}|\b(?:un|non|dis)${VERDICT_SEPARATOR}*)`;
+
+const REJECTED_VERDICT = /\b(?:reject\w*|refus\w*|declin\w*|in[-\u2013\u2014]?(?:correct|valid)(?:ly)?|erroneous)\b/i;
+const UNCONFIRMED_VERDICT = new RegExp(
+  String.raw`\b(?:indetermin\w*|provisional|uncertain|pending|await\w*|needs?${VERDICT_SEPARATOR}+(?:verification|confirmation|checking|approval)|to${VERDICT_SEPARATOR}+be${VERDICT_SEPARATOR}+(?:verified|confirmed|checked))\b` +
+    String.raw`|${FREE_NEGATION}\s+yet\b` +
+    String.raw`|${NEGATED_VERDICT}${VERIFICATION_PROCESS}\b`,
+  "i",
+);
+const NEGATED_POSITIVE_VERDICT = new RegExp(String.raw`${NEGATED_VERDICT}${POSITIVE_VERDICT}\b`, "i");
+const ACCEPTED_VERDICT = new RegExp(String.raw`\b${POSITIVE_VERDICT}\b`, "i");
+
+export function normaliseVerified(raw: unknown): "accepted" | "unconfirmed" | "rejected" | "unknown" {
+  // z.string() guarantees a string inside the schema, but this function is
+  // exported and a malformed response should degrade rather than throw.
+  if (typeof raw !== "string") return "unknown";
+  const text = raw.trim();
+  if (text === "") return "unknown";
+
+  // These five stages exactly mirror the server classifier.
+  if (REJECTED_VERDICT.test(text)) return "rejected";
+  if (UNCONFIRMED_VERDICT.test(text)) return "unconfirmed";
+  if (NEGATED_POSITIVE_VERDICT.test(text)) return "rejected";
+  if (ACCEPTED_VERDICT.test(text)) return "accepted";
   return "unknown";
 }
 

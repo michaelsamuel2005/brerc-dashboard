@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = API_ROOT.parent
 PINNED_API_REQUIREMENTS = (
     "fastapi==0.141.1",
     "uvicorn[standard]==0.46.0",
@@ -130,3 +131,29 @@ def test_docker_context_and_runtime_are_api_only_and_unprivileged() -> None:
         "!app/*.py",
         "!app/**/*.py",
     }
+
+
+def test_selected_v1_map_path_is_api_only_and_legacy_compose_is_disabled() -> None:
+    """Keep the target map store explicit and fail the old stack shut."""
+
+    architecture = (REPO_ROOT / "docs/PUBLIC_SERVING_ARCHITECTURE.md").read_text(encoding="utf-8")
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    caddy = (REPO_ROOT / "Caddyfile").read_text(encoding="utf-8")
+    distribution_router = (API_ROOT / "app/routers/distribution.py").read_text(encoding="utf-8")
+    browser_endpoints = (REPO_ROOT / "web/src/lib/api/endpoints.ts").read_text(encoding="utf-8")
+
+    assert "does **not** use Martin" in architecture
+    assert "GET /api/distribution/cells" in architecture
+    assert "serve.public_distribution_cell" in architecture
+    assert "must not call `/tiles`" in architecture
+    assert "PR #52 is not a standalone end-to-end" in architecture
+
+    # All four historical services require an explicit opt-in profile. A plain
+    # `docker compose up` therefore cannot masquerade as the supported stack.
+    assert compose.count('profiles: ["legacy-obsolete"]') == 4
+    assert "NOT A SUPPORTED DEPLOYMENT OR ACCEPTANCE PATH" in compose
+    assert "NOT A PRODUCTION REVERSE PROXY" in caddy
+
+    assert 'assert_serving_relation("serve.public_distribution_cell")' in (distribution_router)
+    assert 'getJson("/distribution/cells"' in browser_endpoints
+    assert 'getJson("/tiles' not in browser_endpoints

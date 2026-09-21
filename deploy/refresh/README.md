@@ -2,15 +2,29 @@
 
 ## Status and safety boundary
 
-This directory is a deployment package, not an enabled deployment. All three
+This directory is a deployment package, not an enabled deployment. All four
 unit templates end in `.example`.
 The repository and CI neither install nor enable them.
-The additional `APPROVED_TO_SCHEDULE` condition keeps an accidentally copied
-service inert until an authorised operator deliberately creates the marker.
+The additional `/run/brerc/refresh/APPROVED_TO_SCHEDULE` condition keeps an
+accidentally copied service inert until an authorised operator deliberately
+creates the marker. A kernel reboot removes `/run` state, but a systemd soft
+reboot preserves `/run`, and suspend or hibernate preserves it too. Therefore
+the timer is bound to a root-owned approval guard. Stopping that guard for
+sleep, soft reboot or shutdown removes the exact marker and stops the timer.
+The volatile marker is never restored automatically. An enabled timer may be
+started again by `timers.target` after a soft reboot or ordinary boot, but it
+remains inert without the marker. After any transition, an authorised operator
+must inspect and stop that timer, revalidate the host and explicitly re-arm the
+schedule and marker; merely seeing an active timer is not approval.
 If an authorised refresh later fails, `OnFailure` starts the separate quarantine
 unit, whose only command removes that marker as root. The installed timer may
 continue to wake on its approved cadence, but the refresh condition then fails
 closed and no further loader attempt can begin until an operator re-arms it.
+The quarantine unit is inert; do not enable it independently.
+All other runtime prerequisites use fixed, shell-free
+`ExecStartPre=/usr/bin/test` checks: unlike systemd `Assert*` directives, a
+failed pre-start command puts the service in the failed state and activates the
+quarantine unit.
 
 The service has exactly one operational command:
 
@@ -29,7 +43,8 @@ The templates do not choose production policy. Before installation, the
 authorised service owner must record approval for all of the following:
 
 - production host and accountable operator;
-- exact cadence, UTC maintenance window and `Persistent=true` catch-up action;
+- exact cadence, UTC maintenance window and whether to depart from the safe
+  `Persistent=false` no-catch-up default;
 - outer timeout, justified by a retained scale run from the exact protected-main
   release candidate;
 - full-snapshot row-count and publication-basis change thresholds;
@@ -71,6 +86,24 @@ Prepare these files outside the repository:
 | `/etc/brerc/refresh/source.pgpass` and `target.pgpass` | Separate database credentials | `brerc-loader:brerc-loader`, `0600` |
 | `/etc/brerc/refresh/source-ca.pem` and `target-ca.pem` | Approved TLS trust roots | `root:brerc-loader`, `0440` |
 
+Evidence queries use a third, operator-only connection that is never placed in
+the loader environment. Create `/etc/brerc/operator` as `root:root` mode `0700`
+with a root-owned `pg_service.conf` (`0400`), `monitor.pgpass` (`0600`) and
+approved monitor CA (`0444` or stricter). Its named profile must pin the
+approved database, the dedicated LOGIN role whose sole direct/effective group
+is `brerc_monitor`, `sslmode=verify-full`, `sslrootcert` and the absolute
+`passfile`. The login must have read-only transactions by default and no
+superuser, database/role creation, replication or RLS-bypass privilege. In the
+protected root operator shell, set only the non-secret path:
+
+```sh
+export PGSERVICEFILE=/etc/brerc/operator/pg_service.conf
+```
+
+Replace `APPROVED_MONITOR_SERVICE` below with that profile name. Never reuse a
+source, loader, API or Martin login for monitoring, and never export the monitor
+password or copy the operator service file into `/etc/brerc/refresh`.
+
 Change `source_config_path`, dictionary path and policy path in the copied loader
 configuration to `/etc/brerc/refresh/...`. Replace every placeholder and hash
 with the reviewed value. `PGPASSWORD`, DSNs, inline passwords and `sslmode`
@@ -89,7 +122,7 @@ and recovery plan rather than an unattended secret update.
 
 ## Preflight and first controlled refresh
 
-Complete these checks before creating `APPROVED_TO_SCHEDULE`:
+Complete these checks before creating the volatile schedule marker:
 
 1. Verify the release commit and artifact digest against the approved release
    record. Confirm the rendered immutable release path and its `bin/brerc-load`
@@ -112,24 +145,152 @@ Complete these checks before creating `APPROVED_TO_SCHEDULE`:
    outbox rows cannot report a failure that occurs before the loader connects.
    Confirm journald retention and access controls preserve useful exit evidence
    without granting dashboard users or notification workers broad journal access.
-6. Copy the three examples to temporary names ending `.service` and `.timer` in
+6. Copy the four examples to temporary names ending `.service` and `.timer` in
    a protected staging directory and run `systemd-analyze verify` against all
-   three, including the exact `OnFailure` relationship.
-   Review `systemd-analyze security` on the actual production systemd version;
-   do not delete a hardening directive merely to improve compatibility without
-   a documented security review.
+   four, including the exact `OnFailure` and timer-to-approval-guard
+   relationships. Run `systemd-analyze security --threshold=40 --no-pager` on
+   all three services on the actual
+   production systemd version. The threshold is rendered as exposure 4.0; the
+   reviewed Ubuntu 24.04 baseline scores 3.2 or better. Do not delete a hardening
+   directive merely to improve compatibility without a documented security
+   review.
 7. Arrange the approved maintenance window and observer. Then run one controlled
    `brerc-load refresh` with precisely the service user, environment file and
    config that the unit will use. This is a real candidate publication attempt,
-   not a dry run. Do not schedule anything until its evidence is accepted.
+   not a dry run. Do not enable the recurring schedule until its evidence is
+   accepted. The timer is started but not enabled for this observed attempt
+   solely to hold its lifecycle guard and invocation properties; its next
+   trigger must be outside the controlled evidence window.
 
-For step 7, install the rendered service and quarantine units without the timer,
-create the approval marker for the observed run, record the previous
-`InvocationID`, and start the service once with `systemctl start --no-block`.
-Never source the environment file into an interactive shell. Wait until the
-unit reaches a terminal state, then remove the schedule marker after confirming
-that no further attempt is running. A failed run must already have caused the
-quarantine unit to remove it.
+For step 7, install the rendered loader, approval-guard, quarantine and timer
+units, preserving `root:root` ownership and mode `0644`. Render the already
+approved `OnCalendar` value into the timer. Before any controlled publication
+attempt, run `systemctl daemon-reload`, capture `systemctl cat` and `systemctl
+show --property=FragmentPath --property=DropInPaths` for all four installed
+units, and compare their SHA-256 digests with the reviewed rendered artifacts.
+Require the expected `/etc/systemd/system/` fragment paths, empty
+`DropInPaths=`, no unresolved placeholder or mutable symlink, the exact
+reviewed `OnFailure` target, and the exact timer dependency on the approval
+guard. Re-run `systemd-analyze verify` on all four installed units and retain
+`systemd-analyze security --threshold=40 --no-pager` output for all three
+services. A score above 4.0, any override, unexpected drop-in, path mismatch or
+digest mismatch blocks this controlled attempt.
+
+Create `/run/brerc/refresh` while the approval marker is absent, then start the
+timer. Starting it also starts the approval guard. Require the guard to be
+`active (exited)`, the timer to be active, the marker to remain absent, and the
+next scheduled trigger shown by `systemctl list-timers` to fall outside the
+attended controlled-run window. This active timer reference also keeps the
+completed refresh invocation properties available for evidence capture. If any
+of those checks fails, stop the timer and guard and do not create the marker.
+
+Only after those checks pass, create the approval marker for the observed run,
+record the previous `InvocationID`, and capture a validated UTC
+`database_window_start` from the database clock through the monitor service
+before starting the unit. Run the attended blocks in one dedicated root Bash
+shell with a new absolute evidence directory that does not already exist. An
+existing directory or file, an unset value, or any failed command must stop
+the shell. Do not resume a partial block, reuse evidence from an earlier
+attempt or start a second loader to repair a failed capture; preserve the
+partial bundle and reconcile the unit, database and API state.
+
+```bash
+set -euo pipefail
+set -C  # Do not overwrite an existing evidence file.
+unit=brerc-loader-refresh.service
+guard=brerc-loader-refresh-approval-guard.service
+quarantine=brerc-loader-refresh-quarantine.service
+timer=brerc-loader-refresh.timer
+evidence=CONTROLLED_EVIDENCE_DIRECTORY
+expected_environment_id=APPROVED_DESTINATION_ENVIRONMENT_UUID
+expected_database=APPROVED_DESTINATION_DATABASE_NAME
+expected_monitor_role=APPROVED_MONITOR_LOGIN_ROLE
+case "$evidence" in
+  /*) ;;
+  *) echo 'evidence directory must be an absolute path' >&2; exit 1 ;;
+esac
+umask 077
+mkdir -m 0700 -- "$evidence"  # Existing directory/symlink is a hard stop.
+chown root:root -- "$evidence"
+install -d -o root -g root -m 0750 /run/brerc/refresh
+rm -f -- /run/brerc/refresh/APPROVED_TO_SCHEDULE
+systemctl start "$timer"
+[ "$(systemctl is-active "$guard")" = active ] || exit 1
+[ "$(systemctl show "$guard" --property=SubState --value)" = exited ] || exit 1
+[ "$(systemctl is-active "$timer")" = active ] || exit 1
+test ! -e /run/brerc/refresh/APPROVED_TO_SCHEDULE
+systemctl list-timers "$timer" --all --no-pager
+# An authorised operator must confirm that NEXT is outside this controlled run.
+install -o root -g brerc-loader -m 0440 /dev/null \
+  /run/brerc/refresh/APPROVED_TO_SCHEDULE
+previous_invocation_id="$(
+  systemctl show "$unit" --property=InvocationID --value
+)"
+previous_quarantine_invocation_id="$(
+  systemctl show "$quarantine" --property=InvocationID --value
+)"
+database_window_start="$(
+  psql -X -v ON_ERROR_STOP=1 \
+    --dbname='service=APPROVED_MONITOR_SERVICE' \
+    --tuples-only --no-align \
+    --command="SELECT pg_catalog.to_char(
+      pg_catalog.clock_timestamp() AT TIME ZONE 'UTC',
+      'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'
+    )"
+)"
+case "$database_window_start" in
+  ????-??-??T??:??:??.??????Z) ;;
+  *) echo 'invalid database start time' >&2; exit 1 ;;
+esac
+systemctl start --no-block "$unit"
+while systemctl show "$unit" --property=Job --value | grep -q .; do
+  sleep 2
+done
+loader_result="$(systemctl show "$unit" --property=Result --value)"
+systemctl show --timestamp=unix "$unit" \
+  --property=Result --property=ExecMainCode --property=ExecMainStatus \
+  --property=ActiveState --property=SubState \
+  --property=InactiveExitTimestamp --property=StateChangeTimestamp
+database_window_end="$(
+  psql -X -v ON_ERROR_STOP=1 \
+    --dbname='service=APPROVED_MONITOR_SERVICE' \
+    --tuples-only --no-align \
+    --command="SELECT pg_catalog.to_char(
+      pg_catalog.clock_timestamp() AT TIME ZONE 'UTC',
+      'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'
+    )"
+)"
+case "$database_window_end" in
+  ????-??-??T??:??:??.??????Z) ;;
+  *) echo 'invalid database end time' >&2; exit 1 ;;
+esac
+if [ "$loader_result" = success ]; then
+  rm -f -- /run/brerc/refresh/APPROVED_TO_SCHEDULE
+else
+  for attempt in $(seq 1 30); do
+    quarantine_invocation_id="$(
+      systemctl show "$quarantine" --property=InvocationID --value
+    )"
+    if [ -n "$quarantine_invocation_id" ] \
+       && [ "$quarantine_invocation_id" != "$previous_quarantine_invocation_id" ] \
+       && ! systemctl show "$quarantine" --property=Job --value | grep -q .; then
+      break
+    fi
+    sleep 1
+  done
+  [ -n "$quarantine_invocation_id" ] || exit 1
+  [ "$quarantine_invocation_id" != "$previous_quarantine_invocation_id" ] || exit 1
+  [ "$(systemctl show "$quarantine" --property=Result --value)" = success ] || exit 1
+fi
+test ! -e /run/brerc/refresh/APPROVED_TO_SCHEDULE
+```
+
+Never source the environment file into an interactive shell. The `Job` poll
+waits for this exact oneshot to reach a terminal state without treating a
+loader failure as permission to skip evidence capture. A successful attended
+run removes the marker explicitly. A failed run waits for a new successful
+quarantine invocation. In both cases marker absence is verified before evidence
+is accepted; never reset or restart the loader before that check completes.
 
 Capture evidence for this invocation only. Replace
 `CONTROLLED_EVIDENCE_DIRECTORY`, `APPROVED_MONITOR_SERVICE` and the public host
@@ -142,11 +303,18 @@ case "$invocation_id" in
   [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
   *) echo 'invalid InvocationID' >&2; exit 1 ;;
 esac
-evidence=CONTROLLED_EVIDENCE_DIRECTORY
-systemctl show "$unit" \
+if [ "$invocation_id" = "$previous_invocation_id" ]; then
+  echo 'InvocationID did not change' >&2
+  exit 1
+fi
+systemctl show --timestamp=unix "$unit" \
   --property=InvocationID --property=Result --property=ExecMainCode \
   --property=ExecMainStatus --property=ActiveState --property=SubState \
+  --property=InactiveExitTimestamp --property=StateChangeTimestamp \
   > "$evidence/unit.properties"
+printf '{"invocationId":"%s","mode":"refresh","windowStart":"%s","windowEnd":"%s"}\n' \
+  "$invocation_id" "$database_window_start" "$database_window_end" \
+  > "$evidence/database-window.json"
 journalctl _SYSTEMD_INVOCATION_ID="$invocation_id" --output=json \
   > "$evidence/journal.json"
 run_id="$(jq -ers --arg id "$invocation_id" '
@@ -155,8 +323,13 @@ run_id="$(jq -ers --arg id "$invocation_id" '
    select(.status == "ok" and .state == "succeeded" and .mode == "refresh")]
   | if length == 1 then .[0].runId else error("not exactly one result") end
 ' "$evidence/journal.json")"
-psql APPROVED_MONITOR_SERVICE --tuples-only --no-align \
+psql -X -v ON_ERROR_STOP=1 \
+  --dbname='service=APPROVED_MONITOR_SERVICE' \
+  --tuples-only --no-align \
   --set=run_id="$run_id" \
+  --set=expected_environment_id="$expected_environment_id" \
+  --set=expected_database="$expected_database" \
+  --set=expected_role="$expected_monitor_role" \
   --file=/opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/release_evidence_query.sql \
   > "$evidence/database.json"
 curl --fail --silent --show-error https://APPROVED_PUBLIC_HOST/api/summary \
@@ -165,8 +338,12 @@ curl --fail --silent --show-error https://APPROVED_PUBLIC_HOST/api/meta/provenan
   > "$evidence/api-provenance.json"
 python3 /opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/verify_release_evidence.py \
   --invocation-id "$invocation_id" --mode refresh \
+  --expected-environment-id "$expected_environment_id" \
+  --expected-database "$expected_database" \
+  --expected-role "$expected_monitor_role" \
   --unit-properties "$evidence/unit.properties" \
   --journal-json "$evidence/journal.json" \
+  --database-window-json "$evidence/database-window.json" \
   --database-json "$evidence/database.json" \
   --api-summary-json "$evidence/api-summary.json" \
   --api-provenance-json "$evidence/api-provenance.json"
@@ -206,37 +383,191 @@ Recipients and escalation routes remain an operator approval, not a code default
 
 After all approvals and the controlled refresh have passed, copy the examples
 to `/etc/systemd/system/brerc-loader-refresh.service`,
+`/etc/systemd/system/brerc-loader-refresh-approval-guard.service`,
 `/etc/systemd/system/brerc-loader-refresh-quarantine.service` and
 `/etc/systemd/system/brerc-loader-refresh.timer`, preserving `root:root` and
-mode `0644`. Put the approved `OnCalendar` value in the installed timer. Create
-`/etc/brerc/refresh/APPROVED_TO_SCHEDULE` as `root:brerc-loader` mode `0440`, run
-`systemctl daemon-reload`, then verify that `systemctl cat
-brerc-loader-refresh.service` contains the exact reviewed `OnFailure` target.
-Enable the timer with `systemctl enable --now brerc-loader-refresh.timer`.
-Verify `systemctl list-timers` shows the approved next run in UTC and ensure the
-dead-man monitor expects that same window. The quarantine unit is pulled in by
-`OnFailure`; do not enable it independently.
+mode `0644`. Put the approved `OnCalendar` value in the installed timer, then run
+`systemctl daemon-reload`, then capture `systemctl cat` and `systemctl show
+--property=FragmentPath --property=DropInPaths` for all four units. Require the
+installed paths, empty `DropInPaths=`, approved SHA-256 digests, no unresolved
+placeholder or mutable symlink, the exact reviewed `OnFailure` target, and the
+exact timer binding to the approval guard. Re-run `systemd-analyze verify` on
+all installed units and retain `systemd-analyze security --threshold=40
+--no-pager` output for all three services
+on the target host. A score above 4.0, any override or unexpected drop-in blocks
+activation. Recreate `/run/brerc/refresh` without its marker, then enable the
+timer with `systemctl enable --now brerc-loader-refresh.timer`. Verify that the
+approval guard is `active (exited)`, the timer is active, the marker is absent,
+and `systemctl list-timers` shows the approved next run in UTC. Ensure the
+dead-man monitor expects that same window. Only after those checks may the
+authorised operator create the marker with the ownership/mode shown in the
+controlled-run block. The quarantine unit is pulled in by `OnFailure`; do not
+enable it independently.
 
-`Persistent=true` asks systemd to catch up a missed run after downtime. If BRERC
-does not approve immediate catch-up, change that setting before installation;
-do not silently inherit the example.
+The example uses `Persistent=false`, so it does not catch up an event missed
+while the timer was inactive or the host was powered off. That setting alone
+does not prevent a calendar timer firing immediately after suspend or
+hibernate. The approval guard therefore removes the marker and, through the
+timer's `BindsTo=`, stops the timer before sleep, systemd soft reboot or
+shutdown. A kernel reboot also clears `/run`. After any such transition, the
+operator must inspect and stop any timer restarted by `timers.target`, verify
+the marker is absent, revalidate the host and explicitly restart the
+timer/guard before creating a new marker. An automatically restarted timer
+without its marker cannot start a loader. The marker must never be recreated
+automatically.
+Changing `Persistent` to `true` requires an explicit BRERC catch-up decision and
+a separate reviewed crash/reboot safety design.
 
 ## Failure and rollback
 
 1. A failed `brerc-loader-refresh.service` must start
    `brerc-loader-refresh-quarantine.service`, which removes only
-   `/etc/brerc/refresh/APPROVED_TO_SCHEDULE`. Verify both the quarantine unit's
+   `/run/brerc/refresh/APPROVED_TO_SCHEDULE`. Verify both the quarantine unit's
    successful status and the marker's absence. If either check fails, stop and
    disable `brerc-loader-refresh.timer` and have an authorised root operator
    remove that exact marker. Preserve the invocation-scoped journal and database
    evidence. Never use a wildcard or remove any other file in the configuration
    directory.
-2. Stop and disable the timer while the cause is investigated. Although a timer
-   that remains enabled cannot pass the missing-marker condition, disabling it
-   prevents a race while an operator deliberately re-arms the schedule.
+2. For failure, maintenance or cancellation, use this mandatory disarm order:
+   stop and disable the timer, stop the approval guard, verify the marker is
+   absent, and only then stop a running loader. Although a timer that remains
+   enabled cannot pass the missing-marker condition, disabling it and stopping
+   the guard prevents a race while an operator deliberately re-arms the
+   schedule:
+
+   ```sh
+   systemctl disable --now brerc-loader-refresh.timer
+   systemctl stop brerc-loader-refresh-approval-guard.service
+   test ! -e /run/brerc/refresh/APPROVED_TO_SCHEDULE
+   case "$(systemctl show brerc-loader-refresh.service --property=ActiveState --value)" in
+     active|activating|deactivating) systemctl stop brerc-loader-refresh.service ;;
+     failed|inactive) ;; # Preserve a terminal failed invocation for evidence.
+     *) echo 'unknown loader state; escalate without resetting it' >&2; exit 1 ;;
+   esac
+   ```
+
+   An operator-initiated stop, shutdown or cancellation does not necessarily
+   leave systemd in `failed` state and therefore may not start `OnFailure` or
+   satisfy the failed-attempt verifier. Preserve the exact journal, query the
+   database/API state and escalate; if the unit is inactive/successful, do not
+   claim verified zero-job evidence and do not use that attempt to authorise a
+   retry. Only an exact invocation that remains `failed` can use the failure
+   verifier below.
 3. If a refresh failed, verify the previous release is still active through the
    API identity and safe structural counts. Do not move a `serve.*` pointer with
    manual SQL, run the legacy nightly path, use a force flag or edit a manifest.
+   For the attended rehearsal, use the invocation, database-clock window and
+   protected evidence directory already captured above. For a later unattended
+   scheduled failure, collect evidence in a new protected shell **before** any
+   `systemctl reset-failed`, restart or host reboot. Set the window from that
+   exact scheduler occurrence, alert record and approved timeout—not from an
+   earlier attempt. A logout is safe because systemd/journald retain the live
+   invocation; a reboot is not supported by this recovery path because current
+   unit state is lost. The volatile marker prevents a post-reboot retry. After a
+   reboot, or whenever an exact failed invocation and unambiguous positive
+   window of at most four hours cannot be established, stop, preserve the
+   journal/database and escalate: do not claim a zero-job result or re-arm.
+   The Linux host and PostgreSQL clocks must be synchronised; every journal and
+   systemd manager lifecycle timestamp must fall within 60 seconds of the
+   database-clock window or the verifier rejects the bundle.
+
+   In either path, set the three expected identity values from the approved
+   deployment record, never by copying query output. Run the bounded query and
+   verifier as follows; all uppercase values are mandatory replacements:
+
+   For an unattended failure only, run this setup block in a new dedicated
+   root Bash shell with fresh values. Skip it during the attended rehearsal
+   because those variables and the new directory already belong to that
+   attempt. A failed command stops the shell; preserve any partial evidence
+   and escalate rather than reusing its directory:
+
+   ```bash
+   set -euo pipefail
+   set -C  # Do not overwrite an existing evidence file.
+   evidence=NEW_CONTROLLED_EVIDENCE_DIRECTORY
+   database_window_start=SCHEDULED_WINDOW_START_UTC
+   database_window_end=SCHEDULED_WINDOW_END_UTC
+   expected_environment_id=APPROVED_DESTINATION_ENVIRONMENT_UUID
+   expected_database=APPROVED_DESTINATION_DATABASE_NAME
+   expected_monitor_role=APPROVED_MONITOR_LOGIN_ROLE
+   invocation_id=EXACT_FAILED_INVOCATION_ID
+   case "$evidence" in /*) ;; *) exit 1 ;; esac
+   umask 077
+   mkdir -m 0700 -- "$evidence"  # Existing directory/symlink is a hard stop.
+   chown root:root -- "$evidence"
+   ```
+
+   Then run the common validation block. It fails if any value or protected
+   directory is missing:
+
+   ```sh
+   : "${evidence:?missing evidence directory}"
+   : "${database_window_start:?missing start time}"
+   : "${database_window_end:?missing end time}"
+   : "${expected_environment_id:?missing environment identity}"
+   : "${expected_database:?missing database name}"
+   : "${expected_monitor_role:?missing monitor role}"
+   : "${invocation_id:?missing InvocationID}"
+   [ "$(stat -c '%U:%G:%a' -- "$evidence")" = root:root:700 ] || exit 1
+   case "$database_window_start" in
+     ????-??-??T??:??:??.??????Z) ;; *) exit 1 ;; esac
+   case "$database_window_end" in
+     ????-??-??T??:??:??.??????Z) ;; *) exit 1 ;; esac
+   case "$invocation_id" in
+     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+     *) exit 1 ;;
+   esac
+   observed_invocation_id="$(
+     systemctl show brerc-loader-refresh.service --property=InvocationID --value
+   )"
+   [ "$observed_invocation_id" = "$invocation_id" ] || exit 1
+   systemctl show --timestamp=unix brerc-loader-refresh.service \
+     --property=InvocationID --property=Result --property=ExecMainCode \
+     --property=ExecMainStatus --property=ActiveState --property=SubState \
+     --property=InactiveExitTimestamp --property=StateChangeTimestamp \
+     > "$evidence/unit.properties"
+   journalctl _SYSTEMD_INVOCATION_ID="$invocation_id" --output=json \
+     > "$evidence/journal.json"
+   printf '{"invocationId":"%s","mode":"refresh","windowStart":"%s","windowEnd":"%s"}\n' \
+     "$invocation_id" "$database_window_start" "$database_window_end" \
+     > "$evidence/database-window.json"
+   psql -X -v ON_ERROR_STOP=1 \
+     --dbname='service=APPROVED_MONITOR_SERVICE' \
+     --tuples-only --no-align \
+     --set=window_start="$database_window_start" \
+     --set=window_end="$database_window_end" \
+     --set=load_mode=refresh \
+     --set=expected_environment_id="$expected_environment_id" \
+     --set=expected_database="$expected_database" \
+     --set=expected_role="$expected_monitor_role" \
+     --file=/opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/failed_attempt_evidence_query.sql \
+     > "$evidence/database-failure.json"
+   python3 /opt/brerc-dashboard/releases/APPROVED_ARTIFACT_ID/deploy/validation/verify_failed_attempt_evidence.py \
+     --invocation-id "$invocation_id" \
+     --mode refresh \
+     --expected-window-start "$database_window_start" \
+     --expected-window-end "$database_window_end" \
+     --expected-environment-id "$expected_environment_id" \
+     --expected-database "$expected_database" \
+     --expected-role "$expected_monitor_role" \
+     --unit-properties "$evidence/unit.properties" \
+     --journal-json "$evidence/journal.json" \
+     --database-window-json "$evidence/database-window.json" \
+     --database-json "$evidence/database-failure.json"
+   ```
+
+   Require exactly zero jobs (failure before database acquisition) or one
+   matching terminal failed/cancelled job. The verifier rejects an invalid or
+   over-four-hour or mismatched invocation/window, a successful or nonterminal
+   systemd state, an invalid mode, wrong database/environment/session
+   privileges, multiple jobs,
+   nonterminal/successful jobs, cleanup debt and malformed or extra fields. Its
+   success validates a coherent protected evidence bundle but is not a
+   cryptographic replay-prevention registry and does not authorise re-arming.
+   Retain it in the organisation's immutable/single-use evidence system. If the API
+   names a newer release despite a failed/cancelled systemd result, activation
+   committed and the database/API identity is authoritative—do not attempt to
+   undo it with manual SQL.
 4. Correct the source, configuration, policy or release artifact through review.
    Re-run only `brerc-load refresh` in a new approved window; atomic activation
    is the recovery mechanism.
@@ -252,9 +583,11 @@ do not silently inherit the example.
 
 Re-arming is a new production decision, not an automatic retry. After the fix
 and evidence have been reviewed, keep the timer disabled, reset the failed
-service state, create a new root-controlled `APPROVED_TO_SCHEDULE` marker, and
-perform one attended refresh. Only after that refresh succeeds and its release
-identity is reconciled may the operator re-enable the timer. Never configure
+service state, start and verify the approval guard and timer while the marker is
+absent, confirm the next scheduled trigger is outside the attended window,
+then create a new root-controlled `APPROVED_TO_SCHEDULE` marker and perform one
+attended refresh. Only after that refresh succeeds and its release identity is
+reconciled may the schedule remain armed. Never configure
 `Restart=` on the loader or quarantine units and never recreate the marker from
 an `ExecStopPost`, notification worker or timer hook.
 

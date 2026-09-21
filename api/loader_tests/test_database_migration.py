@@ -18,6 +18,7 @@ FULL_SNAPSHOT_REFRESH_MIGRATION_PATH = ROOT / "db" / "migrations" / "0003_full_s
 RELEASE_EVIDENCE_MIGRATION_PATH = ROOT / "db" / "migrations" / "0004_release_evidence.sql"
 ROLES_PATH = ROOT / "db" / "roles.sql"
 README_PATH = ROOT / "db" / "README.md"
+LOADER_RUNBOOK_PATH = ROOT / "docs" / "POSTGRES_RELEASE_LOADER.md"
 
 
 def _table_body(sql: str, qualified_name: str) -> str:
@@ -53,6 +54,7 @@ class DestinationMigrationContract(unittest.TestCase):
         cls.release_evidence_sql = RELEASE_EVIDENCE_MIGRATION_PATH.read_text(encoding="utf-8")
         cls.roles = ROLES_PATH.read_text(encoding="utf-8")
         cls.readme = README_PATH.read_text(encoding="utf-8")
+        cls.loader_runbook = LOADER_RUNBOOK_PATH.read_text(encoding="utf-8")
 
     def test_migration_is_transactional_and_version_guarded(self):
         self.assertRegex(self.sql, r"(?m)^BEGIN;$")
@@ -180,6 +182,8 @@ class DestinationMigrationContract(unittest.TestCase):
         self.assertIn("migration_key = '0002_sensitive_record_action'", sql)
         self.assertIn("migration_version = 3", sql)
         self.assertIn("migration_key = '0003_full_snapshot_refresh'", sql)
+        self.assertIn("notification_outbox_success_release_idx", sql)
+        self.assertIn("unsupported pre-release notification index detected", sql)
         self.assertIn("status NOT IN ('succeeded', 'failed', 'cancelled')", sql)
         self.assertIn("pg_try_advisory_xact_lock", sql)
         self.assertIn("'dashboard.main_data_dash'::text AS source_id", sql)
@@ -237,9 +241,22 @@ class DestinationMigrationContract(unittest.TestCase):
         self.assertIn("job.result_release_id AS release_id", sql)
         self.assertIn("source.active_release_id = job.result_release_id", sql)
         self.assertIn("job.reused_active_release", sql)
+        self.assertIn("manifest.source_snapshot_at AS source_data_as_of", sql)
+        self.assertIn("job.started_at", sql)
+        self.assertIn("job.finished_at", sql)
+        self.assertIn("attempted_release.job_id = job.job_id", sql)
+        self.assertIn("manifest.release_id = attempted_release.release_id", sql)
+        self.assertNotIn("source.last_source_snapshot_at AS source_data_as_of", sql)
         self.assertIn("manifest.candidate_sha256", sql)
         self.assertIn("REVOKE ALL ON serve.etl_release_evidence FROM PUBLIC", sql)
         self.assertIn("GRANT SELECT ON serve.etl_release_evidence TO brerc_monitor", sql)
+        self.assertIn(
+            "CREATE VIEW serve.etl_monitor_identity WITH (security_barrier = true)",
+            sql,
+        )
+        self.assertIn("FROM loader_control.deployment_identity", sql)
+        self.assertIn("REVOKE ALL ON serve.etl_monitor_identity FROM PUBLIC", sql)
+        self.assertIn("GRANT SELECT ON serve.etl_monitor_identity TO brerc_monitor", sql)
         self.assertNotIn("GRANT SELECT ON loader_control", sql)
 
     def test_refresh_migration_exposes_no_change_reuse_to_the_monitor_role(self):
@@ -365,6 +382,8 @@ class DestinationMigrationContract(unittest.TestCase):
         reuse = sql[reuse_start:reuse_end]
         self.assertNotIn("DELETE FROM publication.", reuse)
         self.assertNotIn("DELETE FROM loader_control.release_manifest", reuse)
+        self.assertIn("ON CONFLICT (job_id, event_type) DO NOTHING", reuse)
+        self.assertNotIn("ON CONFLICT (release_id, event_type)", sql)
 
     def test_loader_can_only_execute_the_refresh_dispatcher(self):
         sql = self.full_snapshot_refresh_sql
@@ -388,6 +407,26 @@ class DestinationMigrationContract(unittest.TestCase):
             "TO brerc_loader",
             sql[sql.index("REVOKE ALL ON FUNCTION loader_control.enforce_refresh_manifest_mode") :],
         )
+
+    def test_namespace_authority_and_recovery_contract_are_documented(self):
+        for relation in (
+            "publication.public_species",
+            "publication.public_record",
+            "publication.public_distribution_cell",
+            "public.public_species",
+            "public.public_records",
+            "public.distribution_cell",
+        ):
+            with self.subTest(relation=relation):
+                self.assertIn(relation, self.sql)
+        self.assertIn("operational SQL schema-qualified", self.sql)
+        self.assertIn("intentionally has no in-place down migration", self.sql)
+
+        self.assertIn("## Migration and release recovery", self.readme)
+        self.assertIn("no supported post-activation pointer rollback", self.readme)
+        self.assertIn("not an authorisation to repoint production", self.readme)
+        self.assertIn("## Rollback and recovery", self.loader_runbook)
+        self.assertIn("Never perform an ad-hoc `DROP`", self.loader_runbook)
 
     def test_postgis_and_four_schemas_are_explicit(self):
         self.assertIn("CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public", self.sql)
@@ -423,6 +462,19 @@ class DestinationMigrationContract(unittest.TestCase):
         for table in required:
             with self.subTest(table=table):
                 _table_body(self.sql, table)
+
+    def test_notification_idempotency_is_per_terminal_job_not_per_release(self):
+        outbox = _table_body(self.sql, "loader_control.notification_outbox")
+        self.assertIn(
+            "CONSTRAINT notification_outbox_job_event_unique UNIQUE (job_id, event_type)",
+            outbox,
+        )
+        self.assertNotIn("notification_outbox_success_release_idx", self.sql)
+        self.assertNotIn("ON CONFLICT (release_id, event_type)", self.sql)
+        self.assertEqual(
+            self.sql.count("ON CONFLICT (job_id, event_type) DO NOTHING"),
+            5,
+        )
 
     def test_every_publication_table_has_release_provenance(self):
         tables = (

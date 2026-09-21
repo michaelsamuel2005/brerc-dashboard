@@ -50,13 +50,25 @@ requires every refresh manifest to bind all eight comparative thresholds, and ex
 `loader_control.activate_release_candidate(uuid)` as the only activation function executable by
 `brerc_loader`. It revokes direct loader execution of the older activation function. Its
 pre-migration lock audit refuses to proceed while non-terminal ETL work exists; reapplication is
-also refused.
+also refused. Destinations created from an unreleased rehearsal version of migration `0001` that
+still contains `notification_outbox_success_release_idx` must be destroyed and reprovisioned from
+the reviewed migration sequence; migration `0003` detects that obsolete contract and refuses it.
 
-Migration `0004` is transactional and must follow exactly `0003`. It adds only the
-`serve.etl_release_evidence` security-barrier view and its explicit `brerc_monitor` grant. The view
-contains opaque release/job identifiers, structural counts and digests; it exposes no records,
-coordinates, credentials, database errors or connection details. Reapplication and out-of-order
-application are refused.
+Migration `0004` is transactional and must follow exactly `0003`. It adds the
+`serve.etl_release_evidence` and `serve.etl_monitor_identity` security-barrier views with explicit
+`brerc_monitor` grants. The first contains opaque release/job identifiers, database start/finish
+times, structural counts and digests. The second exposes only the destination environment UUID and database name so zero-job
+failure evidence can be bound to the approved target without granting access to the underlying
+deployment table. Neither exposes records, coordinates, credentials, database errors or connection
+details. Reapplication and out-of-order application are refused.
+
+There are no down migrations. Migration `0004` is forward-only and changes the loader's required
+schema attestation from exactly versions 1–3 to exactly versions 1–4. Apply migration `0004` and
+deploy its compatible loader artifact in one controlled maintenance change. After it is applied,
+an older three-migration loader must not be started. Application rollback means deploying another
+reviewed artifact that supports the four-version contract; database rollback requires a tested
+whole-database restore under the DBA incident procedure, never ad-hoc `DROP VIEW` or edits to
+`loader_control.schema_migration`.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS
@@ -103,7 +115,7 @@ The four schemas are deliberately separate:
 | `loader_control` | Jobs, releases, watermarks, manifests, safe audit counts, notification outbox and immutable release-scoped pseudonymous dispositions. | Loader only; monitoring uses restricted views. |
 | `loader_stage` | Job-scoped inventory, deltas and reconciliation results. | Loader only. |
 | `publication` | Release-scoped, public-safe species, cells, years and optional occurrence rows. | Loader only; serving roles use views. |
-| `serve` | Active-release public views and fixed-field ETL status views. | FastAPI, Martin or monitor as explicitly granted. |
+| `serve` | Active-release public views and fixed-field ETL status views. | FastAPI and monitor as explicitly granted; a future tile service requires separate approval. |
 
 `PUBLIC` receives no privilege on any of these schemas, tables or sequences. Future objects also
 default to no `PUBLIC` table/sequence access. A later migration must grant each new serving object
@@ -117,7 +129,8 @@ All repository-defined roles are `NOLOGIN`, `NOINHERIT`, `NOSUPERUSER`, `NOCREAT
 - `brerc_loader`: inserts immutable candidates and invokes guarded lifecycle functions; it cannot
   update a release status or active pointer directly;
 - `brerc_api`: reads active-release API views only;
-- `brerc_martin`: reads only active release metadata and map cells;
+- `brerc_martin`: reserved for a future reviewed tile service and granted only
+  active release metadata and map cells; it is not used by the supported v1;
 - `brerc_monitor`: reads redacted ETL job/release/notification status views.
 
 Deployment creates separate login/service identities and grants membership in exactly one suitable
@@ -192,6 +205,45 @@ Do not update active publication rows in place, rename tables during a release, 
 watermark separately. The BRERC source transaction is read-only and separate; distributed two-phase
 commit is neither required nor desired.
 
+## Migration and release recovery
+
+Migration `0001` intentionally has no down migration. `db/roles.sql` and
+`0001_publication_store.sql` are each transactional, but they are applied as two
+separate administrator operations. A failure inside `0001` rolls back that
+migration completely; roles safely created by the preceding role script may
+remain. Correct the cause and rerun the exact reviewed files with
+`ON_ERROR_STOP`. Do not invent reverse `DROP` statements against a database that
+may contain release or audit evidence.
+
+Candidate construction and finalisation do not change public visibility. If a
+run fails before activation commits, the active release pointer is unchanged
+(and, before the first load, the serving views remain empty). The candidate is
+recorded with a fixed failure code and durable cleanup obligation; inactive
+payload cleanup is resumable and cannot remove the active release. Activation
+retires the previous release, activates the candidate, advances the source
+pointer and watermark, completes the job, queues the success event and removes
+job-scoped staging rows in one target-database transaction. An activation error
+rolls all of those changes back together.
+
+There is no supported post-activation pointer rollback in this migration or in
+the initial-load command. Never repair an incident by manually updating
+`loader_control.source_state`, changing release statuses, editing publication
+rows or dropping schemas. Stop scheduled loads; if unsafe or incorrect data is
+publicly visible, place the serving tier into the BRERC-approved maintenance
+state; preserve the database, job/release evidence and fixed operational logs;
+then recover through BRERC's tested whole-database backup/restore procedure or,
+once separately reviewed and deployed, activate a corrected complete-snapshot
+replacement. Reverify migration history, destination identity, active-release
+state, role memberships, TLS and API read-only access before restoring service.
+A restored copy used as a different logical environment must receive a new
+controlled `deployment_identity.environment_id` before loader credentials are
+enabled.
+
+A retained `retired` release is audit and recovery evidence, not a backup and
+not an authorisation to repoint production. This repository does not configure
+backup schedules, restore testing or retention; those remain BRERC operational
+controls.
+
 ## Watermarks and reconciliation
 
 The incremental watermark, which is currently unused and blocked, is represented by:
@@ -241,9 +293,13 @@ It is created from the already-generalised grid reference and its precision—ne
 coordinates. `loader_control.bng_cell_polygon` independently derives the exact BNG envelope;
 constraints require the stored geometry to be topologically equal to it as well as valid,
 non-empty and correctly sized. The private safe ledger also requires each record square to match
-its declared precision and be covered by its aggregation cell. Martin receives only the active
-`serve.public_distribution_cell` view. Cross-language corpus tests must still pin parity with the
-Python and TypeScript grid-reference implementations.
+its declared precision and be covered by its aggregation cell. The v1 API reads only the active
+`serve.public_distribution_cell` view and returns no geometry. The stacked browser-integration
+change derives the display square from the validated public grid-cell identifier. The
+`brerc_martin` role is reserved for a possible later tile service; no Martin function or route is
+approved in this release.
+Cross-language corpus tests must still pin parity with the Python and TypeScript grid-reference
+implementations.
 
 ## Release and operational records
 

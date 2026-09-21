@@ -92,9 +92,10 @@ Wikipedia source; that env var is the entire change, and the cache re-fetches
 itself because the licence rules form part of its key.
 
 **Caching.** Answers are cached in memory and in a small SQLite file
-(`api/.cache/`, git-ignored; a Docker volume in `docker-compose.yml`), because
-the API connects as a read-only database role and so cannot cache in PostgreSQL.
-Third parties are never called per page view.
+(`api/.cache/`, git-ignored), because the API connects as a read-only database
+role and so cannot cache in PostgreSQL. A supported deployment must provide a
+private writable cache path explicitly; the archived root `docker-compose.yml`
+is not a deployment template. Third parties are never called per page view.
 
 **Open contract question for the front end.** Wikipedia text is CC BY-SA, which
 requires attribution and a link back, but `SpeciesDetail.description` is a plain
@@ -116,4 +117,6 @@ it there and drop the suffix.
 - 🛠️ [Production serving](../deploy/production/README.md) — API-only
   artifact, libpq service-mode credentials, hardened Linux service and
   same-origin reverse proxy.
+- 🗺️ [Public serving architecture](../docs/PUBLIC_SERVING_ARCHITECTURE.md) —
+  the no-Martin v1 decision and target authoritative map/table data path.
 - 🐙 [Getting started with GitHub](../docs/GETTING_STARTED_GITHUB.md) — branch, push, open a PR (no prior experience needed).

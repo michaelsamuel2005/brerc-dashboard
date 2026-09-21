@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { describe, expect, it, vi } from "vitest";
+import { provenanceFixture } from "../test/fixtures";
+import { server } from "../test/msw/server";
 import { App } from "./App";
 
 // Instructions BRERC gave at client meeting 2, as tests.
@@ -138,6 +141,53 @@ describe('"The explanation of how sensitive species locations are blurred is to 
       /records requiring sensitive-record protection are withheld/i,
     );
     expect(container.textContent ?? "").not.toMatch(/generali[sz]|blurred|coarse grid/i);
+  });
+
+  it("states an approved generalisation outcome without claiming records are withheld", async () => {
+    server.use(
+      http.get("*/api/meta/provenance", () =>
+        HttpResponse.json({
+          ...provenanceFixture,
+          sensitivityPolicy: {
+            ...provenanceFixture.sensitivityPolicy,
+            protectedRecordsMode: "generalised",
+          },
+        }),
+      ),
+    );
+    const { container } = renderAt("/privacy");
+    expect(
+      await screen.findByText(/locations of records requiring sensitive-record protection are generalised/i),
+    ).toHaveTextContent(/precise coordinates are not sent to your browser/i);
+    expect(container.textContent ?? "").not.toMatch(
+      /records requiring sensitive-record protection are withheld/i,
+    );
+  });
+
+  it("states the invariant protection before provenance resolves", () => {
+    renderAt("/privacy");
+    expect(
+      screen.getByText(/active release's choice is still loading/i),
+    ).toHaveTextContent(/either withholds them entirely or generalises their locations/i);
+    expect(screen.getByText(/active release's choice is still loading/i)).toHaveTextContent(
+      /exact source coordinates and sensitive-status fields are not sent/i,
+    );
+  });
+
+  it("keeps the invariant protection when provenance is unavailable", async () => {
+    server.use(
+      http.get("*/api/meta/provenance", () =>
+        HttpResponse.json({ error: "Unavailable" }, { status: 503 }),
+      ),
+    );
+    renderAt("/privacy");
+    expect(
+      await screen.findByText(
+        /active release's choice could not be retrieved/i,
+        undefined,
+        { timeout: 6_000 },
+      ),
+    ).toHaveTextContent(/either withholds them entirely or generalises their locations/i);
   });
 });
 

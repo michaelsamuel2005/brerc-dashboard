@@ -1,15 +1,11 @@
-# LEGACY LOCAL PLACEHOLDER ONLY — NOT A PRODUCTION REVERSE PROXY.
+# ARCHIVED LEGACY PLACEHOLDER — NOT A PRODUCTION REVERSE PROXY.
 #
-# This file does not serve the React build, routes to the obsolete Martin demo,
-# and has no reviewed production TLS/security configuration. Keep it only for
-# the historical root docker-compose.yml demo. The reviewed production nginx
-# examples and validation procedure are under deploy/production/.
-#
-# Reverse proxy — serves the historical demo from ONE origin (B9).
-# Everything is reached through http://localhost:8080, so the browser sees a
-# single site (no cross-origin problems) — the "same-origin behind a reverse
-# proxy" shape from the architecture decision. This does not constitute the
-# reviewed production deployment.
+# This file belongs only to the disabled root docker-compose.yml scaffold. It
+# does not serve the React build, routes /tiles to the obsolete public.* store,
+# and has no reviewed production TLS/security configuration. The supported v1
+# map data path is the same-origin FastAPI route described in
+# docs/PUBLIC_SERVING_ARCHITECTURE.md; it does not use Martin or /tiles. The
+# reviewed production nginx examples are under deploy/production/.
 
 :80 {
 	# The read-only API, e.g.  /api/health , /api/species
@@ -17,13 +13,15 @@
 		reverse_proxy api:8000
 	}
 
-	# Vector tiles from Martin, e.g.  /tiles/catalog , /tiles/cells_tile/8/126/85
+	# Historical vector tiles from Martin. This is not the v1 map data path.
+	# Example: /tiles/catalog or /tiles/cells_tile/8/126/85
 	# handle_path strips the /tiles prefix before forwarding to Martin.
 	handle_path /tiles/* {
 		reverse_proxy martin:3000
 	}
 
-	# The built front-end (React) would be served here in a full deploy.
+	# This deliberately remains a placeholder so it cannot be represented as
+	# the public dashboard or the reviewed deployment.
 	handle {
 		respond "BRERC dashboard stack is running. Try /api/health or /tiles/catalog" 200
 	}

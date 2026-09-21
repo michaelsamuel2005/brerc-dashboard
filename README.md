@@ -102,6 +102,12 @@ brerc-dashboard/
 
 ## 🚀 Getting started
 
+> ⚠️ The root `docker-compose.yml` and `Caddyfile` are archived legacy
+> scaffolding. They use the obsolete sample schema and do **not** run the
+> current release-scoped dashboard. Do not use them for deployment, acceptance
+> or real BRERC data. The supported v1 data path is documented in
+> **[docs/PUBLIC_SERVING_ARCHITECTURE.md](docs/PUBLIC_SERVING_ARCHITECTURE.md)**.
+
 > 🆕 **New to Git or GitHub?** Don't worry — you're very welcome here. Start with
 > **[docs/GETTING_STARTED_GITHUB.md](docs/GETTING_STARTED_GITHUB.md)**, a
 > step‑by‑step walkthrough written for complete beginners. It explains every
@@ -141,6 +147,8 @@ git push -u origin <your-name>/<short-topic>
 | **[docs/FULL_SNAPSHOT_REFRESH.md](docs/FULL_SNAPSHOT_REFRESH.md)** | How the first load and safe atomic full-snapshot updates reach the API and dashboard. |
 | **[deploy/production/README.md](deploy/production/README.md)** | Reviewed production serving topology, hardened Linux services, rehearsal and rollback. |
 | **[deploy/validation/LINUX_ACCEPTANCE.md](deploy/validation/LINUX_ACCEPTANCE.md)** | Target-host compatibility and controlled acceptance procedure. |
+| **[docs/PUBLIC_SERVING_ARCHITECTURE.md](docs/PUBLIC_SERVING_ARCHITECTURE.md)** | Selected no-Martin v1 target for the API/browser integration stack. |
+| **[docs/RUN_LOCALLY.md](docs/RUN_LOCALLY.md)** | Supported mock and live-API local development modes. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | How we branch, review, and merge. |
 
 More documentation lives in **[docs/](docs/)**.

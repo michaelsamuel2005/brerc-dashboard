@@ -8,6 +8,7 @@ import io
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,6 +26,8 @@ def _load_script():
 
 
 approval = _load_script()
+ARTIFACT_ID = "release-0123456789abcdef"
+NOW = datetime(2026, 9, 18, 20, 0, tzinfo=timezone.utc)
 
 
 class InitialApprovalConsumerTests(unittest.TestCase):
@@ -35,7 +38,14 @@ class InitialApprovalConsumerTests(unittest.TestCase):
         self.directory.mkdir(mode=0o700)
         self.marker = self.directory / "APPROVED_TO_INITIAL"
 
-    def _write_marker(self, content: bytes = b"approval-reference-2026-09-18\n") -> None:
+    def _write_marker(self, content: bytes | None = None) -> None:
+        if content is None:
+            content = (
+                b'{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+                b'"artifactId":"release-0123456789abcdef",'
+                b'"validFromUtc":"2026-09-18T19:55:00Z",'
+                b'"expiresAtUtc":"2026-09-18T22:55:00Z"}'
+            )
         self.marker.write_bytes(content)
         self.marker.chmod(0o400)
 
@@ -44,6 +54,8 @@ class InitialApprovalConsumerTests(unittest.TestCase):
             self.marker,
             expected_uid=os.getuid(),
             expected_gid=os.getgid(),
+            expected_artifact_id=ARTIFACT_ID,
+            now_utc=NOW,
         )
 
     def assert_refused(self) -> None:
@@ -75,6 +87,49 @@ class InitialApprovalConsumerTests(unittest.TestCase):
         self.assert_refused()
 
         self.assertTrue(self.marker.is_file())
+
+    def test_unstructured_duplicate_or_extra_fields_are_refused(self) -> None:
+        documents = (
+            b"approval-reference-2026-09-18\n",
+            b'{"schemaVersion":1,"schemaVersion":1}',
+            (
+                b'{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+                b'"artifactId":"release-0123456789abcdef",'
+                b'"validFromUtc":"2026-09-18T19:55:00Z",'
+                b'"expiresAtUtc":"2026-09-18T22:55:00Z","unexpected":true}'
+            ),
+        )
+        for document in documents:
+            with self.subTest(document=document):
+                self.marker.unlink(missing_ok=True)
+                self._write_marker(document)
+                self.assert_refused()
+                self.assertTrue(self.marker.is_file())
+
+    def test_wrong_artifact_expired_future_or_overlong_approval_is_refused(self) -> None:
+        templates = (
+            '{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+            '"artifactId":"wrong-release","validFromUtc":"2026-09-18T19:55:00Z",'
+            '"expiresAtUtc":"2026-09-18T22:55:00Z"}',
+            '{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+            '"artifactId":"release-0123456789abcdef",'
+            '"validFromUtc":"2026-09-18T15:00:00Z",'
+            '"expiresAtUtc":"2026-09-18T19:00:00Z"}',
+            '{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+            '"artifactId":"release-0123456789abcdef",'
+            '"validFromUtc":"2026-09-18T20:05:00Z",'
+            '"expiresAtUtc":"2026-09-18T21:00:00Z"}',
+            '{"schemaVersion":1,"approvalReference":"BRERC-CHANGE-123",'
+            '"artifactId":"release-0123456789abcdef",'
+            '"validFromUtc":"2026-09-18T19:00:00Z",'
+            '"expiresAtUtc":"2026-09-19T00:00:01Z"}',
+        )
+        for document in templates:
+            with self.subTest(document=document):
+                self.marker.unlink(missing_ok=True)
+                self._write_marker(document.encode())
+                self.assert_refused()
+                self.assertTrue(self.marker.is_file())
 
     def test_marker_with_wrong_mode_is_refused_and_retained(self) -> None:
         self._write_marker()
@@ -121,7 +176,7 @@ class InitialApprovalConsumerTests(unittest.TestCase):
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
-            result = approval.main()
+            result = approval.main(["--expected-artifact-id", ARTIFACT_ID])
 
         self.assertEqual(result, 2)
         self.assertEqual(stdout.getvalue(), "")
