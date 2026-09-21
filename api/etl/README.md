@@ -31,6 +31,28 @@ can coexist without making a false package-wide dependency claim.
 | `cleaning.py` | Exploratory only — **not** the boundary |
 | `filtering.py` | Superseded shim; raises rather than reverting to drop semantics |
 
+### Live nightly path vs publication core
+
+Two implementations of the same safety steps sit side by side in this package. The
+**live path is unchanged by this PR**: `etl.job` runs `etl.nightly_pipeline`, which uses the
+pandas modules in the left-hand column (directly, or through `etl.reconciliation.reconcile`
+and `etl.aggregation.counts`). The publication core in the right-hand column is imported by
+nothing on that path today; it **becomes the authority when the trusted connector and atomic
+loader ports (later PRs) wire it in**. Until then the old set is retained, behaviour-frozen,
+and **must not receive new safety logic** — change the publication core instead. Each module's
+docstring opens with the same marker (`LIVE NIGHTLY PATH`, `PUBLICATION CORE`, `DEAD
+DUPLICATE`), so `grep` finds the status without opening the file.
+
+| Live today (pandas, via `etl.nightly_pipeline`) | Publication core (stdlib, this port) | Status |
+|---|---|---|
+| `profiling/cleaning.py` | `cleaning.py` (exploratory only); the column-name step is replaced by `pipeline.ColumnMap` | Live; superseded by the explicit column mapping |
+| `matching/species.py` | `species.py` | Live; superseded |
+| `safety_gate/classification.py` | `sensitivity.py` (resolutions from `policy.py`) | Live; superseded |
+| `aggregation/counts.py` | `aggregate.py` | Live; superseded |
+| `safety_gate/location.py` | `gridref.py` | Live; superseded |
+| `aggregation/cell_filtering.py` | `filtering.py` is itself a superseded shim; verified-status selection is `contract.normalise_verified` against `PublicationPolicy.accepted_verification_values`, applied in `pipeline.py` | Live; superseded |
+| `profiling/classify.py` | — (older copy of `safety_gate/classification.py`) | Dead: on no path, imported only by `etl/tests/profiling/test_classify.py`; kept until those tests are retired |
+
 ## The policy object is the point
 
 Every decision that changes what the public can see lives on `PublicationPolicy`, not in
@@ -155,10 +177,14 @@ established by the dictionary join, and `unknown_species_action` decides — `"w
 `"coarsest"`. There is deliberately **no `"ordinary"` option**, and `validate()` rejects one.
 
 **9. A negated acceptance was read as accepted.** `"Not accepted"` contains `"accept"` and no
-`"reject"`. Against the 63-case shared corpus the old client function produced **10 false
-accepts** and returned `"unknown"` for 26 legible verdicts. Both implementations now test
-negation before acceptance; `api/tests/test_verified_parity.py` and `web/src/lib/api/verified.test.ts`
-pin the identical corpus.
+`"reject"`, and the same trap exists for every other word that reads as acceptance: `"Not
+valid"`, `"never correct"`, `"not determined"`. Against the original 63-case corpus a substring
+check produced **10 false accepts** and returned `"unknown"` for 26 legible verdicts.
+`normalise_verified` in `contract.py` now tests negation before acceptance for the whole
+vocabulary, and `api/tests/test_verified_parity.py` pins a 121-case corpus. On this branch the
+client (`web/src/lib/api/schemas.ts`) still uses the substring check; the full-dashboard web
+port that follows replaces it and adds `web/src/lib/api/verified.test.ts`, which must pin the
+same corpus.
 
 **10. `pageSize` could be 0.** `RecordPageSchema.pageSize` is `z.number().int().positive()`,
 and an earlier `build_payloads` used `len(records)` — so an empty result set failed client

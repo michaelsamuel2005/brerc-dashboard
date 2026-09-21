@@ -1,4 +1,13 @@
-"""British National Grid reference parsing and generalisation.
+"""PUBLICATION CORE — stdlib safety boundary; NOT yet on the live nightly path.
+
+British National Grid reference parsing and generalisation.
+
+The grid-square derivation that runs today is etl/safety_gate/location.py
+(pandas + OSGridConverter, via etl.job -> etl.nightly_pipeline through
+etl.aggregation.counts and etl.safety_gate.public_output). This module becomes
+the authority when the trusted connector and atomic loader ports (later PRs)
+wire etl/pipeline.py in. Until then the pandas module is retained,
+behaviour-frozen.
 
 WHY THIS MODULE EXISTS, AND THE TRAP IT AVOIDS
 ----------------------------------------------

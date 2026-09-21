@@ -1,4 +1,11 @@
-"""Aggregates occurrence records into public spatial and temporal grids with privacy suppression."""
+"""
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline, which imports
+build_public_aggregation directly. Being superseded by etl/aggregate.py
+(publication core). Do not add safety logic here; change etl/aggregate.py and
+keep this file behaviour-frozen.
+
+Aggregates occurrence records into public spatial and temporal grids with privacy suppression.
+"""
 
 import pandas as pd
 

@@ -353,7 +353,10 @@ def _validate_source_columns(
     control may not: its absence is a configuration error, not an ordinary
     record value. Conversely, a recognisable sensitivity column that is present
     but unmapped is refused so a legacy export mapping cannot disable the live
-    view's control silently.
+    view's control silently. Likewise a licence allow-list needs a mapped
+    licence column: without one every row would be withheld as
+    ``licence-not-permitted``, which is a configuration error dressed up as a
+    data-quality outcome.
     """
     if columns.sensitivity is not None and policy.row_sensitive_resolution_metres is None:
         raise InvalidPolicy(
@@ -376,6 +379,12 @@ def _validate_source_columns(
             "verification_publication_mode='publish' requires ColumnMap.verified; "
             "verification cannot be inferred from another field"
         )
+    if policy.licensing_mode == "all-publication-allow-list" and columns.licence is None:
+        raise InvalidPolicy(
+            "licensing_mode='all-publication-allow-list' is configured, but "
+            "ColumnMap.licence is not mapped. Every row would be withheld as "
+            "licence-not-permitted; map the source licence column instead."
+        )
 
     if not rows:
         return
@@ -394,6 +403,8 @@ def _validate_source_columns(
         required.append(columns.record_type)
     if policy.verification_publication_mode == "publish" and columns.verified is not None:
         required.append(columns.verified)
+    if policy.licensing_mode == "all-publication-allow-list" and columns.licence is not None:
+        required.append(columns.licence)
 
     missing = sorted(column for column in required if any(column not in row for row in rows))
     if missing:

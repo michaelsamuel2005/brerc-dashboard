@@ -1,4 +1,11 @@
-"""Aggregate generalised records into the public map and summary payloads.
+"""PUBLICATION CORE — stdlib safety boundary; NOT yet on the live nightly path.
+
+Aggregate generalised records into the public map and summary payloads.
+
+The aggregation that runs today is etl/aggregation/counts.py (pandas, via
+etl.job -> etl.nightly_pipeline). This module becomes the authority when the
+trusted connector and atomic loader ports (later PRs) wire etl/pipeline.py in.
+Until then the pandas module is retained, behaviour-frozen.
 
 THE RESOLUTION PROBLEM THIS SOLVES
 ----------------------------------

@@ -14,11 +14,13 @@ from etl.contract import (
 
 
 class TestVerifiedParityWithTheClient(unittest.TestCase):
-    """Must match normaliseVerified in web/src/lib/api/schemas.ts exactly."""
+    """Order-sensitive cases. The client-side normaliseVerified() that the web
+    port brings to web/src/lib/api/schemas.ts must pass these too; the shared
+    corpus lives in test_verified_parity.py."""
 
     def test_the_order_sensitive_case(self):
-        # Contains BOTH "reject" and "accept". The client tests reject first, and
-        # so must we, or rejected records inflate the verified count.
+        # Contains BOTH "reject" and "accept". Rejection is tested first, or
+        # rejected records inflate the verified count.
         self.assertEqual(normalise_verified("Rejected - not accepted"), "rejected")
         self.assertEqual(normalise_verified("Rejected – correct"), "rejected")
 
@@ -33,7 +35,7 @@ class TestVerifiedParityWithTheClient(unittest.TestCase):
                 self.assertEqual(normalise_verified(raw), "unconfirmed")
 
     def test_unconfirmed_beats_accepted_when_both_appear(self):
-        # Mirrors the client: the unconfirmed test runs before the accepted test.
+        # The unconfirmed test runs before the accepted test.
         self.assertEqual(normalise_verified("accepted but unconfirmed"), "unconfirmed")
 
     def test_unknown_is_the_fallback_not_accepted(self):
