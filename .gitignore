@@ -11,9 +11,26 @@ Thumbs.db
 # keep the no-secrets template committed:
 !.env.example
 
+# Trusted PostgreSQL source connector — deployment configuration, credential
+# lookup files and private client keys live in BRERC's secret store, never git.
+# The credential-free configuration.example.yaml may be reviewed and versioned.
+/api/configuration.yaml
+.pgpass
+pgpass.conf
+.pg_service.conf
+pg_service.conf
+*.pgpass
+*.pg_service.conf
+*.key
+brerc-source.pgpass
+brerc-source.pg_service.conf
+brerc-source-client.key
+brerc-source-client.crt
+
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
 .pytest_cache/
@@ -39,6 +56,53 @@ logs/
 data/*
 !data/README.md
 
+# Client data formats must never be tracked, wherever they are dropped.
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.ods
+*.csv
+*.tsv
+*.psv
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.parquet
+*.feather
+*.dta
+*.sav
+*.sqlite
+*.sqlite3
+*.db
+*.mdb
+*.accdb
+*.gpkg
+*.geojson
+*.shp
+*.dbf
+*.shx
+*.prj
+*.kml
+*.kmz
+*.gpx
+*.mbtiles
+*.gdb/
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz
+
+# Local git worktrees used for isolated integration work.
+.worktrees/
+
 # Local database / ETL configuration
 config/safety.yaml
 
@@ -49,3 +113,4 @@ config/safety.yaml
 *.brerc-view-definition.sql
 *.brerc-view-approval.pending.json
 *.brerc-view-approval.json
+BRERC-postgres db for 180dc-310726-161446.pdf

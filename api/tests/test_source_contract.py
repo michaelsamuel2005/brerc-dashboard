@@ -293,9 +293,9 @@ class TestConfirmedManifest(unittest.TestCase):
         )
         self.assertIsNone(document["approvedLiveViewIdentity"])
 
-    def test_core_port_keeps_connector_and_endpoint_authority_blocked(self):
+    def test_connector_port_keeps_loader_and_endpoint_authority_blocked(self):
         rendered = "\n".join(BRERC_MAIN_DATA_DASH.release_blockers)
-        self.assertIn("connector is not present", rendered)
+        self.assertNotIn("connector is not present", rendered)
         self.assertIn("atomic loader are not present", rendered)
         self.assertIn("species dictionary", rendered)
         self.assertIn("database/service identity", rendered)
