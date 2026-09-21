@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 7 ]]; then
-  echo "usage: setup_postgis16_destination.sh CONTAINER ROLES_SQL MIGRATION_0001_SQL MIGRATION_0002_SQL MIGRATION_0003_SQL FIXTURE_SQL OUTPUT_DIRECTORY" >&2
+if [[ "$#" -ne 8 ]]; then
+  echo "usage: setup_postgis16_destination.sh CONTAINER ROLES_SQL MIGRATION_0001_SQL MIGRATION_0002_SQL MIGRATION_0003_SQL MIGRATION_0004_SQL FIXTURE_SQL OUTPUT_DIRECTORY" >&2
   exit 2
 fi
 
@@ -11,8 +11,9 @@ roles_sql="$2"
 migration_0001_sql="$3"
 migration_0002_sql="$4"
 migration_0003_sql="$5"
-fixture_sql="$6"
-output_directory="$7"
+migration_0004_sql="$6"
+fixture_sql="$7"
+output_directory="$8"
 
 mkdir -p "$output_directory"
 chmod 700 "$output_directory"
@@ -79,6 +80,8 @@ docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$migration_0002_sql"
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$migration_0003_sql"
+docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
+  --dbname brerc_ui_integration < "$migration_0004_sql"
 docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 \
   --dbname brerc_ui_integration < "$fixture_sql"
 

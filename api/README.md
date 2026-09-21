@@ -27,7 +27,7 @@ acceptance run remains a controlled production activity.
 
 The atomic destination loader lives in `api/brerc_loader`; its PostgreSQL/PostGIS
 schema is the ordered `db/migrations/0001_publication_store.sql` through
-`0003_full_snapshot_refresh.sql` sequence, and its operator runbook is
+`0004_release_evidence.sql` sequence, and its operator runbook is
 [`docs/POSTGRES_RELEASE_LOADER.md`](../docs/POSTGRES_RELEASE_LOADER.md). The
 installed command is `brerc-load`: use `initial` for the first release and
 `refresh` for an atomic replacement from one newer complete source snapshot.

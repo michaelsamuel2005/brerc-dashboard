@@ -807,7 +807,7 @@ class _PostgreSQLTargetStore:
             if row is None:
                 break
             migrations.append(row)
-        if len(migrations) != 3:
+        if len(migrations) != 4:
             raise LoaderTargetProtocolError()
         observed_migrations = tuple(
             mapping_row(migration, TARGET_MIGRATION_HEADER) for migration in migrations
@@ -816,6 +816,7 @@ class _PostgreSQLTargetStore:
             {"migration_version": 1, "migration_key": "0001_publication_store"},
             {"migration_version": 2, "migration_key": "0002_sensitive_record_action"},
             {"migration_version": 3, "migration_key": "0003_full_snapshot_refresh"},
+            {"migration_version": 4, "migration_key": "0004_release_evidence"},
         ):
             raise LoaderTargetProtocolError()
         self._set_statement_budget(cursor)

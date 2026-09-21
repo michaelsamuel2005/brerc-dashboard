@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = ROOT / "db" / "migrations" / "0001_publication_store.sql"
 SENSITIVE_ACTION_MIGRATION_PATH = ROOT / "db" / "migrations" / "0002_sensitive_record_action.sql"
 FULL_SNAPSHOT_REFRESH_MIGRATION_PATH = ROOT / "db" / "migrations" / "0003_full_snapshot_refresh.sql"
+RELEASE_EVIDENCE_MIGRATION_PATH = ROOT / "db" / "migrations" / "0004_release_evidence.sql"
 ROLES_PATH = ROOT / "db" / "roles.sql"
 README_PATH = ROOT / "db" / "README.md"
 LOADER_RUNBOOK_PATH = ROOT / "docs" / "POSTGRES_RELEASE_LOADER.md"
@@ -50,6 +51,7 @@ class DestinationMigrationContract(unittest.TestCase):
         cls.full_snapshot_refresh_sql = FULL_SNAPSHOT_REFRESH_MIGRATION_PATH.read_text(
             encoding="utf-8"
         )
+        cls.release_evidence_sql = RELEASE_EVIDENCE_MIGRATION_PATH.read_text(encoding="utf-8")
         cls.roles = ROLES_PATH.read_text(encoding="utf-8")
         cls.readme = README_PATH.read_text(encoding="utf-8")
         cls.loader_runbook = LOADER_RUNBOOK_PATH.read_text(encoding="utf-8")
@@ -217,6 +219,45 @@ class DestinationMigrationContract(unittest.TestCase):
                 self.assertIn("AND base_release_id IS NOT NULL", constraint)
                 self.assertIn(f"DROP CONSTRAINT {prefix}_load_mode", constraint)
                 self.assertIn(f"DROP CONSTRAINT {prefix}_base_matches_mode", constraint)
+
+    def test_release_evidence_migration_is_ordered_and_least_privilege(self):
+        sql = self.release_evidence_sql
+        self.assertRegex(sql, r"(?m)^BEGIN;$")
+        self.assertRegex(sql, r"(?m)^COMMIT;$")
+        self.assertIn("pg_advisory_xact_lock", sql)
+        self.assertIn("migration history is not exactly 0001 through 0003", sql)
+        for version, key in (
+            (1, "0001_publication_store"),
+            (2, "0002_sensitive_record_action"),
+            (3, "0003_full_snapshot_refresh"),
+            (4, "0004_release_evidence"),
+        ):
+            self.assertIn(f"migration_version = {version}", sql)
+            self.assertIn(f"migration_key = '{key}'", sql)
+        self.assertIn(
+            "CREATE VIEW serve.etl_release_evidence WITH (security_barrier = true)",
+            sql,
+        )
+        self.assertIn("job.result_release_id AS release_id", sql)
+        self.assertIn("source.active_release_id = job.result_release_id", sql)
+        self.assertIn("job.reused_active_release", sql)
+        self.assertIn("manifest.source_snapshot_at AS source_data_as_of", sql)
+        self.assertIn("job.started_at", sql)
+        self.assertIn("job.finished_at", sql)
+        self.assertIn("attempted_release.job_id = job.job_id", sql)
+        self.assertIn("manifest.release_id = attempted_release.release_id", sql)
+        self.assertNotIn("source.last_source_snapshot_at AS source_data_as_of", sql)
+        self.assertIn("manifest.candidate_sha256", sql)
+        self.assertIn("REVOKE ALL ON serve.etl_release_evidence FROM PUBLIC", sql)
+        self.assertIn("GRANT SELECT ON serve.etl_release_evidence TO brerc_monitor", sql)
+        self.assertIn(
+            "CREATE VIEW serve.etl_monitor_identity WITH (security_barrier = true)",
+            sql,
+        )
+        self.assertIn("FROM loader_control.deployment_identity", sql)
+        self.assertIn("REVOKE ALL ON serve.etl_monitor_identity FROM PUBLIC", sql)
+        self.assertIn("GRANT SELECT ON serve.etl_monitor_identity TO brerc_monitor", sql)
+        self.assertNotIn("GRANT SELECT ON loader_control", sql)
 
     def test_refresh_migration_exposes_no_change_reuse_to_the_monitor_role(self):
         sql = self.full_snapshot_refresh_sql

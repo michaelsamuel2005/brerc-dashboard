@@ -1,0 +1,44 @@
+# EXAMPLE ONLY. Install only beside the reviewed initial service.
+# Its sole write is removal of the one-attempt initial approval marker.
+
+[Unit]
+Description=Disarm BRERC initial publication approval after a failed start
+AssertPathIsDirectory=/etc/brerc/initial-approval
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/rm -f -- /etc/brerc/initial-approval/APPROVED_TO_INITIAL
+Restart=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brerc-loader-initial-quarantine
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/brerc/initial-approval
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+RemoveIPC=true
+LimitCORE=0

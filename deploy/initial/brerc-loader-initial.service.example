@@ -1,16 +1,17 @@
 # EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
-# An operator must approve the host, inputs and schedule before copying it to
-# /etc/systemd/system/brerc-loader-refresh.service.
+# An authorised operator must approve the first production load and its inputs
+# before copying it to /etc/systemd/system/brerc-loader-initial.service.
+# There is no timer. ExecStartPre consumes APPROVED_TO_INITIAL exactly once.
 
 [Unit]
-Description=BRERC atomic full-snapshot publication refresh
+Description=BRERC first atomic publication load
 Wants=network-online.target
 After=network-online.target
-OnFailure=brerc-loader-refresh-quarantine.service
-ConditionPathExists=/run/brerc/refresh/APPROVED_TO_SCHEDULE
+OnFailure=brerc-loader-initial-quarantine.service
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 User=brerc-loader
 Group=brerc-loader
 UMask=0077
@@ -30,14 +31,15 @@ ExecStartPre=/usr/bin/test -s /etc/brerc/refresh/source.pgpass
 ExecStartPre=/usr/bin/test -s /etc/brerc/refresh/target.pgpass
 ExecStartPre=/usr/bin/test -s /etc/brerc/refresh/source-ca.pem
 ExecStartPre=/usr/bin/test -s /etc/brerc/refresh/target-ca.pem
-ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/bin/brerc-load refresh --config /etc/brerc/refresh/loader.configuration.yaml
+ExecStartPre=!/usr/bin/env -i /usr/bin/python3 -I /usr/local/libexec/brerc/consume-initial-approval.py --expected-artifact-id REPLACE_WITH_APPROVED_ARTIFACT_ID
+ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/bin/brerc-load initial --config /etc/brerc/refresh/loader.configuration.yaml
 TimeoutStartSec=2h15m
 TimeoutStopSec=30s
 KillMode=mixed
 Restart=no
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=brerc-loader-refresh
+SyslogIdentifier=brerc-loader-initial
 
 # The loader needs only filesystem reads, private temporary storage and TCP or
 # Unix-socket database connections. It is not permitted to gain privileges or
@@ -48,6 +50,7 @@ PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
 ReadOnlyPaths=/etc/brerc/refresh /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID
+ReadWritePaths=/etc/brerc/initial-approval
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

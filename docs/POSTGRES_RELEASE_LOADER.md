@@ -131,23 +131,31 @@ cannot change whether a cohort is published.
 The destination schema consists of ordered migrations
 `db/migrations/0001_publication_store.sql`,
 `db/migrations/0002_sensitive_record_action.sql` and
-`db/migrations/0003_full_snapshot_refresh.sql`.
+`db/migrations/0003_full_snapshot_refresh.sql` followed by
+`db/migrations/0004_release_evidence.sql`.
 This implementation is pinned to PostgreSQL major version 16 and PostGIS 3.5;
 the target preflight reads both server-side and fails before loading if either
 version family differs or the migration history is not exactly the expected
-ordered sequence of three. Migration 0001 also generates a single destination
+ordered sequence of four. Migration 0001 also generates a single destination
 environment UUID in `loader_control.deployment_identity`. Operations must copy
 that UUID into the protected loader configuration through a trusted channel;
 the loader compares it, the database name and the execution role before it
 acquires the source lock. It also requires an unprivileged LOGIN identity that
 inherits exactly the `brerc_loader` group directly and no other group role.
 
+Migration `0004` and the compatible four-migration loader artifact are one
+forward-only maintenance change. Do not apply `0004` while an older loader can
+still run: that loader correctly refuses the now-newer schema. There is no down
+migration. Roll application code only to another reviewed artifact that attests
+versions 1–4; rolling back the database requires the DBA's tested whole-database
+restore procedure, not manual schema-history edits or object deletion.
+
 | Schema | Purpose |
 |---|---|
 | `loader_control` | Job/release state, manifests, safe audit counts, outbox and immutable release-scoped dispositions. |
 | `loader_stage` | Inactive job-scoped inventory, deltas and reconciliation evidence. |
 | `publication` | Release-scoped public-safe species, cells, year totals and optional records. |
-| `serve` | Active-release-only, capability-masked views for FastAPI and monitoring; map-cell data is reserved for a separately reviewed future tile service. |
+| `serve` | Active-release-only, capability-masked views for FastAPI and monitoring, including the current public distribution-cell responses. A future tile service is optional and requires separate review. |
 
 Apply roles and migration as a database administrator with `ON_ERROR_STOP`:
 
@@ -159,6 +167,8 @@ psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0002_sensitive_record_action.sql "$CONTROLLED_ADMIN_DSN"
 psql -X -v ON_ERROR_STOP=1 \
   -f db/migrations/0003_full_snapshot_refresh.sql "$CONTROLLED_ADMIN_DSN"
+psql -X -v ON_ERROR_STOP=1 \
+  -f db/migrations/0004_release_evidence.sql "$CONTROLLED_ADMIN_DSN"
 ```
 
 The variable is illustrative. Do not place a DSN or password in source control,
@@ -380,9 +390,35 @@ Run the local unit/static gates from `api/`:
 ```sh
 python -m unittest discover \
   --start-directory loader_tests --top-level-directory . --pattern 'test_*.py'
-python -m ruff check .
-python -m ruff format --check .
+python -m ruff check \
+  brerc_source connector_tests brerc_loader loader_tests \
+  etl/streaming.py tests/test_streaming.py \
+  scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py \
+  ../deploy/initial/consume_initial_approval.py \
+  ../deploy/validation/verify_failed_attempt_evidence.py \
+  ../deploy/validation/verify_release_evidence.py \
+  ../deploy/validation/verify_systemd_templates.py
+python -m ruff format --check \
+  brerc_source connector_tests brerc_loader loader_tests \
+  etl/streaming.py tests/test_streaming.py \
+  scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py \
+  ../deploy/initial/consume_initial_approval.py \
+  ../deploy/validation/verify_failed_attempt_evidence.py \
+  ../deploy/validation/verify_release_evidence.py \
+  ../deploy/validation/verify_systemd_templates.py
+python -m ruff check app app_tests package_tests \
+  --per-file-ignores 'app/species_info.py:S105' \
+  --per-file-ignores 'app/species_info.py:E731' \
+  --per-file-ignores 'app/species_info.py:S110' \
+  --per-file-ignores 'app/species_info.py:S608'
+python -m ruff format --check app app_tests package_tests \
+  --exclude app/species_info.py
 ```
+
+These are the same scoped lint/format commands as the authoritative
+`Connector Ruff and wheel smoke` CI step. Do not replace them with
+`python -m ruff check .`: retained legacy modules have deliberately narrow
+waivers, and a repository-wide command does not represent the release gate.
 
 CI also executes the migration and lifecycle against a fully synthetic pinned
 PostgreSQL 16 + PostGIS service. That integration must be green before merge. It
