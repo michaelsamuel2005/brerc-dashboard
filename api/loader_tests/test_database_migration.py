@@ -129,6 +129,14 @@ class DestinationMigrationContract(unittest.TestCase):
             self.sql.count("ON CONFLICT (job_id, event_type) DO NOTHING"),
             5,
         )
+        normalised_readme = " ".join(self.readme.split())
+        self.assertIn("keyed by `(job_id, event_type)`", normalised_readme)
+        self.assertIn(
+            "later successful jobs may legitimately reuse the same release",
+            normalised_readme,
+        )
+        self.assertNotIn("release-level outbox constraint", normalised_readme)
+        self.assertNotIn("required rollback releases", normalised_readme)
 
     def test_every_publication_table_has_release_provenance(self):
         tables = (

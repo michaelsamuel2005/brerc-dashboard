@@ -152,9 +152,11 @@ to the reserved typed event ledger, so future event-writing semantics require a 
 
 A lost activation acknowledgement is idempotent. Reinvoking the same active release returns its ID;
 a separately rebuilt, fully validated candidate with the same stable source/policy/code identity is
-marked `discarded`, its job points to the already-active release, and the release-level outbox
-constraint prevents a duplicate success email. Its unused payload is marked `cleanup_pending` and
-is purged best-effort immediately or obligatorily by the next source-lock owner.
+marked `discarded`, and its job points to the already-active release. The outbox records at most
+one `etl_succeeded` event for that terminal job, keyed by `(job_id, event_type)`; later successful
+jobs may legitimately reuse the same release and each record their own event. The discarded
+candidate's unused payload is marked `cleanup_pending` and is purged best-effort immediately or
+obligatorily by the next source-lock owner.
 
 Do not update active publication rows in place, rename tables during a release, or commit the
 watermark separately. The BRERC source transaction is read-only and separate; distributed two-phase
@@ -268,8 +270,8 @@ Python and TypeScript grid-reference implementations.
   database to prove the approved threshold; they carry no public row ID or optional row fields.
   Incremental candidates build a complete new ledger from the
   active base plus their validated delta before pointer activation. This deliberately costs more
-  storage in exchange for rollback-safe visibility; retention must keep the active and required
-  rollback releases.
+  storage in exchange for atomic visibility and auditability. Retired releases are evidence, not
+  a supported pointer rollback or a backup; BRERC's reviewed retention policy governs their lifetime.
 
 Serving views enforce the capability flags in `public_release`: individual rows disappear when
 disabled, optional place/abundance/record-type fields are masked independently, and verification
