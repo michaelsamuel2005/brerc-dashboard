@@ -75,7 +75,7 @@ The four schemas are deliberately separate:
 | `loader_control` | Jobs, releases, watermarks, manifests, safe audit counts, notification outbox and immutable release-scoped pseudonymous dispositions. | Loader only; monitoring uses restricted views. |
 | `loader_stage` | Job-scoped inventory, deltas and reconciliation results. | Loader only. |
 | `publication` | Release-scoped, public-safe species, cells, years and optional occurrence rows. | Loader only; serving roles use views. |
-| `serve` | Active-release public views and fixed-field ETL status views. | FastAPI, Martin or monitor as explicitly granted. |
+| `serve` | Active-release public views and fixed-field ETL status views. | FastAPI and monitor as explicitly granted; a future tile service requires separate approval. |
 
 `PUBLIC` receives no privilege on any of these schemas, tables or sequences. Future objects also
 default to no `PUBLIC` table/sequence access. A later migration must grant each new serving object
@@ -89,7 +89,8 @@ All repository-defined roles are `NOLOGIN`, `NOINHERIT`, `NOSUPERUSER`, `NOCREAT
 - `brerc_loader`: inserts immutable candidates and invokes guarded lifecycle functions; it cannot
   update a release status or active pointer directly;
 - `brerc_api`: reads active-release API views only;
-- `brerc_martin`: reads only active release metadata and map cells;
+- `brerc_martin`: reserved for a future reviewed tile service and granted only
+  active release metadata and map cells; it is not used by the supported v1;
 - `brerc_monitor`: reads redacted ETL job/release/notification status views.
 
 Deployment creates separate login/service identities and grants membership in exactly one suitable
@@ -248,9 +249,13 @@ It is created from the already-generalised grid reference and its precision—ne
 coordinates. `loader_control.bng_cell_polygon` independently derives the exact BNG envelope;
 constraints require the stored geometry to be topologically equal to it as well as valid,
 non-empty and correctly sized. The private safe ledger also requires each record square to match
-its declared precision and be covered by its aggregation cell. Martin receives only the active
-`serve.public_distribution_cell` view. Cross-language corpus tests must still pin parity with the
-Python and TypeScript grid-reference implementations.
+its declared precision and be covered by its aggregation cell. The v1 API reads only the active
+`serve.public_distribution_cell` view and returns no geometry. The stacked browser-integration
+change derives the display square from the validated public grid-cell identifier. The
+`brerc_martin` role is reserved for a possible later tile service; no Martin function or route is
+approved in this release.
+Cross-language corpus tests must still pin parity with the Python and TypeScript grid-reference
+implementations.
 
 ## Release and operational records
 

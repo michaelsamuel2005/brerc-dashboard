@@ -1,87 +1,109 @@
+"""GET /api/records — scoped, paginated rows from the active release.
+
+An unscoped request returns an empty page: this is a lookup endpoint, not a
+bulk-download path. Aggregate-only releases are independently forced empty even
+if an incorrectly configured view were ever to return a row.
 """
-GET /api/records — paginated records — NOW READS REAL DATA (B8) from public_records.
 
-Reads ONLY from the public_records view, so recorder names, precise coordinates,
-and free-text are impossible to reach from here by construction. gridRef precision
-matches precisionMetres; place is a COARSE locality only (never a precise site).
-
-FOR THE MAINTAINER — two things about this endpoint are deliberate:
-
-  * Newest first, always. There is no "most interesting" or "top 10" ordering,
-    and there should never be one. A ranked list invites the question "ranked by
-    what?", and any honest answer (most sightings, rarest, most recently seen)
-    quietly points attention at particular species and places. A plain reverse-
-    chronological list makes no such suggestion.
-
-  * You get one page at a time, and the page size is capped on the server. Ask
-    for 10,000 records and you will get MAX_PAGE_SIZE of them (app/config.py).
-    Paging through is possible but slow and obvious — which is the intent. This
-    is a lookup tool, not a download.
-"""
+from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
 from app import config
-from app.db import get_connection
-from app.models import RecordList, RecordItem
+from app.db import assert_serving_relation, serving_connection
+from app.models import PublicationFields, RecordPage, RecordPublication, RecordRow
+from app.release import ActiveRelease, load_active_release
 
 router = APIRouter(prefix="/api", tags=["records"])
 
+_RECORDS = assert_serving_relation("serve.public_record")
 
-@router.get("/records", response_model=RecordList)
+_ROWS_SQL = f"""
+SELECT public_record_id, scientific_name, common_name, grid_ref,
+       precision_metres, place, record_year, abundance, record_type,
+       verified_status, source_label
+FROM {_RECORDS}
+WHERE species_id = %s
+  AND (%s::integer IS NULL OR record_year = %s)
+ORDER BY record_year DESC, public_record_id
+LIMIT %s OFFSET %s
+"""  # noqa: S608 - checked relation; every request value is bound
+
+_COUNT_SQL = f"""
+SELECT COUNT(*) AS total
+FROM {_RECORDS}
+WHERE species_id = %s
+  AND (%s::integer IS NULL OR record_year = %s)
+"""  # noqa: S608 - checked relation; every request value is bound
+
+
+def _publication(release: ActiveRelease) -> RecordPublication:
+    return RecordPublication(
+        mode=release.mode,
+        fields=PublicationFields(
+            abundance=release.abundance_available,
+            place=release.place_available,
+            recordType=release.record_type_available,
+            verification=release.record_verification_available,
+        ),
+    )
+
+
+def _row(record: dict, release: ActiveRelease) -> RecordRow:
+    fields: dict[str, object] = {
+        "id": str(record["public_record_id"]),
+        "scientificName": record["scientific_name"],
+        "commonName": record["common_name"],
+        "gridRef": record["grid_ref"],
+        "precisionMetres": int(record["precision_metres"]),
+        "place": record["place"],
+        "year": int(record["record_year"]),
+        "source": record["source_label"],
+    }
+    if release.abundance_available:
+        fields["abundance"] = record["abundance"]
+    if release.record_type_available:
+        fields["recordType"] = record["record_type"]
+    if release.record_verification_available:
+        fields["verified"] = record["verified_status"]
+    return RecordRow(**fields)
+
+
+@router.get("/records", response_model=RecordPage, response_model_exclude_unset=True)
 def list_records(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=config.MAX_PAGE_SIZE),
-    speciesId: str | None = Query(None),   # TEXT ids — see app/models.py
-) -> RecordList:
-    # Belt-and-braces: Query(le=...) already refuses a bigger page, but this
-    # guarantees the cap even if that validation is ever loosened by mistake.
-    pageSize = min(pageSize, config.MAX_PAGE_SIZE)
-    offset = (page - 1) * pageSize
+    species: str | None = Query(None, max_length=120),
+    year: int | None = Query(None, ge=1500, le=2200),
+) -> RecordPage:
+    page_size = min(pageSize, config.MAX_PAGE_SIZE)
+    publication: RecordPublication
+    with serving_connection() as connection:
+        release = load_active_release(connection)
+        publication = _publication(release)
+        if species is None or not release.individual_records_available:
+            return RecordPage(
+                publication=publication,
+                items=[],
+                page=page,
+                pageSize=page_size,
+                total=0,
+            )
 
-    # Optional "filter by species" — the WHERE text is a fixed constant (safe),
-    # and the value is passed as a parameter (%s), never glued into the string.
-    where_sql = ""
-    filter_params: list = []
-    if speciesId is not None:
-        where_sql = "WHERE species_id = %s"
-        filter_params.append(speciesId)
+        parameters: list[object] = [species, year, year]
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _ROWS_SQL,
+                [*parameters, page_size, (page - 1) * page_size],
+            )
+            rows = cursor.fetchall()
+            cursor.execute(_COUNT_SQL, parameters)
+            total = int(cursor.fetchone()["total"])
 
-    # Ordered by date, newest first. "Date" here means the YEAR: the public data
-    # holds no finer date than that, on purpose — an exact date plus a grid
-    # square can identify a single visit, and often a single recorder.
-    # record_id is the tie-breaker, so records within the same year keep a
-    # stable order and paging never repeats or skips a row.
-    rows_sql = f"""
-        SELECT record_id, scientific_name, common_name, record_year,
-               grid_ref, precision_metres, place, verified
-        FROM public_records
-        {where_sql}
-        ORDER BY record_year DESC, record_id
-        LIMIT %s OFFSET %s;
-    """
-    count_sql = f"SELECT COUNT(*) AS total FROM public_records {where_sql};"
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(rows_sql, filter_params + [pageSize, offset])
-            rows = cur.fetchall()
-
-            cur.execute(count_sql, filter_params)
-            total = cur.fetchone()["total"]
-
-    items = [
-        RecordItem(
-            recordId=row["record_id"],
-            scientificName=row["scientific_name"],
-            commonName=row["common_name"],
-            year=row["record_year"],
-            gridRef=row["grid_ref"],
-            precisionMetres=row["precision_metres"],
-            place=row["place"],
-            verified=row["verified"],
-        )
-        for row in rows
-    ]
-
-    return RecordList(items=items, total=total, page=page, pageSize=pageSize)
+    return RecordPage(
+        publication=publication,
+        items=[_row(row, release) for row in rows],
+        page=page,
+        pageSize=page_size,
+        total=total,
+    )

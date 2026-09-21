@@ -1,6 +1,8 @@
 """Unit tests for etl/db.py's connection URL resolution."""
 
+import ast
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +30,26 @@ YAML_CONNECTION = {
     "user": "yaml_source_user",
     "password": "yaml_source_pass",
 }
+
+
+def test_etl_package_does_not_import_the_public_api_database_connection():
+    """Keep ETL reads/writes isolated from the public API's read-only login."""
+    etl_root = Path(__file__).resolve().parents[1]
+    offenders = []
+
+    for source_path in sorted(etl_root.rglob("*.py")):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+        for node in ast.walk(tree):
+            imports_app_db = (isinstance(node, ast.ImportFrom) and node.module == "app.db") or (
+                isinstance(node, ast.Import) and any(alias.name == "app.db" for alias in node.names)
+            )
+            if imports_app_db:
+                offenders.append(f"{source_path.relative_to(etl_root)}:{node.lineno}")
+
+    assert offenders == [], (
+        "ETL code/tests must use etl.db destination connections, not the public "
+        f"API's read-only app.db connection: {offenders}"
+    )
 
 
 # --- _build_destination_database_url tests ---
@@ -93,9 +115,7 @@ def test_build_destination_database_url_raises_when_unconfigured():
     # silently connect as postgres/postgres.
     with patch.dict(os.environ, {}, clear=True):
         with patch("etl.db.CONFIG", {"destination": {}}):
-            with pytest.raises(
-                RuntimeError, match="No destination database credentials"
-            ):
+            with pytest.raises(RuntimeError, match="No destination database credentials"):
                 _build_destination_database_url()
 
 
@@ -217,9 +237,7 @@ def test_build_source_database_url_rejects_partial_yaml_credentials(source):
         clear=True,
     ):
         with patch("etl.db._CONNECTION", source):
-            with pytest.raises(
-                RuntimeError, match="source connection block is incomplete"
-            ):
+            with pytest.raises(RuntimeError, match="source connection block is incomplete"):
                 _build_source_database_url()
 
 
@@ -231,9 +249,7 @@ def test_build_source_database_url_rejects_one_sided_yaml_credentials(source):
         clear=True,
     ):
         with patch("etl.db._CONNECTION", source):
-            with pytest.raises(
-                RuntimeError, match="source connection block is incomplete"
-            ):
+            with pytest.raises(RuntimeError, match="source connection block is incomplete"):
                 _build_source_database_url()
 
 

@@ -91,7 +91,7 @@ inherits exactly the `brerc_loader` group directly and no other group role.
 | `loader_control` | Job/release state, manifests, safe audit counts, outbox and immutable release-scoped dispositions. |
 | `loader_stage` | Inactive job-scoped inventory, deltas and reconciliation evidence. |
 | `publication` | Release-scoped public-safe species, cells, year totals and optional records. |
-| `serve` | Active-release-only, capability-masked views for FastAPI, Martin and monitoring. |
+| `serve` | Active-release-only, capability-masked views for FastAPI and monitoring; map-cell data is reserved for a separately reviewed future tile service. |
 
 Apply roles and migration as a database administrator with `ON_ERROR_STOP`:
 

@@ -1,4 +1,6 @@
-"""GET /api/health — liveness check. Real from day one (no data needed)."""
+"""GET /api/health — liveness only; deliberately touches no data."""
+
+from __future__ import annotations
 
 from fastapi import APIRouter
 
