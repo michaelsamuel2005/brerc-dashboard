@@ -135,6 +135,42 @@ def main() -> int:
     for module_name in connector_modules:
         importlib.import_module(module_name)
 
+    # The same combined wheel also owns the atomic destination loader. Import
+    # its dependency-free operator/configuration boundary from the installed
+    # wheel; the PostgreSQL/YAML adapter remains an explicit runtime extra.
+    loader_package = importlib.import_module("brerc_loader")
+    loader_file = Path(loader_package.__file__ or "").resolve()
+    if _is_within(loader_file, source_root):
+        print(
+            f"FAIL: imported brerc_loader from the source tree ({loader_file}), not the wheel.",
+            file=sys.stderr,
+        )
+        return 1
+    loader_modules = sorted(
+        module.name
+        for module in pkgutil.iter_modules(
+            loader_package.__path__,
+            prefix="brerc_loader.",
+        )
+    )
+    if not loader_modules:
+        print("FAIL: the installed brerc_loader package contains no modules.", file=sys.stderr)
+        return 1
+    dependency_free_loader_modules = (
+        "brerc_loader.cli",
+        "brerc_loader.config",
+        "brerc_loader.digest",
+        "brerc_loader.errors",
+        "brerc_loader.models",
+        "brerc_loader.policy_artifact",
+        "brerc_loader.species_dictionary",
+    )
+    for module_name in dependency_free_loader_modules:
+        if importlib.util.find_spec(module_name) is None:
+            print(f"FAIL: wheel omitted loader module: {module_name}", file=sys.stderr)
+            return 1
+        importlib.import_module(module_name)
+
     distribution = importlib.metadata.distribution("brerc-api")
     distribution_files = distribution.files or ()
     licence_files = [
@@ -148,6 +184,7 @@ def main() -> int:
     print(f"    imported {len(publication_modules)} publication ETL module(s).")
     print(f"    verified {len(legacy_modules)} packaged nightly ETL module(s).")
     print(f"    imported {len(connector_modules)} packaged connector module(s), dependency-free.")
+    print(f"    imported the loader boundary from {loader_file.parent}.")
     print(f"    licence notice: {licence_files[0]}")
     return 0
 

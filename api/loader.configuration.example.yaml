@@ -1,0 +1,60 @@
+# Credential-free loader deployment template. Copy this to a protected location.
+# Every *_env value is an environment-variable NAME, never a credential.
+
+loader_config_version: brerc-loader-v2
+
+# The existing trusted source connector owns the source schema, projection and
+# read-only credentials. Keep its real configuration outside Git as well.
+source_config_path: /etc/brerc/source.configuration.yaml
+
+# Immutable BRERC species-dictionary export. The loader snapshots at most
+# 128 MiB and verifies the SHA-256 of the exact CSV bytes before opening either
+# database. It then derives the separate semantic digest that must match the
+# approved publication policy. Do not put the client dictionary in Git.
+species_dictionary:
+  csv_path: /etc/brerc/species-dictionary.approved.csv
+  expected_raw_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+
+# Immutable, BRERC-approved policy evidence. The loader hashes the exact bytes
+# before any database module is imported. The coordinator alone parses the JSON
+# and must still validate its approval, review date and decision bindings. The
+# artifact is secret-free. The record-id HMAC key is separate from both the
+# artifact and reconciliation, is at least 32 UTF-8 bytes, and comes from the
+# deployment secret store rather than this file.
+publication:
+  policy_path: /etc/brerc/publication-policy.approved.json
+  expected_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  public_id_secret_env: BRERC_PUBLIC_ID_SECRET
+
+runtime:
+  expected_target_database: REPLACE_WITH_UI_DATABASE_NAME
+  # Pin the UUID generated in loader_control.deployment_identity by the
+  # reviewed destination migration. Never copy a production UUID to a clone.
+  expected_target_environment_id: REPLACE_WITH_TARGET_ENVIRONMENT_UUID
+  expected_target_role: REPLACE_WITH_LOADER_WRITE_ROLE
+  batch_size: 5000
+  # BRERC must approve these automated activation bounds for the initial load.
+  # The non-numeric placeholders deliberately keep this template non-runnable.
+  initial_min_source_rows: REPLACE_WITH_APPROVED_INITIAL_MINIMUM
+  initial_max_source_rows: REPLACE_WITH_APPROVED_INITIAL_MAXIMUM
+  connect_timeout_seconds: 15
+  lock_timeout_ms: 30000
+  statement_timeout_ms: 3600000
+  total_timeout_seconds: 7200
+
+# Choose exactly one target connection mode. This service-mode example requires
+# a protected libpq service file, passfile and CA certificate. Public TLS is
+# always verify-full; passwords, DSNs and inline connection strings are invalid.
+target_connection:
+  mode: service
+  service_env: BRERC_TARGET_SERVICE
+  service_file_env: PGSERVICEFILE
+  passfile_env: BRERC_TARGET_PASSFILE
+  sslrootcert_env: BRERC_TARGET_SSLROOTCERT
+  sslmode: verify-full
+
+# Private HMAC key used only to reconcile stable source state. The environment
+# value must contain at least 32 UTF-8 bytes and must come from the secret store.
+# It must never be copied to YAML, logs, shell history or Git.
+reconciliation:
+  secret_env: BRERC_RECONCILIATION_SECRET

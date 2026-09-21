@@ -27,6 +27,7 @@ dependencies = []
 
 [project.scripts]
 brerc-source = "brerc_source.cli:main"
+brerc-load = "brerc_loader.cli:main"
 
 [project.optional-dependencies]
 # Exploratory analysis only — notebooks, one-off inspection of a new extract.
@@ -55,7 +56,14 @@ connector-binary = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["etl", "etl.*", "brerc_source", "brerc_source.*"]
+include = [
+    "etl",
+    "etl.*",
+    "brerc_source",
+    "brerc_source.*",
+    "brerc_loader",
+    "brerc_loader.*",
+]
 exclude = ["etl.tests", "etl.tests.*"]
 
 # ---------------------------------------------------------------------------
@@ -103,9 +111,10 @@ ignore = [
 "scripts/*.py" = ["T20"]
 # The operator CLI's only output is its fixed, redacted JSON status envelope.
 "brerc_source/cli.py" = ["T20"]
+"brerc_loader/cli.py" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["brerc_source", "etl"]
+known-first-party = ["brerc_loader", "brerc_source", "etl"]
 
 [tool.ruff.format]
 quote-style = "double"

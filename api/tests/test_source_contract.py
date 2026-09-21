@@ -12,11 +12,12 @@ from etl.pipeline import (
     build_candidate_payloads,
     build_payloads,
     run_pipeline,
+)
+from etl.pipeline import (
     run_pipeline_for_source as _run_pipeline_for_source,
 )
 from etl.policy import DEVELOPMENT_POLICY, InvalidPolicy, PolicyNotApproved, PublicationPolicy
 from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
-from etl.species import SpeciesDictionary, SpeciesRecord
 from etl.source_contract import (
     BRERC_MAIN_DATA_DASH,
     BRERC_MAIN_DATA_DASH_COLUMNS,
@@ -31,6 +32,7 @@ from etl.source_contract import (
     SourceMetadata,
     parse_load_mode,
 )
+from etl.species import SpeciesDictionary, SpeciesRecord
 from etl.view_identity import (
     VIEW_CAPTURE_EVIDENCE_PROFILE,
     VIEW_DEFINITION_DIGEST_PROFILE,
@@ -293,10 +295,10 @@ class TestConfirmedManifest(unittest.TestCase):
         )
         self.assertIsNone(document["approvedLiveViewIdentity"])
 
-    def test_connector_port_keeps_loader_and_endpoint_authority_blocked(self):
+    def test_loader_port_keeps_external_release_authority_blocked(self):
         rendered = "\n".join(BRERC_MAIN_DATA_DASH.release_blockers)
         self.assertNotIn("connector is not present", rendered)
-        self.assertIn("atomic loader are not present", rendered)
+        self.assertNotIn("atomic loader are not present", rendered)
         self.assertIn("species dictionary", rendered)
         self.assertIn("database/service identity", rendered)
         self.assertIn("deployment assertions only", rendered)

@@ -127,6 +127,7 @@ class TestFixtureDirectoryIsNotExempt(unittest.TestCase):
             repo = Path(temp_dir)
             tracked = {
                 "api/configuration.yaml": b"connection: internal",
+                "api/loader.configuration.yaml": b"target: internal",
                 ".pgpass": b"host:port:database:user:password",
                 "ops/pgpass.conf": b"host:port:database:user:password",
                 "ops/.pg_service.conf": b"[brerc]\nhost=internal",
@@ -164,6 +165,7 @@ class TestFixtureDirectoryIsNotExempt(unittest.TestCase):
                 [
                     ".pgpass",
                     "api/configuration.yaml",
+                    "api/loader.configuration.yaml",
                     "ops/.pg_service.conf",
                     "ops/brerc-source-client.crt",
                     "ops/brerc-source-client.key",

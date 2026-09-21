@@ -3,6 +3,10 @@ name: Manual loader scale acceptance
 on:
   workflow_dispatch:
     inputs:
+      expected_git_sha:
+        description: Exact protected-main loader/store merge SHA to test
+        required: true
+        type: string
       confirm:
         description: Type RUN_EXACTLY_5000000_SYNTHETIC_ROWS to accept the cost
         required: true
@@ -67,6 +71,15 @@ jobs:
         env:
           SCALE_CONFIRMATION: ${{ inputs.confirm }}
         run: test "${SCALE_CONFIRMATION}" = 'RUN_EXACTLY_5000000_SYNTHETIC_ROWS'
+      - name: Bind the run to the exact protected-main merge
+        env:
+          EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+          WORKFLOW_GIT_SHA: ${{ github.sha }}
+          WORKFLOW_GIT_REF: ${{ github.ref }}
+        run: |
+          test "${WORKFLOW_GIT_REF}" = 'refs/heads/main'
+          test "${EXPECTED_GIT_SHA}" = "${WORKFLOW_GIT_SHA}"
+          printf '%s' "${EXPECTED_GIT_SHA}" | grep -Eq '^[0-9a-f]{40}$'
       - name: Reject missing, non-finite, or non-positive budgets before provisioning
         env:
           MAX_TOTAL_SECONDS: ${{ inputs.max_total_seconds }}
