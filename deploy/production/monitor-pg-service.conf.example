@@ -1,0 +1,11 @@
+# EXAMPLE ONLY: credential-free libpq profile for the run-history viewer.
+# Render to /etc/brerc/production/monitor/pg_service.conf as
+# root:brerc-monitor-ui 0440. The password belongs only in monitor.pgpass. The
+# application pins passfile, sslrootcert, sslmode=verify-full and timeout.
+
+[REPLACE_WITH_MONITOR_LIBPQ_SERVICE]
+host=REPLACE_WITH_PRIVATE_POSTGRES_HOSTNAME
+port=5432
+dbname=REPLACE_WITH_PUBLICATION_DATABASE_NAME
+user=REPLACE_WITH_MONITOR_LOGIN_ROLE
+application_name=brerc-run-dashboard

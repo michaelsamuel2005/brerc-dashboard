@@ -29,6 +29,10 @@ const localApiProxy = {
 export default defineConfig({
   cacheDir: ".vite-cache",
   plugins: [react()],
+  // MapLibre 6 is ESM-only. Keep the library itself out of Vite's development
+  // pre-bundle while the predev/prebuild script supplies its pinned worker as a
+  // self-contained, same-origin classic-worker asset (see DistributionMap).
+  optimizeDeps: { exclude: ["maplibre-gl"] },
   server: { proxy: localApiProxy },
   preview: { proxy: localApiProxy },
   test: {

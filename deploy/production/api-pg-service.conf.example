@@ -1,0 +1,11 @@
+# EXAMPLE ONLY: credential-free libpq profile for the public API.
+# Render to /etc/brerc/production/api/pg_service.conf as root:brerc-api 0440.
+# The password belongs only in api.pgpass. The application supplies and pins
+# passfile, sslrootcert, sslmode=verify-full and connect_timeout explicitly.
+
+[REPLACE_WITH_API_LIBPQ_SERVICE]
+host=REPLACE_WITH_PRIVATE_POSTGRES_HOSTNAME
+port=5432
+dbname=REPLACE_WITH_PUBLICATION_DATABASE_NAME
+user=REPLACE_WITH_API_LOGIN_ROLE
+application_name=brerc-public-api

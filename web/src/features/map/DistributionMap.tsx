@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, { AttributionControl, Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FeatureCollection } from "geojson";
-import type { FilterSpecification } from "maplibre-gl";
+import { setWorkerUrl, type FilterSpecification, type Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { toAsyncState, useDistributionCells } from "../../lib/api";
 import { gridRefToPolygon } from "../../lib/geo/osgb";
@@ -20,6 +20,13 @@ import {
   cellsLineLayer,
 } from "./mapConfig";
 import { installA11yTestAdapter, removeA11yTestAdapter } from "./a11yTestAdapter";
+
+// MapLibre 6 is ESM-only, but its module worker stalls silently in Firefox under
+// Vite/Playwright. The build script bundles the same pinned worker as a classic,
+// self-contained same-origin asset; MapLibre interprets the `.cjs` suffix as a
+// classic worker. This remains compatible with production worker-src 'self' CSP
+// and does not require a third-party worker origin.
+setWorkerUrl(`${import.meta.env.BASE_URL}maplibre-gl-worker.cjs`);
 
 interface Props {
   speciesId: string;
@@ -63,7 +70,7 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
   const query = useDistributionCells({ species: speciesId, year: year ?? undefined });
   const state = toAsyncState(query, (d) => d.cells.length === 0);
   const [mapError, setMapError] = useState<string | null>(null);
-  const [mapReady, setMapReady] = useState(false);
+  const [a11yMap, setA11yMap] = useState<MapLibreMap | null>(null);
   const mapRef = useRef<MapRef | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -117,24 +124,21 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
     return () => observer.disconnect();
   }, [mapError, state.status]);
 
-  // `mapReady` describes ONE MapLibre instance, and the instance is destroyed whenever the
-  // card stops rendering the map — which happens on every year filter, because the new
-  // year is fetched before it can be drawn. Left latched at true across that gap, the flag
-  // then described a map that no longer existed: when a fresh <Map> mounted, `onLoad`
-  // called setMapReady(true), React saw no change, and the effect below never re-ran, so
-  // the accessibility bridge stayed removed for the rest of the session. Resetting here
-  // ties the flag back to the instance it is about.
-  const mapIsMounted = state.status === "ready" && !mapError;
+  // Firefox can render a complete MapLibre 6 style without React Map GL forwarding its
+  // wrapper-level `onLoad` callback (or publishing its imperative ref). Capture the
+  // native map from the first real render event instead. Production does not install the
+  // handler: it exists solely for the explicit accessibility evidence build.
   useEffect(() => {
-    if (!mapIsMounted) setMapReady(false);
-  }, [mapIsMounted]);
+    if (A11Y_TEST_MODE && (state.status !== "ready" || mapError)) {
+      setA11yMap(null);
+    }
+  }, [mapError, state.status]);
 
   // Expose the real projection and the same canonical polygons used by the <Source>,
   // but only in the explicit accessibility-test mode. Refresh it after year filtering.
   useEffect(() => {
     if (!A11Y_TEST_MODE) return;
-    const map = mapRef.current?.getMap();
-    if (state.status !== "ready" || !mapReady || !map) {
+    if (state.status !== "ready" || mapError || !a11yMap) {
       removeA11yTestAdapter();
       return;
     }
@@ -142,10 +146,10 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
     // development and can otherwise erase the bridge after MapLibre's load event. A
     // non-ready data state removes it explicitly; a ready rerender safely replaces it.
     installA11yTestAdapter(
-      { map, canonicalCells, selectableLayers: ["cells-fill"] },
+      { map: a11yMap, canonicalCells, selectableLayers: ["cells-fill"] },
       A11Y_TEST_MODE,
     );
-  }, [canonicalCells, mapReady, state.status]);
+  }, [a11yMap, canonicalCells, mapError, state.status]);
 
   const pan = useCallback((direction: PanDirection) => {
     mapRef.current?.getMap().panBy(PAN_OFFSETS[direction], {
@@ -200,14 +204,16 @@ export default function DistributionMap({ speciesId, year = null, selectedCellId
         className="map-card"
         ref={containerRef}
         data-a11y-test-mode={A11Y_TEST_MODE ? "true" : undefined}
-        data-map-ready={A11Y_TEST_MODE ? String(mapReady) : undefined}
+        data-map-ready={A11Y_TEST_MODE ? String(a11yMap !== null) : undefined}
       >
         <Map
           ref={mapRef}
           onLoad={(e) => {
             e.target.resize();
-            setMapReady(true);
           }}
+          onRender={A11Y_TEST_MODE ? (e) => {
+            setA11yMap((current) => current === e.target ? current : e.target);
+          } : undefined}
           initialViewState={INITIAL_VIEW}
           mapStyle={MAP_STYLE}
           minZoom={MIN_ZOOM}

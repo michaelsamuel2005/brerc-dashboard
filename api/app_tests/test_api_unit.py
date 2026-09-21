@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from psycopg.conninfo import conninfo_to_dict
 from pydantic import ValidationError
 
-from app import db
+from app import config, db
 from app.models import (
     PublicationFields,
     RecordPage,
@@ -119,19 +119,43 @@ def _patch_router(module, connection: ScriptedConnection, release: ActiveRelease
 
 def _api_session(**overrides: object) -> dict[str, object]:
     session: dict[str, object] = {
+        "database_name": "brerc_ui",
+        "login_role": "brerc_api_login",
+        "session_role": "brerc_api_login",
         "read_only": "on",
         "isolation_level": "repeatable read",
+        "can_login": True,
+        "can_inherit": True,
+        "is_superuser": False,
+        "can_create_db": False,
+        "can_create_role": False,
+        "can_replicate": False,
+        "can_bypass_rls": False,
         "is_api": True,
         "is_loader": False,
         "is_martin": False,
         "is_monitor": False,
         "can_write_all": False,
+        "direct_roles": ["brerc_api"],
+        "effective_roles": ["brerc_api"],
     }
     session.update(overrides)
     return session
 
 
 class TestDatabaseBoundary:
+    @pytest.mark.parametrize("value", ["", "prd", "production", "test"])
+    def test_unknown_app_environment_fails_closed(self, value: str) -> None:
+        with (
+            patch.dict(os.environ, {"APP_ENV": value}, clear=True),
+            pytest.raises(RuntimeError, match="APP_ENV must be exactly"),
+        ):
+            config._validated_app_environment()
+
+    def test_app_environment_is_normalised_without_changing_its_meaning(self) -> None:
+        with patch.dict(os.environ, {"APP_ENV": " PROD "}, clear=True):
+            assert config._validated_app_environment() == "prod"
+
     def test_only_public_serving_views_are_allow_listed(self) -> None:
         for relation in db.SERVING_RELATIONS:
             assert db.assert_serving_relation(relation) == relation
@@ -149,6 +173,14 @@ class TestDatabaseBoundary:
         connection = ScriptedConnection([_api_session()])
         with (
             patch.object(db, "get_connection", return_value=connection),
+            patch.dict(
+                os.environ,
+                {
+                    "BRERC_API_EXPECTED_DATABASE": "brerc_ui",
+                    "BRERC_API_EXPECTED_ROLE": "brerc_api_login",
+                },
+                clear=True,
+            ),
             db.serving_connection() as yielded,
         ):
             assert yielded is connection
@@ -198,11 +230,21 @@ class TestDatabaseBoundary:
     @pytest.mark.parametrize(
         ("overrides", "reason"),
         [
+            ({"login_role": "other", "session_role": "brerc_api_login"}, "SET ROLE"),
+            ({"can_login": False}, "NOLOGIN current role"),
+            ({"can_inherit": False}, "non-inheriting login"),
+            ({"is_superuser": True}, "superuser"),
+            ({"can_create_db": True}, "createdb"),
+            ({"can_create_role": True}, "createrole"),
+            ({"can_replicate": True}, "replication"),
+            ({"can_bypass_rls": True}, "bypass RLS"),
             ({"is_api": False}, "missing API membership"),
             ({"is_loader": True}, "loader membership"),
             ({"is_martin": True}, "Martin membership"),
             ({"is_monitor": True}, "monitor membership"),
             ({"can_write_all": True}, "write-all membership"),
+            ({"direct_roles": ["brerc_api", "other"]}, "extra role membership"),
+            ({"effective_roles": ["brerc_api", "indirect"]}, "transitive role membership"),
         ],
     )
     def test_serving_connection_rejects_every_non_api_or_overlapping_role(
@@ -219,6 +261,162 @@ class TestDatabaseBoundary:
         assert connection.rollback_called
         assert connection.close_called
 
+    def test_serving_connection_enforces_exact_configured_database_and_login(self) -> None:
+        for override in (
+            {"database_name": "wrong_database"},
+            {"login_role": "wrong_login", "session_role": "wrong_login"},
+        ):
+            connection = ScriptedConnection([_api_session(**override)])
+            with (
+                patch.object(db, "get_connection", return_value=connection),
+                patch.dict(
+                    os.environ,
+                    {
+                        "BRERC_API_EXPECTED_DATABASE": "brerc_ui",
+                        "BRERC_API_EXPECTED_ROLE": "brerc_api_login",
+                    },
+                    clear=True,
+                ),
+                pytest.raises(RuntimeError, match="dedicated read-only API role"),
+                db.serving_connection(),
+            ):
+                raise AssertionError("the wrong production database identity was yielded")
+
+    def test_serving_connection_accepts_the_exact_configured_database_and_login(self) -> None:
+        connection = ScriptedConnection([_api_session()])
+        with (
+            patch.object(db, "get_connection", return_value=connection),
+            patch.dict(
+                os.environ,
+                {
+                    "BRERC_API_EXPECTED_DATABASE": "brerc_ui",
+                    "BRERC_API_EXPECTED_ROLE": "brerc_api_login",
+                },
+                clear=True,
+            ),
+            db.serving_connection() as yielded,
+        ):
+            assert yielded is connection
+
+    @pytest.mark.parametrize(
+        "environment",
+        [
+            {"BRERC_API_EXPECTED_DATABASE": "brerc_ui"},
+            {"BRERC_API_EXPECTED_ROLE": "brerc_api_login"},
+        ],
+    )
+    def test_partial_session_identity_configuration_fails_before_connecting(
+        self, environment: dict[str, str]
+    ) -> None:
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(db, "get_connection") as connect,
+            pytest.raises(RuntimeError, match="must be set together"),
+            db.serving_connection(),
+        ):
+            raise AssertionError("a connection was yielded with partial identity configuration")
+        connect.assert_not_called()
+
+    def test_service_mode_requires_exact_session_expectations_before_connecting(self) -> None:
+        with (
+            patch.dict(os.environ, {"BRERC_API_DB_MODE": "service"}, clear=True),
+            patch.object(db, "get_connection") as connect,
+            pytest.raises(RuntimeError, match="production/service mode requires"),
+            db.serving_connection(),
+        ):
+            raise AssertionError("a service-mode connection was yielded without an identity")
+        connect.assert_not_called()
+
+    def test_service_mode_builds_credential_free_verified_conninfo(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "BRERC_API_DB_MODE": "service",
+                "BRERC_API_DB_SERVICE": "brerc-api",
+                "PGSERVICEFILE": "/etc/brerc/production/api/pg_service.conf",
+                "BRERC_API_DB_PASSFILE": "/etc/brerc/production/api/api.pgpass",
+                "BRERC_API_DB_SSLROOTCERT": "/etc/brerc/production/api/postgres-ca.pem",
+            },
+            clear=True,
+        ):
+            parameters = conninfo_to_dict(db._build_database_url())
+
+        assert parameters == {
+            "service": "brerc-api",
+            "passfile": "/etc/brerc/production/api/api.pgpass",
+            "sslrootcert": "/etc/brerc/production/api/postgres-ca.pem",
+            "sslmode": "verify-full",
+            "connect_timeout": "10",
+        }
+
+    @pytest.mark.parametrize(
+        ("environment", "message"),
+        [
+            ({"BRERC_API_DB_MODE": "direct"}, "must be 'service'"),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "bad service name",
+                },
+                "BRERC_API_DB_SERVICE is invalid",
+            ),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "brerc-api",
+                    "PGSERVICEFILE": "relative.conf",
+                },
+                "PGSERVICEFILE must be an absolute path",
+            ),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "brerc-api",
+                    "PGSERVICEFILE": "/etc/brerc/pg_service.conf",
+                    "BRERC_API_DB_PASSFILE": "relative.pgpass",
+                },
+                "BRERC_API_DB_PASSFILE must be an absolute path",
+            ),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "brerc-api",
+                    "PGSERVICEFILE": "/etc/brerc/pg_service.conf",
+                    "BRERC_API_DB_PASSFILE": "/etc/brerc/api.pgpass",
+                    "BRERC_API_DB_SSLROOTCERT": "relative-ca.pem",
+                },
+                "BRERC_API_DB_SSLROOTCERT must be an absolute path",
+            ),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "brerc-api",
+                    "PGSERVICEFILE": "/etc/brerc/pg_service.conf",
+                    "DATABASE_URL": "postgresql://must-not-win/db",
+                },
+                "DATABASE_URL must be unset",
+            ),
+            (
+                {
+                    "BRERC_API_DB_MODE": "service",
+                    "BRERC_API_DB_SERVICE": "brerc-api",
+                    "PGSERVICEFILE": "/etc/brerc/pg_service.conf",
+                    "PGPASSWORD": "must-not-be-in-environment",
+                },
+                "PGPASSWORD is not permitted",
+            ),
+        ],
+    )
+    def test_service_mode_rejects_ambiguous_or_unsafe_configuration(
+        self, environment: dict[str, str], message: str
+    ) -> None:
+        with (
+            patch.object(db.config, "IS_PROD", False),
+            patch.dict(os.environ, environment, clear=True),
+            pytest.raises(RuntimeError, match=message),
+        ):
+            db._build_database_url()
+
     def test_credential_reader_never_falls_back_to_destination(self) -> None:
         with patch.object(
             db,
@@ -233,25 +431,7 @@ class TestDatabaseBoundary:
                 "password": "read-secret",
             }
 
-    @pytest.mark.parametrize(
-        "database_url",
-        [
-            "postgresql://reader:pw@db.example/brerc",
-            "postgresql://reader:pw@db.example/brerc?sslmode=prefer",
-            "postgresql://reader:pw@db.example/brerc?sslmode=require",
-            "postgresql://reader:pw@db.example/brerc?sslmode=verify-full",
-        ],
-    )
-    def test_production_environment_url_requires_verified_tls(self, database_url: str) -> None:
-        with (
-            patch.object(db.config, "IS_PROD", True),
-            patch.object(db, "_get_api_readonly", return_value={}),
-            patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=True),
-            pytest.raises(RuntimeError, match="sslmode=verify-full.*sslrootcert"),
-        ):
-            db._build_database_url()
-
-    def test_production_environment_url_accepts_verified_tls(self) -> None:
+    def test_production_refuses_legacy_database_url_even_with_verified_tls(self) -> None:
         database_url = (
             "postgresql://reader:pw@db.example/brerc?"
             "sslmode=verify-full&sslrootcert=%2Frun%2Fsecrets%2Fdatabase-ca.pem"
@@ -260,53 +440,27 @@ class TestDatabaseBoundary:
             patch.object(db.config, "IS_PROD", True),
             patch.object(db, "_get_api_readonly", return_value={}),
             patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=True),
+            pytest.raises(RuntimeError, match="requires BRERC_API_DB_MODE=service"),
         ):
-            assert db._build_database_url() == database_url
+            db._build_database_url()
 
-    def test_production_yaml_connection_requires_and_carries_verified_tls(self) -> None:
-        api_readonly = {
-            "dbhostname": "db.example",
-            "port": 5432,
-            "dbname": "brerc",
-            "user": "reader",
-            "password": "not-a-real-secret",
-            "sslmode": "verify-full",
-            "sslrootcert": "/run/secrets/database-ca.pem",
-        }
+    def test_production_refuses_legacy_yaml_credentials(self) -> None:
         with (
             patch.object(db.config, "IS_PROD", True),
-            patch.object(db, "_get_api_readonly", return_value=api_readonly),
+            patch.object(
+                db,
+                "_get_api_readonly",
+                return_value={
+                    "dbhostname": "db.example",
+                    "dbname": "brerc",
+                    "user": "reader",
+                    "password": "secret",
+                    "sslmode": "verify-full",
+                    "sslrootcert": "/run/secrets/database-ca.pem",
+                },
+            ),
             patch.dict(os.environ, {}, clear=True),
-        ):
-            parameters = conninfo_to_dict(db._build_database_url())
-
-        assert parameters["sslmode"] == "verify-full"
-        assert parameters["sslrootcert"] == "/run/secrets/database-ca.pem"
-
-    @pytest.mark.parametrize(
-        "tls_parameters",
-        [
-            {},
-            {"sslmode": "require", "sslrootcert": "/run/secrets/database-ca.pem"},
-            {"sslmode": "verify-full"},
-        ],
-    )
-    def test_production_yaml_connection_rejects_missing_verified_tls(
-        self, tls_parameters: dict[str, str]
-    ) -> None:
-        api_readonly = {
-            "dbhostname": "db.example",
-            "port": 5432,
-            "dbname": "brerc",
-            "user": "reader",
-            "password": "not-a-real-secret",
-            **tls_parameters,
-        }
-        with (
-            patch.object(db.config, "IS_PROD", True),
-            patch.object(db, "_get_api_readonly", return_value=api_readonly),
-            patch.dict(os.environ, {}, clear=True),
-            pytest.raises(RuntimeError, match="sslmode=verify-full.*sslrootcert"),
+            pytest.raises(RuntimeError, match="requires BRERC_API_DB_MODE=service"),
         ):
             db._build_database_url()
 

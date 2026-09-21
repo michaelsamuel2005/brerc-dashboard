@@ -4,7 +4,8 @@
 # does not serve the React build, routes /tiles to the obsolete public.* store,
 # and has no reviewed production TLS/security configuration. The supported v1
 # map data path is the same-origin FastAPI route described in
-# docs/PUBLIC_SERVING_ARCHITECTURE.md; it does not use Martin or /tiles.
+# docs/PUBLIC_SERVING_ARCHITECTURE.md; it does not use Martin or /tiles. The
+# reviewed production nginx examples are under deploy/production/.
 
 :80 {
 	# The read-only API, e.g.  /api/health , /api/species

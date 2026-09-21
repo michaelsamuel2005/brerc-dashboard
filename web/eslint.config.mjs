@@ -15,6 +15,7 @@ export default tseslint.config(
       "node_modules/**",
       ".vite-cache/**",
       "screenshots/**",
+      "public/maplibre-gl-worker.cjs",
     ],
   },
   js.configs.recommended,

@@ -1,0 +1,70 @@
+# EXAMPLE ONLY. This is deliberately not an installed or enabled systemd unit.
+# The service is an authenticated internal operations surface. It must remain
+# loopback-only and must never be added to the public dashboard virtual host.
+
+[Unit]
+Description=BRERC private ETL run-history dashboard
+Wants=network-online.target
+After=network-online.target
+AssertFileIsExecutable=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime/venv/bin/uvicorn
+AssertFileNotEmpty=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime/app.py
+AssertFileNotEmpty=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime/store.py
+AssertFileNotEmpty=/etc/brerc/production/monitor/run-dashboard.env
+AssertFileNotEmpty=/etc/brerc/production/monitor/run-dashboard.secrets.env
+AssertFileNotEmpty=/etc/brerc/production/monitor/pg_service.conf
+AssertFileNotEmpty=/etc/brerc/production/monitor/monitor.pgpass
+AssertFileNotEmpty=/etc/brerc/production/monitor/postgres-ca.pem
+
+[Service]
+Type=simple
+User=brerc-monitor-ui
+Group=brerc-monitor-ui
+UMask=0077
+WorkingDirectory=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=DASHBOARD_ENV=prod
+EnvironmentFile=/etc/brerc/production/monitor/run-dashboard.env
+EnvironmentFile=/etc/brerc/production/monitor/run-dashboard.secrets.env
+UnsetEnvironment=PGPASSWORD RUN_DASHBOARD_DATABASE_URL
+ExecStart=/opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8100 --no-access-log --no-server-header --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=45s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=brerc-run-dashboard
+
+# The viewer is independently authenticated, reads only the bounded monitoring
+# view and has no writable filesystem path. Its loopback listener is published
+# only by the separately restricted internal nginx virtual host.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/brerc/production /opt/brerc-dashboard/releases/REPLACE_WITH_APPROVED_ARTIFACT_ID/run-dashboard-runtime
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RemoveIPC=true
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

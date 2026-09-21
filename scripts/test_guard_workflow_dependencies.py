@@ -43,6 +43,7 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/app_tests",
                 "api/brerc_loader",
                 "api/brerc_source",
+                "api/deployment_tests",
                 "api/package_tests",
                 "api/etl/streaming.py",
                 "api/loader_tests",
@@ -79,6 +80,11 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "db/migrations/0003_full_snapshot_refresh.sql",
                 "db/migrations/0004_release_evidence.sql",
                 "db/roles.sql",
+                "deploy/production/brerc-public-api.service.example",
+                "deploy/production/brerc-run-dashboard.service.example",
+                "deploy/validation/audit_runtime_logins.sql",
+                "deploy/validation/test_verify_systemd_examples.py",
+                "deploy/validation/verify_systemd_examples.py",
                 "docker-compose.yml",
                 "docs/PUBLIC_SERVING_ARCHITECTURE.md",
                 "docs/RUN_LOCALLY.md",
@@ -122,6 +128,19 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "web/tsconfig.a11y.json",
                 "web/tsconfig.json",
                 "web/vite.config.ts",
+            }.issubset(dependencies)
+        )
+
+    def test_scale_manifest_covers_the_exact_migration_stack(self) -> None:
+        dependencies = set(
+            WORKFLOW_DEPENDENCIES[".github/workflows/loader-scale-acceptance.yml"]
+        )
+        self.assertTrue(
+            {
+                "db/migrations/0001_publication_store.sql",
+                "db/migrations/0002_sensitive_record_action.sql",
+                "db/migrations/0003_full_snapshot_refresh.sql",
+                "db/migrations/0004_release_evidence.sql",
             }.issubset(dependencies)
         )
 

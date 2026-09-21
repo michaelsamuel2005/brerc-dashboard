@@ -6,7 +6,7 @@
 # It neither creates nor publishes the release-scoped serve.* views used by the
 # current API. It must not receive real BRERC data, credentials or production
 # configuration. See docs/PUBLIC_SERVING_ARCHITECTURE.md for the supported v1
-# serving boundary.
+# serving boundary and deploy/production/ for the Linux serving examples.
 #
 # Every service is behind the explicit `legacy-obsolete` profile so a normal
 # `docker compose up` selects no service and cannot be mistaken for a working

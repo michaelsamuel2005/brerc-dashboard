@@ -13,6 +13,8 @@ the guide that matches what you need.
 | 🧾 [SOURCE_CONTRACT.md](SOURCE_CONTRACT.md) | Reviewed source-view shape, evidence, and release blockers. |
 | 🐘 [POSTGRES_RELEASE_LOADER.md](POSTGRES_RELEASE_LOADER.md) | Trusted initial/refresh loader, PostGIS release store, atomic activation and safe-v1 evidence boundary. |
 | 🔄 [FULL_SNAPSHOT_REFRESH.md](FULL_SNAPSHOT_REFRESH.md) | Operator runbook for initial load, complete-snapshot refresh, real-stack synthetic rehearsal and remaining production gates. |
+| 🛠️ [Production serving](../deploy/production/README.md) | Reviewed React/API/private-monitor topology, hardened Linux service examples, target-host rehearsal, recovery and rollback. |
+| 🐧 [Target Linux acceptance](../deploy/validation/LINUX_ACCEPTANCE.md) | Compatibility, network/TLS, hardened-unit and sign-off procedure for BRERC's chosen Linux host. |
 | 🔏 [VIEW_DEFINITION_APPROVAL.md](VIEW_DEFINITION_APPROVAL.md) | Capture and approve the exact PostgreSQL view identity without reading rows. |
 | 🐙 [GETTING_STARTED_GITHUB.md](GETTING_STARTED_GITHUB.md) | Step‑by‑step guide to Git and GitHub — assumes **zero** prior experience. Start here if you've never branched, pushed, or opened a pull request. |
 | ▶️ [RUN_LOCALLY.md](RUN_LOCALLY.md) | Run the browser with synthetic mocks or through the live local FastAPI boundary. |
