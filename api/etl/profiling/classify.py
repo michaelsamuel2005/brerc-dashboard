@@ -1,4 +1,9 @@
 """
+DEAD DUPLICATE — not on any path. This is an older copy of
+etl/safety_gate/classification.py (the live nightly classifier); nothing imports
+it except etl/tests/profiling/test_classify.py, and it is kept only until those
+tests are retired. Do not add logic here.
+
 Classifies occurrence records as sensitive based on protected species lists, 
 flagged record types, and fail-closed rules for unresolved species.
 """

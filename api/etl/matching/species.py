@@ -1,4 +1,9 @@
 """
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline, which imports
+this module directly (so does etl.reconciliation.reconcile). Being superseded by
+etl/species.py (publication core). Do not add safety logic here; change
+etl/species.py and keep this file behaviour-frozen.
+
 Normalises species names and resolves occurrence records against 
 the species dictionary, flagging unresolved or malformed entries as fail-closed.
 """

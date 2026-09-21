@@ -1,4 +1,13 @@
 """
+LIVE NIGHTLY PATH — runs today via etl.job -> etl.nightly_pipeline, through
+etl.reconciliation.reconcile and etl.aggregation.counts (both import
+filter_accepted_records). Being superseded by the publication core: its stdlib
+namesake etl/filtering.py is only a superseded shim, and the verified-status
+selection done here is carried by normalise_verified in etl/contract.py against
+PublicationPolicy.accepted_verification_values, applied in etl/pipeline.py. Do
+not add safety logic here; change the publication core and keep this file
+behaviour-frozen.
+
 Filters raw source records based on NBN verification standards.
 Determines which rows are permitted to contribute to the public derived layer.
 """
