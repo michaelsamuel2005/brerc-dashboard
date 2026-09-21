@@ -11,6 +11,17 @@ from scripts.guard_workflow_dependencies import WORKFLOW_DEPENDENCIES, check
 
 
 class TestWorkflowDependencyGuard(unittest.TestCase):
+    def test_systemd_validation_is_pinned_to_the_reviewed_ubuntu_baseline(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        connector_package = workflow.split("  connector-package:", 1)[1].split(
+            "\n  loader-unit:", 1
+        )[0]
+        self.assertIn("runs-on: ubuntu-24.04", connector_package)
+        self.assertIn("verify_systemd_templates.py", connector_package)
+
     def test_retained_legacy_e2e_is_explicitly_opted_in_by_ci(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github" / "workflows" / "ci.yml").read_text(
@@ -36,6 +47,10 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "api/etl/streaming.py",
                 "api/loader_tests",
                 "api/loader_tests/test_postgis16_destination_integration.py",
+                "api/loader_tests/test_initial_approval_consumer.py",
+                "api/loader_tests/test_initial_loader_deployment.py",
+                "api/loader_tests/test_refresh_scheduler_deployment.py",
+                "api/loader_tests/test_release_evidence_verifier.py",
                 "api/loader_tests/setup_postgis16_destination.sh",
                 "api/loader_tests/setup_postgres16_e2e_source.sh",
                 "Caddyfile",
@@ -45,12 +60,24 @@ class TestWorkflowDependencyGuard(unittest.TestCase):
                 "db/test/e2e_source_mock.sql",
                 "db/test/run_e2e.py",
                 "deploy/refresh/README.md",
+                "deploy/refresh/brerc-loader-refresh-approval-guard.service.example",
                 "deploy/refresh/brerc-loader-refresh.service.example",
                 "deploy/refresh/brerc-loader-refresh.timer.example",
                 "deploy/refresh/loader-runtime.env.example",
+                "deploy/initial/README.md",
+                "deploy/initial/brerc-loader-initial-quarantine.service.example",
+                "deploy/initial/brerc-loader-initial.service.example",
+                "deploy/initial/consume_initial_approval.py",
+                "deploy/refresh/brerc-loader-refresh-quarantine.service.example",
+                "deploy/validation/failed_attempt_evidence_query.sql",
+                "deploy/validation/verify_failed_attempt_evidence.py",
+                "deploy/validation/release_evidence_query.sql",
+                "deploy/validation/verify_release_evidence.py",
+                "deploy/validation/verify_systemd_templates.py",
                 "db/migrations/0001_publication_store.sql",
                 "db/migrations/0002_sensitive_record_action.sql",
                 "db/migrations/0003_full_snapshot_refresh.sql",
+                "db/migrations/0004_release_evidence.sql",
                 "db/roles.sql",
                 "docker-compose.yml",
                 "docs/PUBLIC_SERVING_ARCHITECTURE.md",

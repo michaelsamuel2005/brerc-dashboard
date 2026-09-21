@@ -1,9 +1,9 @@
 -- BRERC destination publication store -- migration 0004.
 --
--- Adds one narrow, privacy-safe evidence view for the monitor role. Operators
--- can reconcile a completed loader invocation with the active public release
--- without granting the monitoring login access to loader_control or
--- publication base tables.
+-- Adds narrow, privacy-safe evidence views for the monitor role. Operators can
+-- bind evidence to the intended deployment and reconcile a completed loader
+-- invocation with the active public release without granting the monitoring
+-- login access to loader_control or publication base tables.
 
 BEGIN;
 
@@ -49,6 +49,7 @@ SELECT
     job.result_release_id AS release_id,
     source.active_release_id,
     public_release.dataset_version,
+    manifest.source_snapshot_at AS source_data_as_of,
     manifest.candidate_sha256,
     job.base_release_id,
     job.reused_active_release,
@@ -56,23 +57,35 @@ SELECT
     manifest.public_record_count AS public_records,
     manifest.cell_count AS distribution_cells,
     job.load_mode,
-    job.status
+    job.status,
+    job.started_at,
+    job.finished_at
 FROM loader_control.etl_job AS job
 JOIN loader_control.source_state AS source
   ON source.source_id = job.source_id
  AND source.active_release_id = job.result_release_id
-JOIN loader_control.release AS release
-  ON release.release_id = source.active_release_id
- AND release.source_id = source.source_id
- AND release.status = 'active'
+JOIN loader_control.release AS active_release
+  ON active_release.release_id = source.active_release_id
+ AND active_release.source_id = source.source_id
+ AND active_release.status = 'active'
+JOIN loader_control.release AS attempted_release
+  ON attempted_release.job_id = job.job_id
+ AND attempted_release.source_id = job.source_id
 JOIN loader_control.release_manifest AS manifest
-  ON manifest.release_id = release.release_id
+  ON manifest.release_id = attempted_release.release_id
 JOIN publication.public_release AS public_release
-  ON public_release.release_id = release.release_id
+  ON public_release.release_id = active_release.release_id
 WHERE job.status = 'succeeded';
 
+CREATE VIEW serve.etl_monitor_identity WITH (security_barrier = true) AS
+SELECT environment_id, database_name
+FROM loader_control.deployment_identity
+WHERE singleton;
+
 REVOKE ALL ON serve.etl_release_evidence FROM PUBLIC;
+REVOKE ALL ON serve.etl_monitor_identity FROM PUBLIC;
 GRANT SELECT ON serve.etl_release_evidence TO brerc_monitor;
+GRANT SELECT ON serve.etl_monitor_identity TO brerc_monitor;
 
 INSERT INTO loader_control.schema_migration (
     migration_version,

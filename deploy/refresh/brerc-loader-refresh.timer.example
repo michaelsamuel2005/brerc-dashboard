@@ -1,13 +1,16 @@
 # EXAMPLE ONLY. This file is deliberately not an installable systemd unit.
 # 02:30 UTC is illustrative, not approved. An operator must approve the exact
-# cadence, maintenance window and Persistent=true catch-up behaviour first.
+# cadence, maintenance window and catch-up behaviour first. This safe example
+# does not catch up missed runs; changing it requires explicit operator approval.
 
 [Unit]
 Description=Example schedule for the BRERC full-snapshot publication refresh
+BindsTo=brerc-loader-refresh-approval-guard.service
+After=brerc-loader-refresh-approval-guard.service
 
 [Timer]
 OnCalendar=*-*-* 02:30:00 UTC
-Persistent=true
+Persistent=false
 AccuracySec=1min
 RandomizedDelaySec=0
 Unit=brerc-loader-refresh.service

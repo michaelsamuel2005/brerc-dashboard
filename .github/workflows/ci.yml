@@ -129,7 +129,9 @@ jobs:
 
   connector-package:
     name: Connector Ruff and wheel smoke
-    runs-on: ubuntu-latest
+    # The deployment contract is reviewed against Ubuntu 24.04/systemd 255.
+    # Pin this job so a runner-image migration cannot silently change that proof.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -150,11 +152,19 @@ jobs:
           python -m ruff check \
             brerc_source connector_tests brerc_loader loader_tests \
             etl/streaming.py tests/test_streaming.py \
-            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py
+            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py \
+            ../deploy/initial/consume_initial_approval.py \
+            ../deploy/validation/verify_failed_attempt_evidence.py \
+            ../deploy/validation/verify_release_evidence.py \
+            ../deploy/validation/verify_systemd_templates.py
           python -m ruff format --check \
             brerc_source connector_tests brerc_loader loader_tests \
             etl/streaming.py tests/test_streaming.py \
-            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py
+            scripts/run_loader_scale_acceptance.py scripts/smoke_installed_package.py \
+            ../deploy/initial/consume_initial_approval.py \
+            ../deploy/validation/verify_failed_attempt_evidence.py \
+            ../deploy/validation/verify_release_evidence.py \
+            ../deploy/validation/verify_systemd_templates.py
           # species_info.py is Ting Ting's retained, superseded outbound proxy.
           # The publication API does not call it; preserve its authorship while
           # linting every other app module and recording only its four existing
@@ -166,6 +176,8 @@ jobs:
             --per-file-ignores 'app/species_info.py:S608'
           python -m ruff format --check app app_tests package_tests \
             --exclude app/species_info.py
+      - name: Verify rendered systemd syntax and sandbox directives on Linux
+        run: python ../deploy/validation/verify_systemd_templates.py --repo-root ..
       - name: Test the isolated API package and container boundary
         run: python -m pytest package_tests -q
       - name: Confirm the archived root Compose stack fails closed by default
@@ -311,6 +323,12 @@ jobs:
             postgresql://brerc_api_test:synthetic-api-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
           BRERC_LOADER_TEST_DATABASE_URL: >-
             postgresql://brerc_release_loader_test:synthetic-loader-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          BRERC_MONITOR_TEST_DATABASE_URL: >-
+            postgresql://brerc_monitor_test:synthetic-monitor-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          BRERC_ADMIN_TEST_DATABASE_URL: >-
+            postgresql://postgres:synthetic-admin-password@localhost:5432/brerc_ui_integration?sslmode=verify-full&sslrootcert=${{ runner.temp }}/brerc-postgis16-destination/ca.crt
+          BRERC_POSTGIS_TEST_CONTAINER: ${{ job.services.postgis.id }}
+          BRERC_MONITOR_TEST_PASSWORD: synthetic-monitor-password
         run: |
           python - <<'PY'
           import os

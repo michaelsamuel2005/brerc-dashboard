@@ -241,9 +241,22 @@ class DestinationMigrationContract(unittest.TestCase):
         self.assertIn("job.result_release_id AS release_id", sql)
         self.assertIn("source.active_release_id = job.result_release_id", sql)
         self.assertIn("job.reused_active_release", sql)
+        self.assertIn("manifest.source_snapshot_at AS source_data_as_of", sql)
+        self.assertIn("job.started_at", sql)
+        self.assertIn("job.finished_at", sql)
+        self.assertIn("attempted_release.job_id = job.job_id", sql)
+        self.assertIn("manifest.release_id = attempted_release.release_id", sql)
+        self.assertNotIn("source.last_source_snapshot_at AS source_data_as_of", sql)
         self.assertIn("manifest.candidate_sha256", sql)
         self.assertIn("REVOKE ALL ON serve.etl_release_evidence FROM PUBLIC", sql)
         self.assertIn("GRANT SELECT ON serve.etl_release_evidence TO brerc_monitor", sql)
+        self.assertIn(
+            "CREATE VIEW serve.etl_monitor_identity WITH (security_barrier = true)",
+            sql,
+        )
+        self.assertIn("FROM loader_control.deployment_identity", sql)
+        self.assertIn("REVOKE ALL ON serve.etl_monitor_identity FROM PUBLIC", sql)
+        self.assertIn("GRANT SELECT ON serve.etl_monitor_identity TO brerc_monitor", sql)
         self.assertNotIn("GRANT SELECT ON loader_control", sql)
 
     def test_refresh_migration_exposes_no_change_reuse_to_the_monitor_role(self):

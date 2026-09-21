@@ -1371,8 +1371,20 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         with self._connection("monitor") as connection:
             connection.execute("SELECT count(*) FROM serve.etl_job_status")
             connection.execute("SELECT count(*) FROM serve.etl_release_evidence")
+            identity = connection.execute(
+                "SELECT environment_id, database_name FROM serve.etl_monitor_identity"
+            ).fetchone()
+            self.assertEqual(
+                identity,
+                {
+                    "environment_id": UUID(os.environ["BRERC_TARGET_ENVIRONMENT_ID"]),
+                    "database_name": os.environ["BRERC_DESTINATION_DATABASE"],
+                },
+            )
             with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
                 connection.execute("SELECT count(*) FROM serve.public_release")
+            with self.assertRaises(self.psycopg.errors.InsufficientPrivilege):
+                connection.execute("SELECT count(*) FROM loader_control.deployment_identity")
 
     def test_real_source_connector_streams_into_one_atomic_public_release(self) -> None:
         """Exercise the concrete source, transform, destination and activation seam."""
@@ -1398,7 +1410,8 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         release_id = UUID(report.release_id)
         with self._connection("api") as connection:
             releases = connection.execute(
-                "SELECT release_id, individual_records_available, sensitive_record_action "
+                "SELECT release_id, dataset_version, source_data_as_of, "
+                "individual_records_available, sensitive_record_action "
                 "FROM serve.public_release"
             ).fetchall()
             species = connection.execute(
@@ -1412,15 +1425,49 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             public_record_count = connection.execute(
                 "SELECT count(*) AS n FROM serve.public_record"
             ).fetchone()["n"]
+        with self._connection("monitor") as connection:
+            release_evidence = connection.execute(
+                """
+                SELECT run_id, release_id, active_release_id, dataset_version,
+                       source_data_as_of, candidate_sha256, base_release_id,
+                       reused_active_release, source_rows, public_records,
+                       distribution_cells, load_mode, status
+                FROM serve.etl_release_evidence
+                WHERE run_id = %s
+                """,
+                (UUID(report.run_id),),
+            ).fetchone()
+        self.assertIsNotNone(release_evidence)
+        assert release_evidence is not None
         self.assertEqual(
             releases,
             [
                 {
                     "release_id": release_id,
+                    "dataset_version": release_evidence["dataset_version"],
+                    "source_data_as_of": release_evidence["source_data_as_of"],
                     "individual_records_available": False,
                     "sensitive_record_action": "withhold",
                 }
             ],
+        )
+        self.assertEqual(
+            release_evidence,
+            {
+                "run_id": UUID(report.run_id),
+                "release_id": release_id,
+                "active_release_id": release_id,
+                "dataset_version": releases[0]["dataset_version"],
+                "source_data_as_of": releases[0]["source_data_as_of"],
+                "candidate_sha256": report.candidate_sha256,
+                "base_release_id": None,
+                "reused_active_release": False,
+                "source_rows": report.source_rows,
+                "public_records": report.public_records,
+                "distribution_cells": report.distribution_cells,
+                "load_mode": "initial",
+                "status": "succeeded",
+            },
         )
         self.assertEqual(
             species,
@@ -1661,7 +1708,9 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         self.assertEqual(refreshed.distribution_cells, 1)
 
         with self._connection("api") as connection:
-            releases = connection.execute("SELECT release_id FROM serve.public_release").fetchall()
+            releases = connection.execute(
+                "SELECT release_id, dataset_version, source_data_as_of FROM serve.public_release"
+            ).fetchall()
             species = connection.execute(
                 "SELECT species_id, total_records, first_year, last_year FROM serve.public_species"
             ).fetchall()
@@ -1669,7 +1718,48 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                 "SELECT species_id, cell_id, record_year, precision_metres, record_count "
                 "FROM serve.public_distribution_cell"
             ).fetchall()
-        self.assertEqual(releases, [{"release_id": refreshed_release}])
+        with self._connection("monitor") as connection:
+            refresh_evidence = connection.execute(
+                """
+                SELECT run_id, release_id, active_release_id, dataset_version,
+                       source_data_as_of, candidate_sha256, base_release_id,
+                       reused_active_release, source_rows, public_records,
+                       distribution_cells, load_mode, status
+                FROM serve.etl_release_evidence
+                WHERE run_id = %s
+                """,
+                (UUID(refreshed.run_id),),
+            ).fetchone()
+        self.assertIsNotNone(refresh_evidence)
+        assert refresh_evidence is not None
+        self.assertEqual(
+            releases,
+            [
+                {
+                    "release_id": refreshed_release,
+                    "dataset_version": refresh_evidence["dataset_version"],
+                    "source_data_as_of": refresh_evidence["source_data_as_of"],
+                }
+            ],
+        )
+        self.assertEqual(
+            refresh_evidence,
+            {
+                "run_id": UUID(refreshed.run_id),
+                "release_id": refreshed_release,
+                "active_release_id": refreshed_release,
+                "dataset_version": releases[0]["dataset_version"],
+                "source_data_as_of": releases[0]["source_data_as_of"],
+                "candidate_sha256": refreshed.candidate_sha256,
+                "base_release_id": initial_release,
+                "reused_active_release": False,
+                "source_rows": refreshed.source_rows,
+                "public_records": refreshed.public_records,
+                "distribution_cells": refreshed.distribution_cells,
+                "load_mode": "refresh",
+                "status": "succeeded",
+            },
+        )
         self.assertEqual(
             species,
             [
@@ -2510,6 +2600,18 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
             visible = connection.execute(
                 "SELECT release_id, source_data_as_of FROM serve.public_release"
             ).fetchall()
+        with self._connection("monitor") as connection:
+            duplicate_evidence = connection.execute(
+                """
+                SELECT run_id, release_id, active_release_id, source_data_as_of,
+                       candidate_sha256, base_release_id, reused_active_release,
+                       source_rows, public_records, distribution_cells,
+                       load_mode, status
+                FROM serve.etl_release_evidence
+                WHERE run_id = %s
+                """,
+                (duplicate.job_id,),
+            ).fetchone()
         self.assertEqual(
             visible,
             [
@@ -2518,6 +2620,23 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
                     "source_data_as_of": datetime.fromisoformat("2026-08-14T13:00:00.000000+00:00"),
                 }
             ],
+        )
+        self.assertEqual(
+            duplicate_evidence,
+            {
+                "run_id": duplicate.job_id,
+                "release_id": base_release,
+                "active_release_id": base_release,
+                "source_data_as_of": datetime.fromisoformat("2026-08-14T13:00:00.000000+00:00"),
+                "candidate_sha256": summary.candidate_sha256,
+                "base_release_id": base_release,
+                "reused_active_release": True,
+                "source_rows": summary.source_rows,
+                "public_records": summary.published_records,
+                "distribution_cells": summary.distribution_cells,
+                "load_mode": "refresh",
+                "status": "succeeded",
+            },
         )
 
         with self._connection("loader") as connection:
@@ -2593,6 +2712,50 @@ class TestPostGIS16DestinationIntegration(unittest.TestCase):
         self.assertEqual(
             latest_source_snapshot,
             datetime.fromisoformat("2026-08-14T14:00:00.000000+00:00"),
+        )
+        with self._connection("monitor") as connection:
+            second_evidence = connection.execute(
+                """
+                SELECT run_id, release_id, active_release_id, source_data_as_of,
+                       candidate_sha256, base_release_id, reused_active_release,
+                       source_rows, public_records, distribution_cells,
+                       load_mode, status
+                FROM serve.etl_release_evidence
+                WHERE run_id = %s
+                """,
+                (second_duplicate.job_id,),
+            ).fetchone()
+            retained_snapshot_evidence = connection.execute(
+                """
+                SELECT run_id, source_data_as_of
+                FROM serve.etl_release_evidence
+                WHERE run_id IN (%s, %s)
+                """,
+                (duplicate.job_id, second_duplicate.job_id),
+            ).fetchall()
+        self.assertEqual(
+            second_evidence,
+            {
+                "run_id": second_duplicate.job_id,
+                "release_id": base_release,
+                "active_release_id": base_release,
+                "source_data_as_of": datetime.fromisoformat("2026-08-14T14:00:00.000000+00:00"),
+                "candidate_sha256": second_summary.candidate_sha256,
+                "base_release_id": base_release,
+                "reused_active_release": True,
+                "source_rows": second_summary.source_rows,
+                "public_records": second_summary.published_records,
+                "distribution_cells": second_summary.distribution_cells,
+                "load_mode": "refresh",
+                "status": "succeeded",
+            },
+        )
+        self.assertEqual(
+            {row["run_id"]: row["source_data_as_of"] for row in retained_snapshot_evidence},
+            {
+                duplicate.job_id: datetime.fromisoformat("2026-08-14T13:00:00.000000+00:00"),
+                second_duplicate.job_id: datetime.fromisoformat("2026-08-14T14:00:00.000000+00:00"),
+            },
         )
 
     def test_changed_refresh_stays_invisible_until_one_atomic_switch(self) -> None:

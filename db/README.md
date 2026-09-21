@@ -54,11 +54,21 @@ also refused. Destinations created from an unreleased rehearsal version of migra
 still contains `notification_outbox_success_release_idx` must be destroyed and reprovisioned from
 the reviewed migration sequence; migration `0003` detects that obsolete contract and refuses it.
 
-Migration `0004` is transactional and must follow exactly `0003`. It adds only the
-`serve.etl_release_evidence` security-barrier view and its explicit `brerc_monitor` grant. The view
-contains opaque release/job identifiers, structural counts and digests; it exposes no records,
-coordinates, credentials, database errors or connection details. Reapplication and out-of-order
-application are refused.
+Migration `0004` is transactional and must follow exactly `0003`. It adds the
+`serve.etl_release_evidence` and `serve.etl_monitor_identity` security-barrier views with explicit
+`brerc_monitor` grants. The first contains opaque release/job identifiers, database start/finish
+times, structural counts and digests. The second exposes only the destination environment UUID and database name so zero-job
+failure evidence can be bound to the approved target without granting access to the underlying
+deployment table. Neither exposes records, coordinates, credentials, database errors or connection
+details. Reapplication and out-of-order application are refused.
+
+There are no down migrations. Migration `0004` is forward-only and changes the loader's required
+schema attestation from exactly versions 1–3 to exactly versions 1–4. Apply migration `0004` and
+deploy its compatible loader artifact in one controlled maintenance change. After it is applied,
+an older three-migration loader must not be started. Application rollback means deploying another
+reviewed artifact that supports the four-version contract; database rollback requires a tested
+whole-database restore under the DBA incident procedure, never ad-hoc `DROP VIEW` or edits to
+`loader_control.schema_migration`.
 
 The migration expects PostgreSQL 16 and PostGIS 3.5 installed in `public`; the concrete loader
 preflight verifies both version families before it acquires the source lock. A real PostgreSQL/PostGIS

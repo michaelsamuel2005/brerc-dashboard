@@ -1,15 +1,21 @@
 \set ON_ERROR_STOP on
 
--- Execute through the protected brerc_monitor service, one loader run UUID and
--- independently approved destination/session identity values:
---   psql ... --tuples-only --no-align --set=run_id='UUID' \
---     --set=expected_environment_id='UUID' --set=expected_database='NAME' \
---     --set=expected_role='LOGIN' \
---     --file=release_evidence_query.sql > database.json
--- The result contains identifiers, counts and digests, never source row values,
--- coordinates, credentials, connection details or exception text.
+-- Bounded, privacy-safe evidence for a loader invocation that emitted no
+-- successful terminal result document. Execute only through the approved
+-- brerc_monitor service. The first statement fails closed unless the supplied
+-- target, login, read-only state and sole inherited capability role match.
+-- Operators must require zero or one returned job in the approved database
+-- window; more than one is ambiguous and blocks any retry. The psql guard emits
+-- one row (\gset) and ON_ERROR_STOP makes a wrong target/session, bad mode,
+-- reversed/empty window or interval over four hours exit nonzero instead of
+-- resembling a zero-job run.
 SELECT 1 / CASE
-    WHEN current_database()::text = :'expected_database'::text
+    WHEN :'load_mode'::text IN ('initial', 'refresh')
+     AND :'window_end'::timestamp with time zone
+         > :'window_start'::timestamp with time zone
+     AND :'window_end'::timestamp with time zone
+         - :'window_start'::timestamp with time zone <= interval '4 hours'
+     AND current_database()::text = :'expected_database'::text
      AND current_user::text = :'expected_role'::text
      AND session_user::text = :'expected_role'::text
      AND current_setting('transaction_read_only') = 'on'
@@ -56,6 +62,38 @@ SELECT 1 / CASE
     ELSE 0
 END AS evidence_parameters_valid \gset
 
+WITH matching_job AS (
+    SELECT job.*, release.release_id, release.status AS release_status,
+           release.cleanup_pending
+    FROM serve.etl_job_status AS job
+    LEFT JOIN serve.etl_release_status AS release USING (job_id)
+    WHERE job.source_id = 'dashboard.main_data_dash'
+      AND job.load_mode = :'load_mode'::text
+      AND job.created_at >= :'window_start'::timestamp with time zone
+      AND job.created_at <= :'window_end'::timestamp with time zone
+), aggregated AS (
+    SELECT
+        pg_catalog.count(*) AS job_count,
+        COALESCE(
+            pg_catalog.jsonb_agg(
+                pg_catalog.jsonb_build_object(
+                    'runId', job.job_id::text,
+                    'status', job.status,
+                    'failureCode', job.failure_code,
+                    'startedAt', job.started_at,
+                    'finishedAt', job.finished_at,
+                    'sourceRows', job.source_rows_seen,
+                    'candidateRows', job.candidate_rows,
+                    'rowsWithheld', job.rows_withheld,
+                    'releaseId', job.release_id::text,
+                    'releaseStatus', job.release_status,
+                    'cleanupPending', job.cleanup_pending
+                ) ORDER BY job.created_at, job.job_id
+            ),
+            '[]'::jsonb
+        ) AS jobs
+    FROM matching_job AS job
+)
 SELECT pg_catalog.jsonb_build_object(
     'environmentId', identity.environment_id::text,
     'databaseName', current_database()::text,
@@ -83,23 +121,12 @@ SELECT pg_catalog.jsonb_build_object(
         WHERE member.rolname = current_user
         ORDER BY parent.rolname
     ),
-    'runId', evidence.run_id::text,
-    'releaseId', evidence.release_id::text,
-    'activeReleaseId', evidence.active_release_id::text,
-    'datasetVersion', evidence.dataset_version,
-    'sourceDataAsOf', evidence.source_data_as_of,
-    'candidateSha256', evidence.candidate_sha256,
-    'baseReleaseId', evidence.base_release_id::text,
-    'reusedActiveRelease', evidence.reused_active_release,
-    'sourceRows', evidence.source_rows,
-    'publicRecords', evidence.public_records,
-    'distributionCells', evidence.distribution_cells,
-    'loadMode', evidence.load_mode,
-    'status', evidence.status,
-    'startedAt', evidence.started_at,
-    'finishedAt', evidence.finished_at
+    'windowStart', :'window_start'::timestamp with time zone,
+    'windowEnd', :'window_end'::timestamp with time zone,
+    'loadMode', :'load_mode'::text,
+    'jobCount', aggregated.job_count,
+    'jobs', aggregated.jobs
 )::text
-FROM serve.etl_release_evidence AS evidence
-JOIN serve.etl_monitor_identity AS identity ON true
-JOIN pg_catalog.pg_roles AS role ON role.rolname = current_user
-WHERE evidence.run_id = :'run_id'::uuid;
+FROM serve.etl_monitor_identity AS identity
+CROSS JOIN aggregated
+JOIN pg_catalog.pg_roles AS role ON role.rolname = current_user;
