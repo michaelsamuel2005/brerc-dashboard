@@ -35,6 +35,8 @@ NEGATED_ACCEPTANCE = [
     ("unaccepted", "rejected"),
     ("never accepted", "rejected"),
     ("has not been accepted", "rejected"),
+    ("has-not-been-accepted", "rejected"),
+    ("has–not–been–accepted", "rejected"),  # en dashes
     ("non-accepted", "rejected"),
     ("disaccepted", "rejected"),
     ("verified - not accepted", "rejected"),
@@ -50,7 +52,10 @@ NEGATED_ACCEPTANCE = [
     ("has never been correct", "rejected"),
     ("hasn't been accepted", "rejected"),
     ("wasn’t valid", "rejected"),  # curly apostrophe
-    ("not correct determination", "rejected"),  # binds to "correct", not "determination"
+    (
+        "not correct determination",
+        "rejected",
+    ),  # binds to "correct", not "determination"
     ("Accepted but not correct", "rejected"),
     # Negations other than "not"/"never": these used to read as accepted too.
     ("cannot be accepted", "rejected"),  # one word - \bnot\b never sees it
@@ -90,6 +95,8 @@ UNCONFIRMED = [
     ("unconfirmed record", "unconfirmed"),
     ("Not verified", "unconfirmed"),
     ("not verified", "unconfirmed"),
+    ("not-yet-verified", "unconfirmed"),
+    ("not—yet—verified", "unconfirmed"),  # em dashes
     ("unverified", "unconfirmed"),
     ("Un-verified", "unconfirmed"),
     ("never verified", "unconfirmed"),
@@ -120,6 +127,7 @@ UNCONFIRMED = [
     ("has not been determined", "unconfirmed"),
     ("not yet determined", "unconfirmed"),
     ("not yet accepted", "unconfirmed"),
+    ("Not-Yet-Accepted", "unconfirmed"),
     ("hasn't yet been verified", "unconfirmed"),
     ("Indeterminate", "unconfirmed"),
     ("disconfirmed", "unconfirmed"),
@@ -179,10 +187,17 @@ ALL = NEGATED_ACCEPTANCE + REJECTED + UNCONFIRMED + ACCEPTED + UNKNOWN
 #: If the implementation ever lets one of these through as "accepted", this
 #: net catches it whatever the per-list expectation says.
 _STEM = r"(?:accept|correct|valid|verif|confirm|check|determin)"
+_SEP = r"[\s\-–—]"
 _NEGATED = re.compile(
-    r"(?:\b(?:not|never|no|none|cannot|without)\b|n['’]t)[\s\-–—]*(?:\w+\s+){0,2}"
+    r"(?:\b(?:not|never|no|none|cannot|without)\b|n['’]t)"
+    + _SEP
+    + r"*(?:\w+"
+    + _SEP
+    + r"+){0,2}"
     + _STEM
-    + r"|\b(?:un|non|dis|in)[\s\-–—]*"
+    + r"|\b(?:un|non|dis|in)"
+    + _SEP
+    + r"*"
     + _STEM,
     re.IGNORECASE,
 )
@@ -217,7 +232,7 @@ class TestVerifiedCorpus(unittest.TestCase):
     def test_the_corpus_size_is_pinned(self):
         # The client twin (web/src/lib/api/verified.test.ts, arriving with the
         # web port) must declare the same length. Update both together.
-        self.assertEqual(len(ALL), 121)
+        self.assertEqual(len(ALL), 126)
 
     def test_nothing_carrying_a_negation_is_ever_accepted(self):
         # The single property that matters: a public map claims a verified record
@@ -225,6 +240,14 @@ class TestVerifiedCorpus(unittest.TestCase):
         # breaks that claim, so it is asserted as a property, not case by case.
         negated = [raw for raw, _ in ALL if _NEGATED.search(raw)]
         self.assertGreater(len(negated), 40, "the net is not catching the corpus")
+        for raw in (
+            "has-not-been-accepted",
+            "has–not–been–accepted",
+            "not-yet-verified",
+            "not—yet—verified",
+            "Not-Yet-Accepted",
+        ):
+            self.assertIn(raw, negated, "the net must recognise dash-joined negations")
         for raw in negated:
             with self.subTest(raw=raw):
                 self.assertNotEqual(normalise_verified(raw), "accepted")
@@ -233,7 +256,8 @@ class TestVerifiedCorpus(unittest.TestCase):
         for value in (None, 42, 3.5, True, [], {}):
             with self.subTest(value=value):
                 self.assertIn(
-                    normalise_verified(value), {"accepted", "unconfirmed", "rejected", "unknown"}
+                    normalise_verified(value),
+                    {"accepted", "unconfirmed", "rejected", "unknown"},
                 )
 
 
@@ -264,13 +288,16 @@ class TestThePolicyVocabularyIsAuthoritativeForAcceptance(unittest.TestCase):
             normalise_verified("Rejected", accepted_values=self.VOCABULARY), "rejected"
         )
         self.assertEqual(
-            normalise_verified("Unconfirmed", accepted_values=self.VOCABULARY), "unconfirmed"
+            normalise_verified("Unconfirmed", accepted_values=self.VOCABULARY),
+            "unconfirmed",
         )
 
     def test_a_heuristic_acceptance_outside_the_vocabulary_becomes_unknown(self):
         # "Verified" reads as accepted to the heuristic, but BRERC did not list
         # it, so it must not inflate the verified count.
-        self.assertEqual(normalise_verified("Verified", accepted_values=self.VOCABULARY), "unknown")
+        self.assertEqual(
+            normalise_verified("Verified", accepted_values=self.VOCABULARY), "unknown"
+        )
 
 
 if __name__ == "__main__":

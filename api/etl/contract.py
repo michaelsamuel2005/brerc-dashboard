@@ -162,7 +162,9 @@ _NEGATED = (
     + _SEP
     + r"*(?:(?!"
     + _DETERMINATION_STEM
-    + r")\w+\s+){0,2}"
+    + r")\w+"
+    + _SEP
+    + r"+){0,2}"
     + r"|\b(?:un|non|dis)"
     + _SEP
     + r"*)"
@@ -181,7 +183,7 @@ _UNCONFIRMED = re.compile(
     r"\b(?:indetermin\w*|provisional|uncertain|pending|await\w*|"
     r"needs?" + _SEP + r"+(?:verification|confirmation|checking|approval)|"
     r"to" + _SEP + r"+be" + _SEP + r"+(?:verified|confirmed|checked))\b"
-    r"|" + _NOT + r"\s+yet\b"
+    r"|" + _NOT + _SEP + r"+yet\b"
     r"|" + _NEGATED + _PROCESS + r"\b",
     re.IGNORECASE,
 )
