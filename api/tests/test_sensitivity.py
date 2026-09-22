@@ -12,9 +12,9 @@ about from the call site.
 import hashlib
 import unittest
 
-from etl.gridref import PUBLIC_RESOLUTIONS_METRES, precision_metres
-from etl.policy import DEVELOPMENT_POLICY, UNAPPROVED_POLICY, PublicationPolicy
-from etl.sensitivity import (
+from api.etl.z.gridref import PUBLIC_RESOLUTIONS_METRES, precision_metres
+from api.etl.z.policy import DEVELOPMENT_POLICY, UNAPPROVED_POLICY, PublicationPolicy
+from api.etl.z.sensitivity import (
     SENSITIVE_SNAPSHOT_SHA256,
     SENSITIVE_SNAPSHOT_VERSION,
     SENSITIVE_SPECIES_IDS,

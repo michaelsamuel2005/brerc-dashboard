@@ -17,12 +17,12 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from etl.source_contract import (  # noqa: E402
+from api.etl.z.source_contract import (  # noqa: E402
     BRERC_MAIN_DATA_DASH,
     SourceColumn,
     SourceMetadata,
 )
-from etl.view_identity import ViewCaptureEvidence, ViewIdentityError  # noqa: E402
+from api.etl.z.view_identity import ViewCaptureEvidence, ViewIdentityError  # noqa: E402
 
 MAX_CAPTURE_BYTES = 10 * 1024 * 1024
 

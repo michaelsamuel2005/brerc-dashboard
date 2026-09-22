@@ -18,8 +18,8 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from etl.pipeline import ColumnMap, build_candidate_payloads, run_pipeline  # noqa: E402
-from etl.policy import DEVELOPMENT_POLICY  # noqa: E402
+from api.etl.z.pipeline import ColumnMap, build_candidate_payloads, run_pipeline  # noqa: E402
+from api.etl.z.policy import DEVELOPMENT_POLICY  # noqa: E402
 
 COLUMNS = ColumnMap(
     record_id="record_id",

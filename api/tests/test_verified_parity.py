@@ -16,7 +16,7 @@ A substring search reverses the first case: "Not accepted" contains "accept".
 import re
 import unittest
 
-from etl.contract import normalise_verified
+from api.etl.z.contract import normalise_verified
 
 #: Negating ACCEPTANCE is a rejection. This is the case a substring search inverts.
 NEGATED_ACCEPTANCE = [

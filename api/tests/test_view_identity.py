@@ -4,7 +4,7 @@ import copy
 import unittest
 from datetime import date, timedelta
 
-from etl.view_identity import (
+from api.etl.z.view_identity import (
     EXPECTED_CAPTURE_SESSION,
     VIEW_APPROVAL_ARTIFACT_FORMAT,
     VIEW_CAPTURE_ARTIFACT_FORMAT,

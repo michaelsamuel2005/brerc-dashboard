@@ -45,7 +45,7 @@ import dataclasses
 import inspect
 import unittest
 
-from etl.source_contract import BRERC_MAIN_DATA_DASH, SourceContractError, SourceMetadata
+from api.etl.z.source_contract import BRERC_MAIN_DATA_DASH, SourceContractError, SourceMetadata
 from tests.test_source_contract import metadata_from_contract
 
 #: The exact shapes that the superseded implementation accepted and published at

@@ -3,7 +3,7 @@
 import unittest
 from decimal import Decimal
 
-from etl.identifiers import (
+from api.etl.z.identifiers import (
     DuplicateSourceIdentifier,
     InvalidSourceIdentifier,
     assert_unique_source_ids,

@@ -11,8 +11,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-from etl.source_contract import BRERC_MAIN_DATA_DASH, SourceContractError
-from etl.view_identity import (
+from api.etl.z.source_contract import BRERC_MAIN_DATA_DASH, SourceContractError
+from api.etl.z.view_identity import (
     EXPECTED_CAPTURE_SESSION,
     ViewDefinitionApproval,
     ViewIdentityError,

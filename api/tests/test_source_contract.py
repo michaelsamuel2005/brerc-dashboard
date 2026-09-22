@@ -6,18 +6,18 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from etl.identifiers import DuplicateSourceIdentifier
-from etl.pipeline import (
+from api.etl.z.identifiers import DuplicateSourceIdentifier
+from api.etl.z.pipeline import (
     ColumnMap,
     build_candidate_payloads,
     build_payloads,
     run_pipeline,
     run_pipeline_for_source as _run_pipeline_for_source,
 )
-from etl.policy import DEVELOPMENT_POLICY, InvalidPolicy, PolicyNotApproved, PublicationPolicy
-from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
-from etl.species import SpeciesDictionary, SpeciesRecord
-from etl.source_contract import (
+from api.etl.z.policy import DEVELOPMENT_POLICY, InvalidPolicy, PolicyNotApproved, PublicationPolicy
+from api.etl.z.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
+from api.etl.z.species import SpeciesDictionary, SpeciesRecord
+from api.etl.z.source_contract import (
     BRERC_MAIN_DATA_DASH,
     BRERC_MAIN_DATA_DASH_COLUMNS,
     PENDING_DATE_MDB_MODIFIED,
@@ -31,7 +31,7 @@ from etl.source_contract import (
     SourceMetadata,
     parse_load_mode,
 )
-from etl.view_identity import (
+from api.etl.z.view_identity import (
     VIEW_CAPTURE_EVIDENCE_PROFILE,
     VIEW_DEFINITION_DIGEST_PROFILE,
     VIEW_IDENTITY_PROFILE,

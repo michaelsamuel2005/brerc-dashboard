@@ -18,8 +18,8 @@ API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
-from etl.source_contract import BRERC_MAIN_DATA_DASH  # noqa: E402
-from etl.view_identity import ViewDefinitionApproval, ViewIdentityError  # noqa: E402
+from api.etl.z.source_contract import BRERC_MAIN_DATA_DASH  # noqa: E402
+from api.etl.z.view_identity import ViewDefinitionApproval, ViewIdentityError  # noqa: E402
 from scripts.prepare_view_approval import read_json, validate_capture  # noqa: E402
 
 

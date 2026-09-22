@@ -9,7 +9,7 @@ import json
 import unittest
 from pathlib import Path
 
-from etl.gridref import (
+from api.etl.z.gridref import (
     PUBLIC_RESOLUTIONS_METRES,
     coarsen,
     is_public_resolution,

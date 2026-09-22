@@ -16,9 +16,9 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from etl.contract import FORBIDDEN_FIELDS, assert_no_forbidden_fields
-from etl.gridref import precision_metres
-from etl.pipeline import (
+from api.etl.z.contract import FORBIDDEN_FIELDS, assert_no_forbidden_fields
+from api.etl.z.gridref import precision_metres
+from api.etl.z.pipeline import (
     DEFAULT_PAGE_SIZE,
     CandidatePreview,
     ColumnMap,
@@ -30,16 +30,16 @@ from etl.pipeline import (
     read_csv,
     run_pipeline,
 )
-from etl.policy import (
+from api.etl.z.policy import (
     DEVELOPMENT_POLICY,
     UNAPPROVED_POLICY,
     InvalidPolicy,
     PolicyNotApproved,
     PublicationPolicy,
 )
-from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
-from etl.source_contract import BRERC_MAIN_DATA_DASH
-from etl.species import SpeciesDictionary, SpeciesRecord
+from api.etl.z.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
+from api.etl.z.source_contract import BRERC_MAIN_DATA_DASH
+from api.etl.z.species import SpeciesDictionary, SpeciesRecord
 
 DEV = DEVELOPMENT_POLICY
 DEV_NO_VERIFICATION = dataclasses.replace(
@@ -1396,7 +1396,7 @@ class TestPayloadKeysMatchTheStrictSchemas(unittest.TestCase):
         self.assertIn("totalRecords", payloads["meta"])
 
     def test_an_extra_key_would_be_caught_before_it_reached_a_browser(self):
-        from etl.pipeline import CELL_DISTRIBUTION_KEYS, _assert_exact_keys
+        from api.etl.z.pipeline import CELL_DISTRIBUTION_KEYS, _assert_exact_keys
 
         with self.assertRaises(AssertionError) as ctx:
             _assert_exact_keys(
@@ -1585,7 +1585,7 @@ class TestRealBrercDateFormats(unittest.TestCase):
     """
 
     def test_uk_day_first_dates(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         for raw, expected in (
             ("23/03/2023", 2023),
@@ -1597,7 +1597,7 @@ class TestRealBrercDateFormats(unittest.TestCase):
                 self.assertEqual(_to_year(raw), expected)
 
     def test_vague_date_ranges_take_the_end_year(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         # Matches the semantics of the source's own YearEnd column.
         self.assertEqual(_to_year("04/08/2023 - 17/10/2023"), 2023)
@@ -1605,13 +1605,13 @@ class TestRealBrercDateFormats(unittest.TestCase):
         self.assertEqual(_to_year("01/12/1999 - 05/01/2001"), 2001)
 
     def test_bare_years(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         for raw in ("2017", "2021", "2020"):
             self.assertEqual(_to_year(raw), int(raw))
 
     def test_integer_and_float_year_columns(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         self.assertEqual(_to_year(2023), 2023)  # YearEnd is int64
         self.assertEqual(_to_year(2023.0), 2023)  # after a NaN-bearing read
@@ -1622,20 +1622,20 @@ class TestRealBrercDateFormats(unittest.TestCase):
     def test_datetime_values(self):
         import datetime
 
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         self.assertEqual(_to_year(datetime.date(2011, 6, 14)), 2011)
         self.assertEqual(_to_year(datetime.datetime(2011, 6, 14)), 2011)
 
     def test_implausible_and_unusable_values_are_rejected(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         for raw in ("", "   ", "junk", "0042", "9999", None, True, float("nan")):
             with self.subTest(raw=raw):
                 self.assertIsNone(_to_year(raw))
 
     def test_day_and_month_are_never_mistaken_for_a_year(self):
-        from etl.pipeline import _to_year
+        from api.etl.z.pipeline import _to_year
 
         # 1-2 digit components cannot match the 4-digit year pattern.
         self.assertEqual(_to_year("01/02/1999"), 1999)

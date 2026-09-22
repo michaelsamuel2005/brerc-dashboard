@@ -2,7 +2,7 @@
 
 import unittest
 
-from etl.aggregate import (
+from api.etl.z.aggregate import (
     MAP_CELL_METRES,
     build_cells,
     reconciles,
@@ -10,10 +10,10 @@ from etl.aggregate import (
     records_by_year_by_species,
     year_range,
 )
-from etl.contract import PublicRecord
-from etl.gridref import precision_metres
-from etl.policy import DEVELOPMENT_POLICY
-from etl.sensitivity import generalise
+from api.etl.z.contract import PublicRecord
+from api.etl.z.gridref import precision_metres
+from api.etl.z.policy import DEVELOPMENT_POLICY
+from api.etl.z.sensitivity import generalise
 
 
 def rec(

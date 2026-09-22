@@ -2,8 +2,8 @@
 
 import unittest
 
-from etl.sensitivity import is_sensitive
-from etl.species import SpeciesDictionary, normalise_name
+from api.etl.z.sensitivity import is_sensitive
+from api.etl.z.species import SpeciesDictionary, normalise_name
 
 DICT_ROWS = [
     {

@@ -9,8 +9,8 @@ removed without a test going red.
 import unittest
 from datetime import date, timedelta
 
-from etl.gridref import PUBLIC_RESOLUTIONS_METRES
-from etl.policy import (
+from api.etl.z.gridref import PUBLIC_RESOLUTIONS_METRES
+from api.etl.z.policy import (
     COARSEST_EMITTABLE_METRES,
     DEVELOPMENT_POLICY,
     EMITTABLE_RESOLUTIONS_METRES,
@@ -27,7 +27,7 @@ from etl.policy import (
     PolicyNotApproved,
     PublicationPolicy,
 )
-from etl.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
+from api.etl.z.sensitivity import SENSITIVE_SNAPSHOT_SHA256, SENSITIVE_SNAPSHOT_VERSION
 
 
 def decision_ready_policy(**overrides) -> PublicationPolicy:

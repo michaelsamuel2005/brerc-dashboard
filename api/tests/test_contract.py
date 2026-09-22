@@ -3,7 +3,7 @@
 import dataclasses
 import unittest
 
-from etl.contract import (
+from api.etl.z.contract import (
     FORBIDDEN_FIELDS,
     PublicCell,
     PublicRecord,

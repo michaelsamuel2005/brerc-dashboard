@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .aggregate import (
+from ..aggregate import (
     AggregationReport,
     build_cells,
     cell_for,
@@ -46,15 +46,15 @@ from .aggregate import (
 )
 from .contract import PublicCell, PublicRecord, assert_no_forbidden_fields, normalise_verified
 from .gridref import is_public_resolution, precision_metres
-from .identifiers import assert_unique_source_ids
+from ..identifiers import assert_unique_source_ids
 from .policy import InvalidPolicy, PolicyNotApproved, PublicationPolicy
-from .sensitivity import (
+from ..sensitivity import (
     SENSITIVE_SNAPSHOT_SHA256,
     SENSITIVE_SNAPSHOT_VERSION,
     generalise,
     normalise_species_id,
 )
-from .source_contract import LoadMode, SourceContract, SourceContractError, SourceMetadata
+from ..source_contract import LoadMode, SourceContract, SourceContractError, SourceMetadata
 from .species import SpeciesDictionary
 
 
