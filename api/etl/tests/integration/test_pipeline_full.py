@@ -48,7 +48,7 @@ def test_nightly_job_end_to_end(
 
     mock_force_reload.return_value = None
 
-    # Use IDs that should not collide with the shared B0 sample data.
+    # Use IDs that should not collide with the shared B6 sample data.
     #
     # species_id is stored as TEXT in the database, so keep this as a
     # string rather than an integer.

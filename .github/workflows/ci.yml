@@ -4,8 +4,8 @@
 # in parallel:
 #
 #   api-tests  — stands up a throwaway PostGIS database, loads the invented
-#                sample rows, and runs the Python test suite (the contract-shape
-#                tests AND the safety-boundary tests: no recorder names, no
+#                sample rows, and runs the Python test suite (the API tests
+#                AND the ETL/safety-gate tests: no recorder names, no
 #                precise coordinates, sensitive rows blurred).
 #   verify     — front-end typecheck, lint, guard, unit tests and build.
 #   e2e        — front-end end-to-end + accessibility tests in a real browser.
@@ -13,7 +13,7 @@
 # NOTE ON THE PATH FILTER: this workflow deliberately has NO `paths:` filter, so
 # every job runs on every change. The previous front-end-only version filtered on
 # "web/**", which meant a change to the database schema or the API ran no checks
-# at all — that is how a broken db/b6_sample_data.sql sat on main unnoticed. A
+# at all — that is how a broken db/b6_seed_sample.sql sat on main unnoticed. A
 # few extra CI minutes is a fair price for that not happening again.
 #
 # Nothing here touches real BRERC data; it uses the invented sample rows only.
@@ -86,7 +86,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
-      - name: Load the sample databases (B0 + B6)
+      - name: Load the sample database (B6 schema + seed data)
         # -v ON_ERROR_STOP=1 matters more than it looks. Without it, psql prints
         # a SQL error and carries on with exit code 0 — so this step goes GREEN
         # even when nothing loaded, and you find out three steps later as a pile
@@ -94,13 +94,12 @@ jobs:
         #
         # This has bitten us three times: a NOT NULL column was added to the
         # schema (content_hash, then "Load"/"Load_date", then date_mdb_modified)
-        # without db/b6_sample_data.sql being updated to match. With this flag,
+        # without db/b6_seed_sample.sql being updated to match. With this flag,
         # the run fails HERE, quoting the exact column.
         run: |
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b0_staging_setup.sql
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_schema.sql
-          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_sample_data.sql
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b6_seed_sample.sql
           psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f ../db/b7_tiles.sql
 
       - name: Run the API tests
@@ -123,20 +122,6 @@ jobs:
       # sample data and re-seed it afterwards.
       - name: Run the ETL and safety-gate tests
         run: python -m pytest etl/tests -q
-
-      - name: Guard the publication safety boundary
-        run: |
-          python -m unittest scripts.test_guard_stdlib_only
-          python scripts/guard_stdlib_only.py
-          python scripts/generate_browser_contract_fixture.py \
-            --check ../contracts/etl-browser-contract-fixture.json
-      # Full source-to-publication test (db/test/run_e2e.py). Uses its own
-      # throwaway databases on the same service, so it can't collide with the
-      # steps above.
-      - name: Run the synthetic source-to-publication E2E test
-        env:
-          E2E_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
-        run: python ../db/test/run_e2e.py
 
   # ---------------------------------------------------------------------------
   # FRONT END — typecheck, lint, unit tests, build

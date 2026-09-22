@@ -11,6 +11,13 @@ CONFIG = load_safety_config()
 
 DATE_COLUMN = CONFIG["columns"]["record_date"]
 
+# species_no/scientific_name (not eastings/northings/verified-style config
+# lookups): by the time records reach here, resolve_species_numbers() has
+# already normalised the configured source column names down to these fixed
+# internal names, so they are intentionally not read from CONFIG again here.
+SPECIES_COLUMN = "species_no"
+SCIENTIFIC_NAME_COLUMN = "scientific_name"
+
 
 def build_species_index(
     df: pd.DataFrame,
@@ -20,8 +27,8 @@ def build_species_index(
     calculating total counts, year ranges, and mapping columns to database schema.
     """
     required_columns = {
-        "species_no",
-        "scientific_name",
+        SPECIES_COLUMN,
+        SCIENTIFIC_NAME_COLUMN,
         "common_name",
         "taxanb",
         "unique_no",
@@ -39,7 +46,7 @@ def build_species_index(
 
     # Drops records without a resolved species number
     # species_id is required as the public species identifier
-    df = df.dropna(subset=["species_no"])
+    df = df.dropna(subset=[SPECIES_COLUMN])
 
     # Convert dates into years so we can find the
     # earliest and latest recorded years per species.
@@ -54,8 +61,8 @@ def build_species_index(
     species_index = (
         df.groupby(
             [
-                "species_no",
-                "scientific_name",
+                SPECIES_COLUMN,
+                SCIENTIFIC_NAME_COLUMN,
                 "common_name",
                 "taxanb",
             ],
@@ -72,10 +79,12 @@ def build_species_index(
         )
         .reset_index()
         # Rename columns to match the database schema.
-        # species_no becomes species_id in the public database.
+        # the configured species/scientific-name columns become species_id
+        # and scientific_name in the public database.
         .rename(
             columns={
-                "species_no": "species_id",
+                SPECIES_COLUMN: "species_id",
+                SCIENTIFIC_NAME_COLUMN: "scientific_name",
                 "taxanb": "species_group",
             }
         )

@@ -18,6 +18,8 @@ def classify_chunk(
     df: pd.DataFrame,
     *,
     source_provides_sensitivity: bool | None = None,
+    species_column: str = "species_no",
+    record_type_column: str = "record_type",
 ) -> pd.DataFrame:
     """
     Evaluates records against multi-factor sensitivity rules,
@@ -31,6 +33,10 @@ def classify_chunk(
         Pass False for a source that genuinely has no sensitivity flag — a CSV
         extract, for example. That is a statement about the source, and it
         belongs where the source is configured rather than being assumed here.
+
+    species_column, record_type_column:
+        The BRERC source column names, as configured in config/safety.yaml
+        (columns.species_number, columns.record_type).
     """
     df = df.copy()
 
@@ -38,9 +44,9 @@ def classify_chunk(
 
     # Required columns for classification to run
     required_columns = {
-        "species_no",
+        species_column,
         "species_unresolved",
-        "record_type",
+        record_type_column,
     }
 
     missing = required_columns - set(df.columns)
@@ -56,10 +62,10 @@ def classify_chunk(
     unresolved_mask = df["species_unresolved"]
 
     # Sensitive species: True for records belonging to a sensitive species.
-    sensitive_species_mask = df["species_no"].isin(sensitive_species_nos)
+    sensitive_species_mask = df[species_column].isin(sensitive_species_nos)
 
     # Sensitive Record Type: True for records whose record type is classified as sensitive.
-    flagged_record_type_mask = df["record_type"].isin(FLAGGED_RECORD_TYPES)
+    flagged_record_type_mask = df[record_type_column].isin(FLAGGED_RECORD_TYPES)
 
     # Source sensitivity flag: True for records explicitly marked as sensitive by
     # the source.
@@ -148,5 +154,12 @@ def classify_chunk(
 
     # Increase blur resolution distance for flagged sensitive records
     df.loc[sensitive_mask, "resolution_m"] = DEFAULT_SENSITIVE_RESOLUTION_M
+
+    # public_output.PUBLIC_COLUMNS names this column "record_type" as a fixed
+    # part of the publication allow-list — normalise the configured source
+    # name to that fixed name here, once, so the allow-list itself never has
+    # to know what BRERC calls the column.
+    if record_type_column != "record_type":
+        df = df.rename(columns={record_type_column: "record_type"})
 
     return df

@@ -20,12 +20,22 @@ def normalise_species_name(names: pd.Series) -> pd.Series:
 
 
 def resolve_species_numbers(
-    records_df: pd.DataFrame, dictionary_df: pd.DataFrame
+    records_df: pd.DataFrame,
+    dictionary_df: pd.DataFrame,
+    *,
+    species_column: str = "species_no",
+    nbn_column: str = "nbn_number",
+    scientific_name_column: str = "scientific_name",
 ) -> pd.DataFrame:
     """
     Matches occurrence records against the species dictionary using normalised names,
-    checks for dictionary collisions, validates species number formats, and 
+    checks for dictionary collisions, validates species number formats, and
     computes resolution match coverage.
+
+    species_column, nbn_column and scientific_name_column name the BRERC source
+    columns as configured in config/safety.yaml (columns.species_number,
+    columns.nbn_number, columns.scientific_name) — both records_df and
+    dictionary_df are assumed to use the same names for these.
     """
     records_df = records_df.copy()
     dictionary_df = dictionary_df.copy()
@@ -48,7 +58,7 @@ def resolve_species_numbers(
 
     # Create normalised matching key for records
     records_df["scientific_name_key"] = normalise_species_name(
-        records_df["scientific_name"]
+        records_df[scientific_name_column]
     )
 
     # Create normalised matching key for dictionary
@@ -63,7 +73,7 @@ def resolve_species_numbers(
     if len(ambiguous_keys) > 0:
         ambiguous_rows = dictionary_df[
             dictionary_df["scientific_key"].isin(ambiguous_keys.index)
-        ][["scientific", "scientific_key", "species_no", "nbn_number"]]
+        ][["scientific", "scientific_key", species_column, nbn_column]]
 
         print(
             f"WARNING: {len(ambiguous_keys)} scientific_key collisions "
@@ -84,8 +94,8 @@ def resolve_species_numbers(
         [
             "scientific",
             "scientific_key",
-            "species_no",
-            "nbn_number",
+            species_column,
+            nbn_column,
             "common_nam",
             "taxanb",
         ]
@@ -103,7 +113,7 @@ def resolve_species_numbers(
     )
 
     # Initial fail-closed flag: mark records with missing species numbers as unresolved
-    records_df["species_unresolved"] = records_df["species_no"].isna()
+    records_df["species_unresolved"] = records_df[species_column].isna()
 
     # ...and mark records whose species is not in the dictionary AT ALL.
     #
@@ -126,7 +136,7 @@ def resolve_species_numbers(
 
     # Clean up trailing decimals from species numbers if they were read as floats
     species_no_string = (
-        records_df["species_no"]
+        records_df[species_column]
         .astype("string")
         .str.replace(
             r"\.0$",
@@ -140,7 +150,7 @@ def resolve_species_numbers(
     valid_species_no = species_no_string.str.match(r"^(BRERC)?\d+$")
 
     # Flag anything that isn't a valid format as unresolved (fail-closed path)
-    non_numeric_species_no = records_df["species_no"].notna() & ~valid_species_no
+    non_numeric_species_no = records_df[species_column].notna() & ~valid_species_no
 
     records_df["species_unresolved"] = (
         records_df["species_unresolved"] | non_numeric_species_no
@@ -156,5 +166,22 @@ def resolve_species_numbers(
         f"({total - unresolved}/{total} resolved, "
         f"{unresolved} unresolved -> blurred fail-closed)"
     )
+
+    # Everything downstream (classification, aggregation, the public-output
+    # boundary) works with fixed internal names regardless of what BRERC
+    # calls these columns — only this function needs to know the configured
+    # source names, so normalise to the canonical names here, once.
+    canonical_names = {
+        species_column: "species_no",
+        nbn_column: "nbn_number",
+        scientific_name_column: "scientific_name",
+    }
+    rename_map = {
+        source: canonical
+        for source, canonical in canonical_names.items()
+        if source != canonical
+    }
+    if rename_map:
+        records_df = records_df.rename(columns=rename_map)
 
     return records_df

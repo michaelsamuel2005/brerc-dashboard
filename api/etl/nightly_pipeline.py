@@ -26,6 +26,9 @@ VERIFIED_COLUMN = CONFIG["columns"]["verified"]
 EASTING_COLUMN = CONFIG["columns"]["eastings"]
 NORTHING_COLUMN = CONFIG["columns"]["northings"]
 DATE_COLUMN = CONFIG["columns"]["record_date"]
+SPECIES_COLUMN = CONFIG["columns"]["species_number"]
+NBN_COLUMN = CONFIG["columns"]["nbn_number"]
+SCIENTIFIC_NAME_COLUMN = CONFIG["columns"]["scientific_name"]
 
 
 def run_pipeline(
@@ -78,6 +81,9 @@ def run_pipeline(
         resolved_source = resolve_species_numbers(
             cleaned_source,
             cleaned_dictionary,
+            species_column=SPECIES_COLUMN,
+            nbn_column=NBN_COLUMN,
+            scientific_name_column=SCIENTIFIC_NAME_COLUMN,
         )
         logger.info("RESOLVED columns: %s", sorted(resolved_source.columns.tolist()))
 

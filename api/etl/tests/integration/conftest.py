@@ -3,7 +3,7 @@ Local fixtures for the integration test suite.
 
 test_nightly_job_end_to_end runs a real ETL reconciliation pass, which purges
 any occurrence_public rows not present in its mocked source data — including
-the shared B0/B6 sample rows. This autouse fixture re-seeds those sample rows
+the shared B6 sample rows. This autouse fixture re-seeds those sample rows
 after the test runs, so the shared brerc_ui database is left the way every
 other test expects to find it.
 """

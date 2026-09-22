@@ -28,12 +28,11 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       # Init scripts run ONCE on first startup, in filename order. The numeric
-      # prefixes force the correct order: schema -> B0 -> sample data -> tiles
-      # -> set the read-only role's password.
+      # prefixes force the correct order: schema -> seed data -> tiles -> set
+      # the read-only role's password.
       - ./db/b6_schema.sql:/docker-entrypoint-initdb.d/01_b6_schema.sql:ro
-      - ./db/b0_staging_setup.sql:/docker-entrypoint-initdb.d/02_b0.sql:ro
-      - ./db/b6_sample_data.sql:/docker-entrypoint-initdb.d/03_b6_sample_data.sql:ro
-      - ./db/b7_tiles.sql:/docker-entrypoint-initdb.d/04_b7_tiles.sql:ro
+      - ./db/b6_seed_sample.sql:/docker-entrypoint-initdb.d/02_b6_seed_sample.sql:ro
+      - ./db/b7_tiles.sql:/docker-entrypoint-initdb.d/03_b7_tiles.sql:ro
       - ./db/docker/99_set_ro_password.sh:/docker-entrypoint-initdb.d/99_set_ro_password.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d brerc_ui"]

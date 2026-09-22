@@ -6,7 +6,7 @@ The important piece is `database_available()`. A few tests only make sense when 
 PostgreSQL UI database is reachable (they check real counts and the safe view).
 On a machine — or a CI runner — without one, those tests SKIP instead of FAIL,
 so the suite stays green everywhere while still running fully once you've set up
-db/b0_staging_setup.sql and pointed DATABASE_URL at it.
+db/b6_schema.sql and db/b6_seed_sample.sql and pointed DATABASE_URL at it.
 """
 
 import pytest
@@ -35,7 +35,7 @@ def database_available() -> bool:
 # Reusable decorator: skip the marked test when no database is reachable.
 needs_db = pytest.mark.skipif(
     not database_available(),
-    reason="No database reachable — set DATABASE_URL and run db/b0_staging_setup.sql",
+    reason="No database reachable — set DATABASE_URL and run db/b6_schema.sql",
 )
 
 

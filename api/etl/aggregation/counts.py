@@ -25,6 +25,7 @@ def aggregate_counts(
     northing_column: str,
     date_column: str,
     cell_size_m=None,
+    species_column: str = "species_no",
 ) -> pd.DataFrame:
     """Converts accepted records into species x grid cell x year aggregated counts."""
     # Takes the grid size from the YAML
@@ -32,7 +33,7 @@ def aggregate_counts(
         cell_size_m = CONFIG["aggregation"]["cell_size_m"]
 
     required_columns = {
-        "species_no",
+        species_column,
         verified_column,
         easting_column,
         northing_column,
@@ -107,7 +108,7 @@ def aggregate_counts(
     aggregated = (
         df.groupby(
             [
-                "species_no",
+                species_column,
                 "grid_cell",
                 "year",
                 "cell_sw_easting",
@@ -126,6 +127,13 @@ def aggregate_counts(
         )
         .reset_index()
     )
+
+    # persist_aggregation_outputs() and the rest of this module read the
+    # species number as the canonical "species_no" regardless of what the
+    # source calls it, so the configurable input name is normalised to that
+    # fixed output name here, at the one point it's grouped on.
+    if species_column != "species_no":
+        aggregated = aggregated.rename(columns={species_column: "species_no"})
 
     return aggregated
 
@@ -155,8 +163,9 @@ def build_public_aggregation(
     northing_column: str,
     date_column: str,
     cell_size_m=None,
+    species_column: str = "species_no",
 ) -> dict:
-    """ 
+    """
     Runs the complete public aggregation pipeline including:
     filtering, indexing, and suppression.
     """
@@ -177,6 +186,7 @@ def build_public_aggregation(
         northing_column=northing_column,
         date_column=date_column,
         cell_size_m=cell_size_m,
+        species_column=species_column,
     )
 
     suppressed_counts = suppress_low_counts(

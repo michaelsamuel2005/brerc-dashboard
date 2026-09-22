@@ -9,7 +9,7 @@ in a document:
     the base tables at all.
 
 They require the B6 schema (db/b6_schema.sql). Without it — including on a clean
-CI runner that only has the B0 sample — they SKIP rather than fail (see the
+CI runner without a database — they SKIP rather than fail (see the
 `needs_b6_schema` marker in conftest.py).
 """
 

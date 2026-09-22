@@ -96,6 +96,7 @@ def test_make_safe_for_publishing_executes_pipeline(
     )
     assert mock_classify.call_args.kwargs == {
         "source_provides_sensitivity": expected_source_provides_sensitivity,
+        "record_type_column": "record_type",
     }
     mock_generalise.assert_called_once()
     mock_add_locality.assert_called_once()

@@ -89,6 +89,8 @@ columns:
   northings: northings
   record_date: date_of_record
   modified_date: date_mdb_modified
+  scientific_name: scientific_name
+  record_type: record_type
 
 reconciliation:
   hash_columns:

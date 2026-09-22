@@ -40,9 +40,14 @@ logger = logging.getLogger(__name__)
 CONFIG = load_safety_config()
 
 MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
+DATE_COLUMN = CONFIG["columns"]["record_date"]
 VERIFIED_COLUMN = CONFIG["columns"]["verified"]
 EASTING_COLUMN = CONFIG["columns"]["eastings"]
 NORTHING_COLUMN = CONFIG["columns"]["northings"]
+SPECIES_COLUMN = CONFIG["columns"]["species_number"]
+NBN_COLUMN = CONFIG["columns"]["nbn_number"]
+SCIENTIFIC_NAME_COLUMN = CONFIG["columns"]["scientific_name"]
+RECORD_TYPE_COLUMN = CONFIG["columns"]["record_type"]
 
 
 def make_safe_for_publishing(
@@ -74,11 +79,28 @@ def make_safe_for_publishing(
             ]
         )
 
+    # public_output.PUBLIC_COLUMNS names this column "date_of_record" as a
+    # fixed part of the publication allow-list — normalise the configured
+    # source name to that fixed name here, once, so the allow-list never has
+    # to know what BRERC calls the column.
+    if DATE_COLUMN != "date_of_record":
+        df = df.rename(columns={DATE_COLUMN: "date_of_record"})
+
     # Drop unverified or rejected records prior to classification and generalisation
     filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
 
     # Adds species_no to their name
-    resolved = resolve_species_numbers(filtered, dictionary_df)
+    resolved = resolve_species_numbers(
+        filtered,
+        dictionary_df,
+        species_column=SPECIES_COLUMN,
+        nbn_column=NBN_COLUMN,
+        scientific_name_column=SCIENTIFIC_NAME_COLUMN,
+    )
+
+    # resolve_species_numbers() normalises the configured species/nbn/
+    # scientific-name columns to their fixed internal names ("species_no",
+    # "nbn_number", "scientific_name") — everything from here on uses those.
 
     # Filter out records with unresolved species because species_id is a mandatory foreign key
     unresolved_count = resolved["species_no"].isna().sum()
@@ -94,6 +116,7 @@ def make_safe_for_publishing(
     classified = classify_chunk(
         resolved,
         source_provides_sensitivity=(CONFIG["source"]["mode"] == "database"),
+        record_type_column=RECORD_TYPE_COLUMN,
     )
 
     # Blur the location of the species
