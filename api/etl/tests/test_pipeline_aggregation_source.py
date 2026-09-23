@@ -89,25 +89,22 @@ def test_without_aggregation_source_the_source_is_used_for_both():
 @patch("etl.job.run_pipeline")
 @patch("etl.job.get_source_connection")
 @patch("etl.job.get_destination_connection")
-def test_incremental_database_run_also_loads_the_full_source(
+def test_incremental_database_run_reconciles_the_full_source(
     mock_get_conn,
     mock_get_source_conn,
     mock_run_pipeline,
     *_,
 ):
-    # On an incremental database run the job reads the source twice: once
-    # since the watermark (for reconciliation) and once in full (for the map).
-    changed_only = pd.DataFrame({"unique_no": []})
+    # On an incremental database run the job reads every record once and uses
+    # it for both reconciliation and the map. A date_mdb_modified window missed
+    # deletions and edits that did not bump the date.
     every_record = pd.DataFrame({"unique_no": [1, 2, 3]})
-
-    def fake_load(connection, watermark_date=None):
-        return every_record if watermark_date is None else changed_only
 
     mock_get_conn.return_value.__enter__.return_value = MagicMock()
     mock_get_source_conn.return_value.__enter__.return_value = MagicMock()
 
     with (
-        patch("etl.job.load_source_data", side_effect=fake_load),
+        patch("etl.job.load_source_data", return_value=every_record) as mock_load,
         patch(
             "etl.job.get_config",
             return_value={
@@ -119,6 +116,7 @@ def test_incremental_database_run_also_loads_the_full_source(
     ):
         nightly_job()
 
+    mock_load.assert_called_once()
     call = mock_run_pipeline.call_args
-    assert len(call[0][0]) == 0  # source_df: changes only
-    assert len(call.kwargs["aggregation_source_df"]) == 3  # every record
+    assert len(call[0][0]) == 3  # source_df: every record
+    assert len(call.kwargs["aggregation_source_df"]) == 3

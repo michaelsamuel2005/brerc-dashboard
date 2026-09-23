@@ -4,6 +4,9 @@ verifying correct identification of inserts, updates, deletes, and unchanged rec
 using date_mdb_modified timestamps.
 """
 
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 import pytest
 
@@ -189,3 +192,31 @@ def test_diff_id_modified_maps_detects_all_change_types():
     assert result["updates"] == {"2"}
     assert result["deletes"] == {"4"}
     assert result["unchanged"] == {"1"}
+
+def test_diff_id_modified_maps_treats_date_and_timestamptz_as_equal():
+    # BRERC's date_mdb_modified is a DATE; occurrence_public stores it as
+    # TIMESTAMPTZ, which comes back as an aware datetime at local midnight.
+    # Expects the same day on both sides to count as unchanged, else fails.
+    london = ZoneInfo("Europe/London")
+
+    result = diff_id_modified_maps(
+        {"1": date(2026, 9, 19)},
+        {"1": datetime(2026, 9, 19, 0, 0, tzinfo=london)},
+    )
+
+    assert result["updates"] == set()
+    assert result["unchanged"] == {"1"}
+
+
+def test_diff_id_modified_maps_detects_content_change_without_new_date():
+    # An edit that does not bump date_mdb_modified still changes the content hash.
+    # Expects the record to be flagged as an update, else fails.
+    result = diff_id_modified_maps(
+        {"1": date(2026, 9, 19), "2": date(2026, 9, 19)},
+        {"1": date(2026, 9, 19), "2": date(2026, 9, 19)},
+        source_hash_map={"1": "new", "2": "same"},
+        ui_hash_map={"1": "old", "2": "same"},
+    )
+
+    assert result["updates"] == {"1"}
+    assert result["unchanged"] == {"2"}

@@ -27,3 +27,21 @@ def get_ui_map(connection) -> dict:
     # unique_no keys (also cast to str). Without this type alignment, int vs str
     # key comparisons fail, causing every record to look like a fresh insert AND delete.
     return {str(row["record_id"]): row["date_mdb_modified"] for row in rows}
+
+
+def get_ui_hash_map(connection) -> dict:
+    """
+    Fetches every record's stored content_hash from 'occurrence_public', keyed
+    by string record ID. Lets reconciliation spot edits to hashed columns that
+    arrived without a new date_mdb_modified.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT record_id, content_hash
+            FROM occurrence_public
+            """
+        )
+        rows = cursor.fetchall()
+
+    return {str(row["record_id"]): row["content_hash"] for row in rows}

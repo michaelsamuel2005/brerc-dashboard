@@ -3,6 +3,7 @@ Functions for comparing source and UI database records to determine
 inserts, updates, and deletes during ETL reconciliation.
 """
 
+from datetime import date, datetime
 import logging
 import pandas as pd
 
@@ -85,14 +86,45 @@ def build_id_modified_map_from_chunks(chunks) -> dict:
     return source_map
 
 
-def diff_id_modified_maps(source_map: dict, ui_map: dict):
+def normalise_modified_date(value):
+    """
+    Reduces a modified-date value to a plain calendar date so the two sides of
+    the comparison agree on type.
+
+    BRERC's date_mdb_modified is a DATE (datetime.date), but occurrence_public
+    stores it as TIMESTAMPTZ, so it comes back as a timezone-aware datetime at
+    local midnight. date(2026, 9, 19) != datetime(2026, 9, 19, 0, 0, tz) in
+    Python, so without this every record compared as "changed".
+    """
+    if value is None or (not isinstance(value, (date, datetime)) and pd.isna(value)):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return None if pd.isna(value) else value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return pd.Timestamp(value).date()
+
+
+def diff_id_modified_maps(
+    source_map: dict,
+    ui_map: dict,
+    source_hash_map: dict | None = None,
+    ui_hash_map: dict | None = None,
+):
     """
     Compares source and UI date_mdb_modified maps using set operations to isolate 
     new records (inserts), removed records (deletes), and modified records (updates).
 
-    Renamed from diff_id_hash_maps: the comparison logic itself is unchanged
-    (it's a generic id -> value diff), only the maps passed in have changed
-    from content_hash-based to date_mdb_modified-based.
+    A record counts as updated when its date_mdb_modified differs OR, when both
+    hash maps are given, its content_hash differs. The hash catches edits made
+    without the source bumping date_mdb_modified. Both hashes are computed by
+    this pipeline in Python (etl.reconciliation.hashing), so they do not depend
+    on the source database's PostgreSQL version.
+
+    deletes is (ui_ids - source_ids), so source_map must cover the COMPLETE
+    source, not a window of recent changes.
     """
     source_ids = set(source_map)
     ui_ids = set(ui_map)
@@ -108,16 +140,23 @@ def diff_id_modified_maps(source_map: dict, ui_map: dict):
     possible_updates = source_ids & ui_ids
 
     # Identify records where date_mdb_modified has actually changed
+    compare_hashes = source_hash_map is not None and ui_hash_map is not None
+
     updates = {
         unique_no
         for unique_no in possible_updates
-        if source_map[unique_no] != ui_map[unique_no]
+        if normalise_modified_date(source_map[unique_no])
+        != normalise_modified_date(ui_map[unique_no])
+        or (
+            compare_hashes
+            and source_hash_map.get(unique_no) != ui_hash_map.get(unique_no)
+        )
     }
 
     unchanged = possible_updates - updates
 
     logger.info(
-        "Compared with the dashboard: %d new, %d changed, %d not in this batch.",
+        "Compared with the dashboard: %d new, %d changed, %d removed from the source.",
         len(inserts),
         len(updates),
         len(deletes),

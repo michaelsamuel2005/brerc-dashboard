@@ -230,10 +230,6 @@ def test_reconcile_processes_inserts_updates_deletes_on_initial_load(
 ):
     # Confirms the reconciliation engine correctly delegates chunked records based on their diff status.
     # Expects inserts, updates, and deletes to be correctly routed to their respective load functions, else fails.
-    #
-    # NOTE: load_mode is "initial" here, and that matters. Deletions are only
-    # inferred from a COMPLETE source snapshot — see the companion test below for
-    # the incremental case, where absence means "unchanged" rather than "deleted".
     with caplog.at_level(logging.INFO):
         # 1 Insert (ID 1), 1 Update (ID 2), 1 Delete (ID 3)
         mock_build_modified.return_value = {
@@ -292,7 +288,7 @@ def test_reconcile_processes_inserts_updates_deletes_on_initial_load(
 @patch("etl.reconciliation.reconcile.insert_records")
 @patch("etl.reconciliation.reconcile.update_records")
 @patch("etl.reconciliation.reconcile.delete_records")
-def test_reconcile_does_not_delete_on_incremental_load(
+def test_reconcile_deletes_on_incremental_load(
     mock_delete,
     mock_update,
     mock_insert,
@@ -302,53 +298,62 @@ def test_reconcile_does_not_delete_on_incremental_load(
     mock_diff,
     mock_build_modified,
     mock_build_hash,
-    caplog,
 ):
-    # On an INCREMENTAL load, records_df holds only the window of records modified
-    # since the watermark — so a record that simply did not change is absent from
-    # the source and looks "deleted" to the diff. Acting on that would delete
-    # nearly the whole table every night (4.5M records, a few hundred daily
-    # changes). The end-to-end test caught the extreme case: an empty window
-    # deleted all six records that were present.
-    #
-    # Expects inserts and updates to be applied as normal, deletions to be SKIPPED,
-    # and the skipped count to be logged as a warning, else fails.
-    with caplog.at_level(logging.INFO):
-        mock_build_modified.return_value = {"1": "2026-08-09 10:00:00"}
-        mock_diff.return_value = {
-            "inserts": {"1"},
-            "updates": {"2"},
-            "deletes": {"3"},
-            "unchanged": set(),
-        }
+    # The job passes the COMPLETE source on incremental runs too, so a record in
+    # the dashboard but not the source really has been withdrawn. Found against
+    # the mock BRERC database (23 Sep): a row deleted from the source stayed on
+    # the dashboard because incremental runs never deleted anything.
+    # Expects inserts, updates AND deletes to be applied, else fails.
+    mock_build_modified.return_value = {"1": "2026-08-09 10:00:00"}
+    mock_diff.return_value = {
+        "inserts": {"1"},
+        "updates": {"2"},
+        "deletes": {"3"},
+        "unchanged": set(),
+    }
 
-        mock_iter_chunks.return_value = [pd.DataFrame({"unique_no": [1, 2]})]
-        mock_make_safe.return_value = pd.DataFrame({"safe_data": [True]})
-        mock_add_metadata.return_value = pd.DataFrame(
-            {"safe_data": [True], "Load": ["test"]}
-        )
+    mock_iter_chunks.return_value = [pd.DataFrame({"unique_no": [1, 2]})]
+    mock_make_safe.return_value = pd.DataFrame({"safe_data": [True]})
+    mock_add_metadata.return_value = pd.DataFrame(
+        {"safe_data": [True], "Load": ["test"]}
+    )
 
-        connection = MagicMock()
+    connection = MagicMock()
 
+    result = reconcile(
+        records_df=None,
+        dictionary_df=pd.DataFrame(),
+        ui_map={"old": "map"},
+        connection=connection,
+        load_mode="incremental",
+        load_timestamp="2026-08-09",
+    )
+
+    assert mock_insert.call_count == 1
+    assert mock_update.call_count == 1
+    mock_delete.assert_called_once_with({"3"}, connection)
+    assert result["deletes"] == {"3"}
+
+
+@patch("etl.reconciliation.reconcile.delete_records")
+def test_reconcile_refuses_to_empty_the_dashboard_from_an_empty_source(
+    mock_delete,
+):
+    # An empty source read (a broken view, say) must not be taken as "every
+    # record was withdrawn". The end-to-end test once saw exactly that: an
+    # empty read deleted all six records on the dashboard.
+    # Expects a ValueError and no deletions, else fails.
+    with pytest.raises(ValueError, match="refusing to delete"):
         reconcile(
-            records_df=None,
+            records_df=pd.DataFrame({"unique_no": []}),
             dictionary_df=pd.DataFrame(),
-            ui_map={"old": "map"},
-            connection=connection,
+            ui_map={"1": "2026-08-09"},
+            connection=MagicMock(),
             load_mode="incremental",
             load_timestamp="2026-08-09",
         )
 
-    # Inserts and updates still happen — only deletion is held back.
-    assert mock_insert.call_count == 1
-    assert mock_update.call_count == 1
-
-    # THE POINT OF THIS TEST: nothing is deleted on an incremental run.
     mock_delete.assert_not_called()
-
-    # And the skipped deletions are surfaced rather than silently swallowed, so a
-    # genuine withdrawal is still visible in the logs.
-    assert "NOT deleting" in caplog.text
 
 
 @patch("etl.reconciliation.reconcile.build_source_hash_map")

@@ -14,6 +14,7 @@ from etl.reconciliation.load import (
     insert_records,
     update_records,
 )
+from etl.reconciliation.state import get_ui_hash_map
 from etl.reconciliation.streaming import (
     build_source_hash_map,
     build_source_modified_map,
@@ -154,9 +155,8 @@ def reconcile(
 ) -> dict:
     """
     Executes the two-pass reconciliation pipeline:
-        - Pass 1: Builds source date_mdb_modified maps and diffs against the UI state 
-        to find inserts, updates, and deletes. (content_hash is also computed here, 
-        but only for storage on the written rows — not for change detection.)
+        - Pass 1: Builds source date_mdb_modified and content_hash maps and diffs
+        them against the UI state to find inserts, updates, and deletes.
         - Pass 2: Streams chunks, filters for modified/new rows, pushes them through the 
         safety pipeline, stamps metadata, and performs inserts, updates, and database purges.
 
@@ -164,50 +164,38 @@ def reconcile(
     sourced from occurrence_public.
     """
 
-    # Pass 1: Modified-date mapping and set differential analysis (drives inserts/updates/deletes)
+    # Pass 1: Modified-date and content-hash maps, diffed against the UI state
+    # (drives inserts/updates/deletes).
+    #
+    # records_df must be the COMPLETE source, on incremental runs too. Deletes
+    # are (ui_ids - source_ids), which is only true of a full snapshot: fed a
+    # window of recently modified records, every unchanged record would look
+    # deleted. The job always passes every record; only the changed ones go
+    # on to the safety pipeline and the database below.
+    if records_df is not None and records_df.empty and ui_map:
+        # An empty read (a broken view, a failed query that returned nothing)
+        # would otherwise delete the whole public table.
+        raise ValueError(
+            "The source returned no records but the dashboard holds "
+            f"{len(ui_map)}; refusing to delete them all."
+        )
 
     source_modified_map = build_source_modified_map(records_df)
 
-    # Compares the UI with the new source data using date_mdb_modified
-    changes = diff_id_modified_maps(source_modified_map, ui_map)
+    # The hash catches edits made without a new date_mdb_modified.
+    source_hash_map = build_source_hash_map(records_df)
+    ui_hash_map = get_ui_hash_map(connection)
+
+    changes = diff_id_modified_maps(
+        source_modified_map,
+        ui_map,
+        source_hash_map=source_hash_map,
+        ui_hash_map=ui_hash_map,
+    )
 
     insert_ids = changes["inserts"]
     update_ids = changes["updates"]
-
-    # Deletions are only safe to infer from a COMPLETE source snapshot.
-    #
-    # diff_id_modified_maps computes deletes as (ui_ids - source_ids). That is
-    # correct on an initial load, where records_df is the whole dataset: anything
-    # in the UI database but not in the source really has gone.
-    #
-    # On an incremental load it is badly wrong. records_df is only the window of
-    # records modified since the watermark, so every record that simply did not
-    # change looks "missing" and would be deleted. In practice that means each
-    # nightly run would delete almost the entire table — with 4.5M records and a
-    # few hundred daily changes, roughly 4.5M deletions a night.
-    #
-    # The end-to-end test caught the extreme version: an empty window deleted all
-    # 6 records that were there (6 before, 0 after).
-    #
-    # So: do not infer deletions on an incremental run. Absence means "unchanged",
-    # not "withdrawn".
-    #
-    # This leaves a known gap — genuine deletions are not picked up incrementally.
-    # Closing it needs a separate, cheap comparison of the FULL set of source ids
-    # (just unique_no, no other columns) against the UI's ids, run after the
-    # incremental load. That is what Shankara suggested in the review thread, and
-    # it is the right shape; it is not implemented here because it is a change to
-    # how reconciliation is driven rather than a bug fix.
-    if load_mode == "initial":
-        delete_ids = changes["deletes"]
-    else:
-        delete_ids = set()
-        if changes["deletes"]:
-            logger.info(
-                "Incremental run: keeping the %d records not in this batch "
-                "(NOT deleting them — see the note in reconcile.py).",
-                len(changes["deletes"]),
-            )
+    delete_ids = changes["deletes"]
 
     logger.info(
         "Reconciliation — Inserts: %d | Updates: %d | Deletes: %d",
@@ -216,17 +204,13 @@ def reconcile(
         len(delete_ids),
     )
 
-    # Content hash map — built separately, used only to populate the stored
-    # content_hash column on written rows (audit/debug), NOT for change detection.
-    source_hash_map = build_source_hash_map(records_df)
-
     # Pass 2: Chunked streaming, safety pipeline execution, and persistence
     chunk_count = 0
     for cleaned_chunk in iter_source_chunks(records_df):
         chunk_count += 1
         hashed_chunk = cleaned_chunk.copy()
 
-        # Attach content hashes calculated during pass 1 (storage only)
+        # Attach content hashes calculated during pass 1, stored on written rows
         hashed_chunk["content_hash"] = (
             hashed_chunk[C.UNIQUE_NO].astype(str).map(source_hash_map)
         )
@@ -280,9 +264,7 @@ def reconcile(
                 )
 
     # Purge deleted records from the UI database (deletions require ID checks only).
-    # The call sits INSIDE the guard: with nothing to delete there is no reason to
-    # make the round trip, and on an incremental run delete_ids is always empty
-    # (see the note above) so this would otherwise fire pointlessly every night.
+    # Skipped when there is nothing to delete, which is most nights.
     if delete_ids:
         logger.warning(
             "Executing database purge for %d deleted records.",
@@ -291,6 +273,4 @@ def reconcile(
         delete_records(delete_ids, connection)
     logger.info("Reconciliation pass completed successfully.")
 
-    # Report what was actually deleted, not what the comparison flagged:
-    # on an incremental run those are kept, so the summary must say 0.
-    return {**changes, "deletes": delete_ids}
+    return changes

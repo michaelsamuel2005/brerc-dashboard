@@ -49,17 +49,13 @@ def get_config() -> dict:
     return load_safety_config()
 
 
-def load_source_data(source_connection=None, watermark_date=None):
+def load_source_data(source_connection=None):
     """
-    Loads BRERC source occurrence records from either CSV files or a database source.
-    Uses the configured modification-date column for incremental loading.
+    Loads every BRERC source occurrence record from either CSV files or a
+    database source. Always the full set: reconciliation works out what changed.
     """
     config = get_config()
     mode = config["source"].get("mode", "csv")
-
-    # BRERC's name for the modified-date column: the incremental filter runs
-    # inside BRERC's database, before columns are translated to pipeline names.
-    modified_col = source_column(C.MODIFIED_DATE)
 
     if mode == "csv":
         df = pd.read_csv(config["source"]["records_path"])
@@ -67,6 +63,7 @@ def load_source_data(source_connection=None, watermark_date=None):
         # CSV snapshots do not contain the production modification-date column.
         # Add the configured column so downstream ETL components receive the
         # same schema as the BRERC database source.
+        modified_col = source_column(C.MODIFIED_DATE)
         if modified_col not in df.columns:
             df[modified_col] = pd.Timestamp.now()
 
@@ -76,24 +73,10 @@ def load_source_data(source_connection=None, watermark_date=None):
                 "source_connection is required when source.mode is 'database'"
             )
 
-        query = config["source"]["records_query"]
-
-        if watermark_date is not None:
-            query = (
-                f"SELECT * FROM ({query}) AS filtered_source "
-                f"WHERE {modified_col} >= %(watermark_date)s"
-            )
-
-            df = pd.read_sql(
-                query,
-                source_connection,
-                params={"watermark_date": watermark_date},
-            )
-        else:
-            df = pd.read_sql(
-                query,
-                source_connection,
-            )
+        df = pd.read_sql(
+            config["source"]["records_query"],
+            source_connection,
+        )
 
     else:
         raise ValueError(f"Unknown source.mode: {mode!r}")
@@ -189,16 +172,15 @@ def nightly_job():
 
             run_initial = should_run_initial_load(table_exists, table_has_rows)
             load_mode = "initial" if run_initial else "incremental"
-            watermark_date = None
 
+            # A table with rows but no Load_date was never loaded by this
+            # pipeline, so it is rebuilt rather than reconciled.
             if (
                 load_mode == "incremental"
                 and mode == "database"
                 and config["load"].get("incremental_check", True)
             ):
-                watermark_date = get_last_load_date(connection)
-
-                if watermark_date is None:
+                if get_last_load_date(connection) is None:
                     load_mode = "initial"
 
             elif load_mode == "incremental" and mode == "database":
@@ -223,26 +205,19 @@ def nightly_job():
 
             if mode == "database":
                 with get_source_connection() as source_connection:
-                    source_df = load_source_data(
-                        source_connection,
-                        watermark_date=watermark_date,
-                    )
-
-                    # The map cells and species index are rebuilt from scratch
-                    # every run, so they need every record even when only the
-                    # changed ones are being reconciled.
-                    if watermark_date is None:
-                        aggregation_source_df = source_df
-                    else:
-                        aggregation_source_df = load_source_data(
-                            source_connection,
-                            watermark_date=None,
-                        )
+                    # Every record, on incremental runs too. Reconciliation
+                    # needs the full set of ids to see deletions, and a
+                    # date_mdb_modified window misses edits that do not bump
+                    # that date (or are dated the day of the last load, since
+                    # it is a DATE compared against a timestamp). Only the
+                    # records that actually changed are processed and written.
+                    source_df = load_source_data(source_connection)
+                    aggregation_source_df = source_df
                     dictionary_df = load_species_dictionary(
                         source_connection
                     )
             else:
-                source_df = load_source_data(watermark_date=None)
+                source_df = load_source_data()
                 aggregation_source_df = source_df
                 dictionary_df = load_species_dictionary()
 

@@ -145,8 +145,9 @@ files:
 # LOADING
 # -----------------------------------------------------------------------------
 load:
-  # true: after the first load, only records whose modified_date is on or
-  # after the last load are reconciled.
+  # true: after the first load, every source record is compared with the
+  # dashboard and only new, changed (modified_date or hashed columns) and
+  # removed records are written. false: every run is a full rebuild.
   incremental_check: true
 
 reconciliation:
