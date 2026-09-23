@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+import etl.columns as C
+from etl.columns import ColumnMappingError, to_pipeline_names
 from etl.load.loader import load_safety_config
 from etl.profiling.cleaning import clean_data
 
@@ -83,26 +85,29 @@ def load_sensitive_species():
                 "data/README.md for how to supply the file locally."
             )
 
-    # Read and clean the sensitive species CSV data
-    df = pd.read_csv(sensitive_species_file)
-    df = clean_data(df)
-
-    # Both columns are validated, not just species_no. classify_chunk() uses
+    # Read the list and translate BRERC's column names to the pipeline's
+    # (safety.yaml 'sensitive_species_columns:').
+    #
+    # Both columns are required, not just species_no. classify_chunk() uses
     # the species_no set, and profiling.classify uses the nbn_number set for
     # its mismatch check — a renamed or blanked nbn_number column would
-    # silently hand that check an empty set. A renamed column would otherwise
-    # also surface as a bare KeyError, which describe_failure() reports as a
-    # SOURCE data problem — pointing staff at entirely the wrong file.
-    for required_column in ("species_no", "nbn_number"):
-        if required_column not in df.columns:
-            raise SensitiveSpeciesListUnavailable(
-                f"The sensitive-species list at {sensitive_species_file} has no "
-                f"'{required_column}' column after cleaning. Check the file's "
-                "header row — both species_no and nbn_number are required."
-            )
+    # silently hand that check an empty set. A mapping problem is reported as
+    # the species list being unavailable, not as a SOURCE data problem, so
+    # describe_failure() points staff at the right file.
+    df = clean_data(pd.read_csv(sensitive_species_file))
 
-    sensitive_species_nos = set(df["species_no"].dropna())
-    sensitive_nbn_numbers = set(df["nbn_number"].dropna())
+    try:
+        df = to_pipeline_names(
+            df,
+            "sensitive_species_columns",
+            required=C.SENSITIVE_SPECIES_COLUMNS_REQUIRED,
+            what=f"the sensitive-species list at {sensitive_species_file}",
+        )
+    except ColumnMappingError as error:
+        raise SensitiveSpeciesListUnavailable(str(error)) from error
+
+    sensitive_species_nos = set(df[C.SPECIES_NO].dropna())
+    sensitive_nbn_numbers = set(df[C.NBN_NUMBER].dropna())
 
     # A file that parses but yields no values is the same hazard as no file at
     # all — a truncated download would otherwise sail through and disable the

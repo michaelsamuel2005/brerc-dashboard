@@ -30,7 +30,8 @@ def test_incremental_run_builds_map_from_every_record():
 
     with (
         patch.object(pipeline, "load_sensitive_species"),
-        patch.object(pipeline, "clean_data", side_effect=lambda df: df),
+        patch.object(pipeline, "prepare_records", side_effect=lambda df: df),
+        patch.object(pipeline, "prepare_dictionary", side_effect=lambda df: df),
         patch.object(pipeline, "resolve_species_numbers", side_effect=_passthrough_resolve),
         patch.object(pipeline, "build_public_aggregation") as aggregate,
         patch.object(pipeline, "persist_aggregation_outputs"),
@@ -56,7 +57,8 @@ def test_without_aggregation_source_the_source_is_used_for_both():
 
     with (
         patch.object(pipeline, "load_sensitive_species"),
-        patch.object(pipeline, "clean_data", side_effect=lambda df: df),
+        patch.object(pipeline, "prepare_records", side_effect=lambda df: df),
+        patch.object(pipeline, "prepare_dictionary", side_effect=lambda df: df),
         patch.object(pipeline, "resolve_species_numbers", side_effect=_passthrough_resolve),
         patch.object(pipeline, "build_public_aggregation") as aggregate,
         patch.object(pipeline, "persist_aggregation_outputs"),

@@ -6,12 +6,9 @@ inserts, updates, and deletes during ETL reconciliation.
 import logging
 import pandas as pd
 
-from etl.load.loader import load_safety_config
+import etl.columns as C
 
 logger = logging.getLogger(__name__)
-
-CONFIG = load_safety_config()
-MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
 
 
 def build_id_hash_map(df: pd.DataFrame) -> dict:
@@ -23,7 +20,7 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
     """
 
     required = {
-        "unique_no",
+        C.UNIQUE_NO,
         "content_hash",
     }
 
@@ -36,7 +33,7 @@ def build_id_hash_map(df: pd.DataFrame) -> dict:
     # Without this, int vs str key mismatches cause false inserts/deletes every run.
     return dict(
         zip(
-            df["unique_no"].astype(str),
+            df[C.UNIQUE_NO].astype(str),
             df["content_hash"],
         )
     )
@@ -52,15 +49,15 @@ def build_id_modified_map(df: pd.DataFrame) -> dict:
     guarantee on the client's enterprise instance. date_mdb_modified is a
     reliable, source-controlled signal regardless of PG version or config.
     """
-    required = {"unique_no", MODIFIED_COLUMN}
+    required = {C.UNIQUE_NO, C.MODIFIED_DATE}
     missing = required - set(df.columns)
     if missing:
         raise KeyError(f"Missing required columns: {sorted(missing)}")
 
     return dict(
         zip(
-            df["unique_no"].astype(str),
-            df[MODIFIED_COLUMN],
+            df[C.UNIQUE_NO].astype(str),
+            df[C.MODIFIED_DATE],
         )
     )
 

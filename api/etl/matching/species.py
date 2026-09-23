@@ -5,6 +5,8 @@ the species dictionary, flagging unresolved or malformed entries as fail-closed.
 
 import pandas as pd
 
+import etl.columns as C
+
 
 def normalise_species_name(names: pd.Series) -> pd.Series:
     """
@@ -22,20 +24,14 @@ def normalise_species_name(names: pd.Series) -> pd.Series:
 def resolve_species_numbers(
     records_df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
-    *,
-    species_column: str = "species_no",
-    nbn_column: str = "nbn_number",
-    scientific_name_column: str = "scientific_name",
 ) -> pd.DataFrame:
     """
     Matches occurrence records against the species dictionary using normalised names,
     checks for dictionary collisions, validates species number formats, and
     computes resolution match coverage.
 
-    species_column, nbn_column and scientific_name_column name the BRERC source
-    columns as configured in config/safety.yaml (columns.species_number,
-    columns.nbn_number, columns.scientific_name) — both records_df and
-    dictionary_df are assumed to use the same names for these.
+    Both dataframes use pipeline column names (etl/columns.py): records as
+    translated by safety.yaml 'columns:', the dictionary by 'dictionary_columns:'.
     """
     records_df = records_df.copy()
     dictionary_df = dictionary_df.copy()
@@ -58,12 +54,12 @@ def resolve_species_numbers(
 
     # Create normalised matching key for records
     records_df["scientific_name_key"] = normalise_species_name(
-        records_df[scientific_name_column]
+        records_df[C.SCIENTIFIC_NAME]
     )
 
     # Create normalised matching key for dictionary
     dictionary_df["scientific_key"] = normalise_species_name(
-        dictionary_df["scientific"]
+        dictionary_df[C.SCIENTIFIC_NAME]
     )
 
     # Check for duplicate scientific names in the dictionary
@@ -73,7 +69,7 @@ def resolve_species_numbers(
     if len(ambiguous_keys) > 0:
         ambiguous_rows = dictionary_df[
             dictionary_df["scientific_key"].isin(ambiguous_keys.index)
-        ][["scientific", "scientific_key", species_column, nbn_column]]
+        ][[C.SCIENTIFIC_NAME, "scientific_key", C.SPECIES_NO, C.NBN_NUMBER]]
 
         print(
             f"WARNING: {len(ambiguous_keys)} scientific_key collisions "
@@ -82,26 +78,17 @@ def resolve_species_numbers(
         )
         print(ambiguous_rows.sort_values("scientific_key"))
 
-    # Create smaller lookup table.
-    #
-    # BRERC's dictionary calls the common-name column COMMON_NAM — truncated to
-    # ten characters, the signature of a DBF/shapefile export. Everything
-    # downstream (aggregation/species_index.py, the species table, the API) uses
-    # the full name, so rename it here, at the one point where the dictionary is
-    # read. Without this the run dies later with:
-    #     KeyError: "Missing columns required for species index: ['common_name']"
+    # Create smaller lookup table
     species_lookup = dictionary_df[
         [
-            "scientific",
+            C.SCIENTIFIC_NAME,
             "scientific_key",
-            species_column,
-            nbn_column,
-            "common_nam",
-            "taxanb",
+            C.SPECIES_NO,
+            C.NBN_NUMBER,
+            C.COMMON_NAME,
+            C.TAXON_GROUP,
         ]
-    ].drop_duplicates(subset="scientific_key").rename(
-        columns={"common_nam": "common_name"}
-    )
+    ].drop_duplicates(subset="scientific_key")
 
     # Match record species against dictionary
     records_df = records_df.merge(
@@ -113,7 +100,7 @@ def resolve_species_numbers(
     )
 
     # Initial fail-closed flag: mark records with missing species numbers as unresolved
-    records_df["species_unresolved"] = records_df[species_column].isna()
+    records_df["species_unresolved"] = records_df[C.SPECIES_NO].isna()
 
     # ...and mark records whose species is not in the dictionary AT ALL.
     #
@@ -136,7 +123,7 @@ def resolve_species_numbers(
 
     # Clean up trailing decimals from species numbers if they were read as floats
     species_no_string = (
-        records_df[species_column]
+        records_df[C.SPECIES_NO]
         .astype("string")
         .str.replace(
             r"\.0$",
@@ -150,7 +137,7 @@ def resolve_species_numbers(
     valid_species_no = species_no_string.str.match(r"^(BRERC)?\d+$")
 
     # Flag anything that isn't a valid format as unresolved (fail-closed path)
-    non_numeric_species_no = records_df[species_column].notna() & ~valid_species_no
+    non_numeric_species_no = records_df[C.SPECIES_NO].notna() & ~valid_species_no
 
     records_df["species_unresolved"] = (
         records_df["species_unresolved"] | non_numeric_species_no
@@ -166,22 +153,5 @@ def resolve_species_numbers(
         f"({total - unresolved}/{total} resolved, "
         f"{unresolved} unresolved -> blurred fail-closed)"
     )
-
-    # Everything downstream (classification, aggregation, the public-output
-    # boundary) works with fixed internal names regardless of what BRERC
-    # calls these columns — only this function needs to know the configured
-    # source names, so normalise to the canonical names here, once.
-    canonical_names = {
-        species_column: "species_no",
-        nbn_column: "nbn_number",
-        scientific_name_column: "scientific_name",
-    }
-    rename_map = {
-        source: canonical
-        for source, canonical in canonical_names.items()
-        if source != canonical
-    }
-    if rename_map:
-        records_df = records_df.rename(columns=rename_map)
 
     return records_df

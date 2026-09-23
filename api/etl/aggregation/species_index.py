@@ -5,19 +5,12 @@ in the filtered records, rather than from the full species dictionary.
 
 import pandas as pd
 
-from etl.load.loader import load_safety_config
+import etl.columns as C
 from etl.profiling.record_year import derive_record_year
 
-CONFIG = load_safety_config()
-
-DATE_COLUMN = CONFIG["columns"]["record_date"]
-
-# species_no/scientific_name (not eastings/northings/verified-style config
-# lookups): by the time records reach here, resolve_species_numbers() has
-# already normalised the configured source column names down to these fixed
-# internal names, so they are intentionally not read from CONFIG again here.
-SPECIES_COLUMN = "species_no"
-SCIENTIFIC_NAME_COLUMN = "scientific_name"
+DATE_COLUMN = C.DATE_OF_RECORD
+SPECIES_COLUMN = C.SPECIES_NO
+SCIENTIFIC_NAME_COLUMN = C.SCIENTIFIC_NAME
 
 
 def _most_common(values: pd.Series):
@@ -45,9 +38,9 @@ def build_species_index(
     required_columns = {
         SPECIES_COLUMN,
         SCIENTIFIC_NAME_COLUMN,
-        "common_name",
-        "taxanb",
-        "unique_no",
+        C.COMMON_NAME,
+        C.TAXON_GROUP,
+        C.UNIQUE_NO,
         DATE_COLUMN,
     }
 
@@ -86,10 +79,10 @@ def build_species_index(
             dropna=False,
         )
         .agg(
-            common_name=("common_name", _most_common),
-            taxanb=("taxanb", _most_common),
+            common_name=(C.COMMON_NAME, _most_common),
+            species_group=(C.TAXON_GROUP, _most_common),
             # Count how many occurrence records belong to this species.
-            record_count=("unique_no", "count"),
+            record_count=(C.UNIQUE_NO, "count"),
             # Find the earliest year this species was recorded.
             first_year=("record_year", "min"),
             # Find the most recent year this species was recorded.
@@ -103,7 +96,6 @@ def build_species_index(
             columns={
                 SPECIES_COLUMN: "species_id",
                 SCIENTIFIC_NAME_COLUMN: "scientific_name",
-                "taxanb": "species_group",
             }
         )
     )
@@ -114,7 +106,7 @@ def build_species_index(
         raise ValueError("Species index contains duplicate species IDs")
 
     # A record whose species_no is well formed but is not in the dictionary comes
-    # out of the merge with no taxanb, so species_group ends up null — and
+    # out of the merge with no taxon group, so species_group ends up null — and
     # species.species_group is NOT NULL, so the whole nightly run would fail on a
     # single such record. With 4.5M records against a 96,824-species dictionary
     # that is a matter of when, not if.

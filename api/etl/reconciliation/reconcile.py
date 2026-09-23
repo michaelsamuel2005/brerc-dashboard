@@ -22,7 +22,7 @@ from etl.reconciliation.streaming import (
 
 # Imports functions which makes the records safe to view in public dashboard
 from etl.aggregation.cell_filtering import filter_accepted_records
-from etl.load.loader import load_safety_config
+import etl.columns as C
 from etl.profiling.record_year import derive_record_year
 
 # ETL load metadata ("Load" / "Load_date")
@@ -38,25 +38,14 @@ from etl.safety_gate.public_output import (
 
 logger = logging.getLogger(__name__)
 
-CONFIG = load_safety_config()
-
-MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
-DATE_COLUMN = CONFIG["columns"]["record_date"]
-VERIFIED_COLUMN = CONFIG["columns"]["verified"]
-EASTING_COLUMN = CONFIG["columns"]["eastings"]
-NORTHING_COLUMN = CONFIG["columns"]["northings"]
-SPECIES_COLUMN = CONFIG["columns"]["species_number"]
-NBN_COLUMN = CONFIG["columns"]["nbn_number"]
-SCIENTIFIC_NAME_COLUMN = CONFIG["columns"]["scientific_name"]
-RECORD_TYPE_COLUMN = CONFIG["columns"]["record_type"]
 
 
 def make_safe_for_publishing(
     df: pd.DataFrame,
     dictionary_df: pd.DataFrame,
     connection,
-    easting_column: str = EASTING_COLUMN,
-    northing_column: str = NORTHING_COLUMN,
+    easting_column: str = C.EASTING,
+    northing_column: str = C.NORTHING,
     resolution_column: str = "resolution_m",
 ) -> pd.DataFrame:
     """
@@ -80,43 +69,26 @@ def make_safe_for_publishing(
             ]
         )
 
-    # public_output.PUBLIC_COLUMNS names this column "date_of_record" as a
-    # fixed part of the publication allow-list — normalise the configured
-    # source name to that fixed name here, once, so the allow-list never has
-    # to know what BRERC calls the column.
-    if DATE_COLUMN != "date_of_record":
-        df = df.rename(columns={DATE_COLUMN: "date_of_record"})
-
     # Worked out here, while the source's own year column is still present —
     # prepare_public_output() drops it further down.
     df = df.copy()
-    df["record_year"] = derive_record_year(df, "date_of_record")
+    df["record_year"] = derive_record_year(df, C.DATE_OF_RECORD)
 
     # Drop unverified or rejected records prior to classification and generalisation
-    filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
+    filtered = filter_accepted_records(df)
 
     # Adds species_no to their name
-    resolved = resolve_species_numbers(
-        filtered,
-        dictionary_df,
-        species_column=SPECIES_COLUMN,
-        nbn_column=NBN_COLUMN,
-        scientific_name_column=SCIENTIFIC_NAME_COLUMN,
-    )
-
-    # resolve_species_numbers() normalises the configured species/nbn/
-    # scientific-name columns to their fixed internal names ("species_no",
-    # "nbn_number", "scientific_name") — everything from here on uses those.
+    resolved = resolve_species_numbers(filtered, dictionary_df)
 
     # Filter out records with unresolved species because species_id is a mandatory foreign key
-    unresolved_count = resolved["species_no"].isna().sum()
+    unresolved_count = resolved[C.SPECIES_NO].isna().sum()
     if unresolved_count:
         logger.warning(
             "%d records excluded from public load because species could not be resolved.",
             unresolved_count,
         )
 
-    resolved = resolved.dropna(subset=["species_no"])
+    resolved = resolved.dropna(subset=[C.SPECIES_NO])
 
     # occurrence_public.record_year is NOT NULL, so a record with no readable
     # date and no source year cannot be loaded. Skip it rather than fail the run.
@@ -132,8 +104,10 @@ def make_safe_for_publishing(
     # Classify sensitivity and determine blur thresholds
     classified = classify_chunk(
         resolved,
-        source_provides_sensitivity=(CONFIG["source"]["mode"] == "database"),
-        record_type_column=RECORD_TYPE_COLUMN,
+        # safety.yaml mapping 'sensitive' is the statement that this source
+        # has a sensitivity flag; to_pipeline_names() has already refused to
+        # run if that mapped column was missing.
+        source_provides_sensitivity=C.has_role(C.SENSITIVE),
     )
 
     # Blur the location of the species
@@ -157,11 +131,11 @@ def make_safe_for_publishing(
 
     # Reattach content hashes mapped from unique record IDs
     # For every value look up its hash_lookup, stored as content_hash
-    hash_lookup = with_locality.set_index("unique_no")["content_hash"]
-    safe_df["content_hash"] = safe_df["unique_no"].map(hash_lookup)
+    hash_lookup = with_locality.set_index(C.UNIQUE_NO)["content_hash"]
+    safe_df["content_hash"] = safe_df[C.UNIQUE_NO].map(hash_lookup)
 
-    modified_lookup = with_locality.set_index("unique_no")[MODIFIED_COLUMN]
-    safe_df["date_mdb_modified"] = safe_df["unique_no"].map(modified_lookup)
+    modified_lookup = with_locality.set_index(C.UNIQUE_NO)[C.MODIFIED_DATE]
+    safe_df[C.MODIFIED_DATE] = safe_df[C.UNIQUE_NO].map(modified_lookup)
 
     # Map processed internal columns to the exact column names of 'occurrence_public'
     safe_df = map_to_occurrence_public(safe_df)
@@ -257,17 +231,17 @@ def reconcile(
 
         # Attach content hashes calculated during pass 1 (storage only)
         hashed_chunk["content_hash"] = (
-            hashed_chunk["unique_no"].astype(str).map(source_hash_map)
+            hashed_chunk[C.UNIQUE_NO].astype(str).map(source_hash_map)
         )
 
         # Find new records
         insert_chunk = hashed_chunk[
-            hashed_chunk["unique_no"].astype(str).isin(insert_ids)
+            hashed_chunk[C.UNIQUE_NO].astype(str).isin(insert_ids)
         ]
 
         # Find modified records
         update_chunk = hashed_chunk[
-            hashed_chunk["unique_no"].astype(str).isin(update_ids)
+            hashed_chunk[C.UNIQUE_NO].astype(str).isin(update_ids)
         ]
 
         # Process and persist new records

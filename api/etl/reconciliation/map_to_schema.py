@@ -5,10 +5,7 @@ structure required by the public-facing 'occurrence_public' database table.
 
 import pandas as pd
 
-from etl.load.loader import load_safety_config
-
-CONFIG = load_safety_config()
-MODIFIED_COLUMN = CONFIG["columns"]["modified_date"]
+import etl.columns as C
 
 
 def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
@@ -24,19 +21,19 @@ def map_to_occurrence_public(safe_df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensure species IDs remain strings since BRERC
     # uses both numeric and prefixed IDs (e.g. Axxxxx).
-    df["species_no"] = df["species_no"].astype("string").str.strip()
+    df[C.SPECIES_NO] = df[C.SPECIES_NO].astype("string").str.strip()
 
     # Map internal dataframe columns to public schema column names
     return pd.DataFrame(
         {
-            "record_id": df["unique_no"],
-            "species_id": df["species_no"],
+            "record_id": df[C.UNIQUE_NO],
+            "species_id": df[C.SPECIES_NO],
             "record_year": df["record_year"],
             "grid_ref": df["coarse_locality"],
             "locality": df["coarse_locality"],
             "precision_metres": df["effective_resolution_m"],
             "verified": ~df["is_legacy"].astype(bool),
             "content_hash": df["content_hash"],
-            "date_mdb_modified": df[MODIFIED_COLUMN],
+            "date_mdb_modified": df[C.MODIFIED_DATE],
         }
     )

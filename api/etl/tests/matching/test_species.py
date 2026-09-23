@@ -20,21 +20,21 @@ RECORDS_SAMPLE = pd.DataFrame(
 
 DICTIONARY_SAMPLE = pd.DataFrame(
     {
-        "scientific": ["Vulpes vulpes", "Meles meles"],
+        "scientific_name": ["Vulpes vulpes", "Meles meles"],
         "species_no": [101, 102],
         "nbn_number": ["NBN-101", "NBN-102"],
-        "common_nam": ["Red fox", "Badger"],
-        "taxanb": ["TX101", "TX102"],
+        "common_name": ["Red fox", "Badger"],
+        "taxon_group": ["TX101", "TX102"],
     }
 )
 
 DICTIONARY_WITH_DUPLICATE_KEY = pd.DataFrame(
     {
-        "scientific": ["Vulpes vulpes", "vulpes  vulpes"],  # normalise to same key
+        "scientific_name": ["Vulpes vulpes", "vulpes  vulpes"],  # normalise to same key
         "species_no": [101, 999],
         "nbn_number": ["NBN-101", "NBN-999"],
-        "common_nam": ["Red fox", "Red fox duplicate"],
-        "taxanb": ["TX101", "TX999"],
+        "common_name": ["Red fox", "Red fox duplicate"],
+        "taxon_group": ["TX101", "TX999"],
     }
 )
 

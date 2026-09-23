@@ -7,15 +7,13 @@ import logging
 
 import pandas as pd
 
-from etl.load.loader import load_safety_config
+import etl.columns as C
 
 logger = logging.getLogger(__name__)
 
-CONFIG = load_safety_config()
-
 # Optional: the source's own year for the record, used when the free-text date
-# cannot be read. None means the source has no such column.
-SOURCE_YEAR_COLUMN = CONFIG["columns"].get("source_year")
+# cannot be read. None when safety.yaml does not map source_year.
+SOURCE_YEAR_COLUMN = C.SOURCE_YEAR if C.has_role(C.SOURCE_YEAR) else None
 
 
 def derive_record_year(

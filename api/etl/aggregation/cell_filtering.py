@@ -5,6 +5,7 @@ Determines which rows are permitted to contribute to the public derived layer.
 
 import pandas as pd
 
+import etl.columns as C
 from etl.load.loader import load_safety_config
 
 CONFIG = load_safety_config()
@@ -37,7 +38,7 @@ LEGACY_VERIFIED_VALUES = {
 
 def filter_accepted_records(
     df: pd.DataFrame,
-    verified_column: str = "verified",
+    verified_column: str = C.VERIFIED,
 ) -> pd.DataFrame:
     """
     Filters source records to retain accepted and legacy statuses, 

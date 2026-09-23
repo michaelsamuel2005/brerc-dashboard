@@ -4,6 +4,7 @@ import logging
 
 import pandas as pd
 
+import etl.columns as C
 from etl.safety_gate.location import os_grid_square
 from etl.aggregation.cell_filtering import (
     filter_accepted_records,
@@ -25,12 +26,12 @@ SUPPRESSION_THRESHOLD = CONFIG["aggregation"]["suppression_threshold"]
 
 def aggregate_counts(
     filtered_df: pd.DataFrame,
-    verified_column: str,
-    easting_column: str,
-    northing_column: str,
-    date_column: str,
+    verified_column: str = C.VERIFIED,
+    easting_column: str = C.EASTING,
+    northing_column: str = C.NORTHING,
+    date_column: str = C.DATE_OF_RECORD,
     cell_size_m=None,
-    species_column: str = "species_no",
+    species_column: str = C.SPECIES_NO,
 ) -> pd.DataFrame:
     """Converts accepted records into species x grid cell x year aggregated counts."""
     # Takes the grid size from the YAML
@@ -167,12 +168,12 @@ def suppress_low_counts(
 
 def build_public_aggregation(
     df: pd.DataFrame,
-    verified_column: str,
-    easting_column: str,
-    northing_column: str,
-    date_column: str,
+    verified_column: str = C.VERIFIED,
+    easting_column: str = C.EASTING,
+    northing_column: str = C.NORTHING,
+    date_column: str = C.DATE_OF_RECORD,
     cell_size_m=None,
-    species_column: str = "species_no",
+    species_column: str = C.SPECIES_NO,
 ) -> dict:
     """
     Runs the complete public aggregation pipeline including:

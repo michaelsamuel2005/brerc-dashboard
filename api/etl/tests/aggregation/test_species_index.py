@@ -15,7 +15,7 @@ def test_build_species_index_creates_one_row_per_species():
             "species_no": [10, 20],
             "scientific_name": ["Robin", "Blackbird"],
             "common_name": ["Robin", "Blackbird"],
-            "taxanb": ["Bird", "Bird"],
+            "taxon_group": ["Bird", "Bird"],
             "date_of_record": ["01/01/2024", "01/01/2024"],
         }
     )
@@ -34,7 +34,7 @@ def test_build_species_index_counts_records_per_species():
             "species_no": [10, 10],
             "scientific_name": ["Robin", "Robin"],
             "common_name": ["Robin", "Robin"],
-            "taxanb": ["Bird", "Bird"],
+            "taxon_group": ["Bird", "Bird"],
             "date_of_record": ["01/01/2024", "02/01/2024"],
         }
     )
@@ -53,7 +53,7 @@ def test_build_species_index_calculates_first_and_last_year():
             "species_no": [10, 10, 10],
             "scientific_name": ["Robin"] * 3,
             "common_name": ["Robin"] * 3,
-            "taxanb": ["Bird"] * 3,
+            "taxon_group": ["Bird"] * 3,
             "date_of_record": [
                 "01/01/2022",
                 "01/01/2024",
@@ -77,7 +77,7 @@ def test_build_species_index_renames_columns():
             "species_no": [10],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": ["Bird"],
+            "taxon_group": ["Bird"],
             "date_of_record": ["01/01/2024"],
         }
     )
@@ -87,7 +87,7 @@ def test_build_species_index_renames_columns():
     assert "species_id" in result.columns
     assert "species_group" in result.columns
     assert "species_no" not in result.columns
-    assert "taxanb" not in result.columns
+    assert "taxon_group" not in result.columns
 
 
 def test_build_species_index_sets_has_image_false():
@@ -99,7 +99,7 @@ def test_build_species_index_sets_has_image_false():
             "species_no": [10],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": ["Bird"],
+            "taxon_group": ["Bird"],
             "date_of_record": ["01/01/2024"],
         }
     )
@@ -126,7 +126,7 @@ def test_build_species_index_defaults_missing_species_group():
             "species_no": [10],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": [pd.NA],
+            "taxon_group": [pd.NA],
             "date_of_record": ["01/01/2024"],
         }
     )
@@ -146,7 +146,7 @@ def test_build_species_index_returns_expected_columns():
             "species_no": [10],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": ["Bird"],
+            "taxon_group": ["Bird"],
             "date_of_record": ["01/01/2024"],
         }
     )
@@ -188,7 +188,7 @@ def test_build_species_index_drops_missing_species_no():
             "species_no": [pd.NA],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": ["Bird"],
+            "taxon_group": ["Bird"],
             "date_of_record": ["01/01/2024"],
         }
     )
@@ -210,7 +210,7 @@ def test_build_species_index_raises_error_on_duplicate_species_id():
                 "Different Robin",
             ],  # Different metadata creates two groups
             "common_name": ["Robin", "Robin"],
-            "taxanb": ["Bird", "Bird"],
+            "taxon_group": ["Bird", "Bird"],
             "date_of_record": ["01/01/2024", "01/01/2024"],
         }
     )
@@ -230,7 +230,7 @@ def test_build_species_index_handles_invalid_dates():
             "species_no": [10],
             "scientific_name": ["Robin"],
             "common_name": ["Robin"],
-            "taxanb": ["Bird"],
+            "taxon_group": ["Bird"],
             "date_of_record": ["invalid_date_string"],
         }
     )

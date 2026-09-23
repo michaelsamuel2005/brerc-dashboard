@@ -6,6 +6,8 @@ spatial blurring resolutions.
 
 import pandas as pd
 
+import etl.columns as C
+
 from etl.safety_gate.rules import (
     DEFAULT_SENSITIVE_RESOLUTION_M,
     FLAGGED_RECORD_TYPES,
@@ -18,8 +20,8 @@ def classify_chunk(
     df: pd.DataFrame,
     *,
     source_provides_sensitivity: bool | None = None,
-    species_column: str = "species_no",
-    record_type_column: str = "record_type",
+    species_column: str = C.SPECIES_NO,
+    record_type_column: str = C.RECORD_TYPE,
 ) -> pd.DataFrame:
     """
     Evaluates records against multi-factor sensitivity rules,
@@ -35,8 +37,7 @@ def classify_chunk(
         belongs where the source is configured rather than being assumed here.
 
     species_column, record_type_column:
-        The BRERC source column names, as configured in config/safety.yaml
-        (columns.species_number, columns.record_type).
+        Pipeline column names (etl/columns.py); overridable for tests.
     """
     df = df.copy()
 
@@ -74,7 +75,7 @@ def classify_chunk(
     # source which genuinely has no flag, and wrong — silently, and at full precision
     # — for a source which HAS one that was renamed, dropped or misspelled upstream.
     # The two arrive here looking identical, so the caller has to say which it is.
-    has_sensitivity_column = "sensitive" in df.columns
+    has_sensitivity_column = C.SENSITIVE in df.columns
 
     if source_provides_sensitivity is None and not has_sensitivity_column:
         raise ValueError(
@@ -94,7 +95,7 @@ def classify_chunk(
 
     if has_sensitivity_column:
         sensitive_source_mask = (
-            df["sensitive"]
+            df[C.SENSITIVE]
             .astype("string")
             .str.strip()
             .str.lower()
@@ -154,12 +155,5 @@ def classify_chunk(
 
     # Increase blur resolution distance for flagged sensitive records
     df.loc[sensitive_mask, "resolution_m"] = DEFAULT_SENSITIVE_RESOLUTION_M
-
-    # public_output.PUBLIC_COLUMNS names this column "record_type" as a fixed
-    # part of the publication allow-list — normalise the configured source
-    # name to that fixed name here, once, so the allow-list itself never has
-    # to know what BRERC calls the column.
-    if record_type_column != "record_type":
-        df = df.rename(columns={record_type_column: "record_type"})
 
     return df

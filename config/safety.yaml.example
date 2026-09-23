@@ -66,50 +66,70 @@ admin:
 # SOURCE
 # -----------------------------------------------------------------------------
 source:
-  mode: "csv"               # or "database"
+  mode: "database"          # or "csv"
 
-  # csv mode only.
-  records_path: "../data/varied_sample.csv"
+  # database mode. These are the mock BRERC database's views; BRERC: replace
+  # with your real view/table names.
+  records_query: "SELECT * FROM brerc_source.vw_occurrences"
+  dictionary_query: "SELECT * FROM brerc_source.vw_species_dictionary"
+
+  # csv mode only. The file's columns must match 'columns:' below just as the
+  # database view's do.
+  records_path: "../data/records.csv"
   dictionary_path: "../data/full_dictionary.csv"
 
-  # database mode only. BRERC: replace with your real view/table names.
-  records_query: "SELECT * FROM your_source_table"
-  dictionary_query: "SELECT * FROM your_dictionary_table"
-
 
 # -----------------------------------------------------------------------------
-# COLUMNS — which source column plays each role
+# COLUMNS — the ONLY place BRERC's column names appear
 # -----------------------------------------------------------------------------
-# Left: the role the pipeline knows. Right: the column in the source, after
-# cleaning (lowercased, spaces turned into underscores).
+# Left: the pipeline's name for the column (fixed, used by the code).
+# Right: what BRERC calls it. If BRERC renames a column, change the RIGHT side.
 #
-# The first group is read by the ETL today. The second group is mapped for
-# future use: nothing reads those roles yet, so mapping one here does not
-# change what the ETL does. Using one still needs code that reads it.
+# Straight after the data is read, these columns are renamed to the left-hand
+# names and EVERY OTHER COLUMN IS DROPPED. Place, comments, grid_ref, recorder
+# details and so on never enter the pipeline, so they cannot be published.
+#
+# The ETL checks every mapping when it starts: a right-hand column missing
+# from BRERC's data stops the run with a message naming the line to fix.
+# Right-hand names are matched after cleaning (lowercased, spaces as "_").
+
+# Occurrence records (source.records_query / source.records_path).
+# Required: unique_no, scientific_name, common_name, species_no, record_type,
+#           verified, easting, northing, date_of_record, modified_date.
+# Optional: source_year, sensitive, abundance, sex_stage, vitality. Leave one
+#           out (or set it to null) if the source does not have it. Leaving
+#           out `sensitive` means "this source has no sensitivity flag".
 columns:
-  # Read by the ETL.
+  unique_no: unique_no
   scientific_name: scientific_name
-  species_number: species_no
-  nbn_number: nbn_number         # the species DICTIONARY's column
+  common_name: common_name
+  species_no: species_no
   record_type: record_type
   verified: verified
-  eastings: easting              # PRECISE — generalised, never published
-  northings: northing            # PRECISE — generalised, never published
-  record_date: date_of_record    # free text: "14/05/2024", "June 2023"
+  easting: easting                # PRECISE — generalised, never published
+  northing: northing              # PRECISE — generalised, never published
+  date_of_record: date_of_record  # free text: "14/05/2024", "June 2023"
   modified_date: date_mdb_modified  # drives incremental loading
-  source_year: year_end          # the year when record_date is vague
-                                 # ("February 2007"); end year for ranges
+  source_year: year_end           # the year when date_of_record is vague
+                                  # ("February 2007"); end year for ranges
+  sensitive: sensitive            # 'Yes' is blurred to 1 km, per BRERC
+  abundance: abundance            # hashed, never published
+  sex_stage: sex_stage            # hashed, never published
+  vitality: vitality              # hashed, never published
 
-  # Reserved for future use; not read by the code yet.
-  unique_no: unique_no           # the code uses a column literally named
-                                 # unique_no, not through this map
-  common_name: common_name
-  sensitive: sensitive           # 'Yes' is blurred to 1 km, per BRERC. The
-                                 # safety gate currently finds this column by
-                                 # its name, not through this map.
-  abundance: abundance           # hashed, never published
-  sex_stage: sex_stage           # hashed, never published
-  vitality: vitality             # hashed, never published
+# Species dictionary (source.dictionary_query / source.dictionary_path).
+# All required.
+dictionary_columns:
+  scientific_name: scientific
+  species_no: species_no
+  nbn_number: nbn_number
+  common_name: common_nam
+  taxon_group: taxanb             # shown as the species group on the dashboard
+
+# BRERC's sensitive-species list (files.sensitive_species). All required.
+sensitive_species_columns:
+  species_no: species_no
+  nbn_number: nbn_number
 
 
 # -----------------------------------------------------------------------------
@@ -130,8 +150,8 @@ load:
   incremental_check: true
 
 reconciliation:
-  # Column names as they appear in the cleaned dataframe at the point hashing
-  # runs. A change to any of these is recorded in the stored content hash.
+  # Pipeline names (left-hand side of 'columns:'), not BRERC's. A change to
+  # any of these is recorded in the stored content hash.
   hash_columns:
     - scientific_name
     - abundance

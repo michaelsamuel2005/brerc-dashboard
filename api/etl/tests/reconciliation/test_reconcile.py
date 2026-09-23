@@ -49,8 +49,10 @@ def test_make_safe_for_publishing_returns_empty_schema_when_input_empty():
 @patch("etl.reconciliation.reconcile.prepare_public_output")
 @patch("etl.reconciliation.reconcile.map_to_occurrence_public")
 @pytest.mark.parametrize(
-    ("source_mode", "expected_source_provides_sensitivity"),
-    [("csv", False), ("database", True)],
+    ("columns_mapping", "expected_source_provides_sensitivity"),
+    # Whether safety.yaml maps 'sensitive' decides whether the source is
+    # expected to carry a sensitivity flag.
+    [({}, False), ({"sensitive": "sensitive"}, True)],
 )
 def test_make_safe_for_publishing_executes_pipeline(
     mock_map,
@@ -60,7 +62,7 @@ def test_make_safe_for_publishing_executes_pipeline(
     mock_classify,
     mock_resolve,
     mock_filter,
-    source_mode,
+    columns_mapping,
     expected_source_provides_sensitivity,
 ):
     # Confirms records successfully pass through all safety gate functions in order.
@@ -77,9 +79,9 @@ def test_make_safe_for_publishing_executes_pipeline(
     mock_classify.return_value = pd.DataFrame({"id": [1]})
     mock_generalise.return_value = pd.DataFrame({"id": [1]})
 
-    # Needs unique_no, content_hash, and MODIFIED_COLUMN for the lookup step in make_safe_for_publishing
+    # Needs unique_no, content_hash, and modified_date for the lookup step in make_safe_for_publishing
     mock_add_locality.return_value = pd.DataFrame(
-        {"unique_no": [100], "content_hash": ["abc_hash"], "date_mdb_modified": ["2026-08-09"]}
+        {"unique_no": [100], "content_hash": ["abc_hash"], "modified_date": ["2026-08-09"]}
     )
 
     # Needs unique_no for the safe_df["unique_no"].map step
@@ -90,10 +92,7 @@ def test_make_safe_for_publishing_executes_pipeline(
         {"record_id": [100], "content_hash": ["abc_hash"], "date_mdb_modified": ["2026-08-09"]}
     )
 
-    with patch.dict(
-        "etl.reconciliation.reconcile.CONFIG",
-        {"source": {"mode": source_mode}},
-    ):
+    with patch.dict("etl.columns.CONFIG", {"columns": columns_mapping}):
         result = make_safe_for_publishing(df, dictionary_df, connection)
 
     mock_filter.assert_called_once()
@@ -105,7 +104,6 @@ def test_make_safe_for_publishing_executes_pipeline(
     )
     assert mock_classify.call_args.kwargs == {
         "source_provides_sensitivity": expected_source_provides_sensitivity,
-        "record_type_column": "record_type",
     }
     mock_generalise.assert_called_once()
     mock_add_locality.assert_called_once()
@@ -139,7 +137,7 @@ def test_make_safe_for_publishing_drops_unresolved_species(
 
         with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
             "etl.reconciliation.reconcile.add_coarse_locality",
-            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "date_mdb_modified": []}),
+            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "modified_date": []}),
             create=True,
         ), patch(
             "etl.reconciliation.reconcile.prepare_public_output",
@@ -187,7 +185,7 @@ def test_make_safe_for_publishing_drops_records_without_a_year(
 
         with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
             "etl.reconciliation.reconcile.add_coarse_locality",
-            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "date_mdb_modified": []}),
+            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "modified_date": []}),
             create=True,
         ), patch(
             "etl.reconciliation.reconcile.prepare_public_output",

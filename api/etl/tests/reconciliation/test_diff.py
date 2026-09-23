@@ -50,11 +50,11 @@ def test_build_id_hash_map_from_chunks_merges_dictionaries():
 
 
 def test_build_id_modified_map_returns_dictionary():
-    # Confirms each unique_no is successfully mapped to its date_mdb_modified timestamp.
+    # Confirms each unique_no is successfully mapped to its modified_date timestamp.
     df = pd.DataFrame(
         {
             "unique_no": [1, 2],
-            "date_mdb_modified": ["2026-01-01", "2026-01-02"],
+            "modified_date": ["2026-01-01", "2026-01-02"],
         }
     )
 

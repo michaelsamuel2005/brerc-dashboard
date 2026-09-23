@@ -10,6 +10,8 @@ import logging
 
 # Imports database connections and pipeline components
 
+import etl.columns as C
+from etl.columns import source_column
 from etl.db import (
     check_table_exists,
     check_table_has_rows,
@@ -55,8 +57,9 @@ def load_source_data(source_connection=None, watermark_date=None):
     config = get_config()
     mode = config["source"].get("mode", "csv")
 
-    columns_config = config.get("columns", {})
-    modified_col = columns_config.get("modified_date", "date_mdb_modified")
+    # BRERC's name for the modified-date column: the incremental filter runs
+    # inside BRERC's database, before columns are translated to pipeline names.
+    modified_col = source_column(C.MODIFIED_DATE)
 
     if mode == "csv":
         df = pd.read_csv(config["source"]["records_path"])
@@ -91,11 +94,6 @@ def load_source_data(source_connection=None, watermark_date=None):
                 query,
                 source_connection,
             )
-
-        # The BRERC database provides date_mdb_modified directly.
-        # Map it to modified_date for downstream ETL components.
-        if modified_col in df.columns and "modified_date" not in df.columns:
-            df["modified_date"] = df[modified_col]
 
     else:
         raise ValueError(f"Unknown source.mode: {mode!r}")

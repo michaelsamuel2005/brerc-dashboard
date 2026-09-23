@@ -157,8 +157,9 @@ def test_load_sensitive_species_refuses_a_list_missing_a_required_column(monkeyp
 
     rules.load_sensitive_species.cache_clear()
 
+    # Names the missing column and where to fix the mapping
     assert "nbn_number" in str(raised.value)
-    assert "header" in str(raised.value)
+    assert "safety.yaml" in str(raised.value)
 
 
 def test_classification_stops_rather_than_publishing_without_the_list(monkeypatch):

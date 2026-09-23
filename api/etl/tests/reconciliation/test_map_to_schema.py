@@ -10,7 +10,6 @@ from etl.reconciliation.map_to_schema import (
 # --- map_to_occurrence_public tests ---
 
 
-@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_maps_columns_correctly():
     # Confirms all required columns are mapped and correctly transformed.
     # Expects the returned dataframe to match the target schema exactly, else fails.
@@ -54,7 +53,6 @@ def test_map_to_occurrence_public_maps_columns_correctly():
     assert result["date_mdb_modified"].tolist() == ["2022-08-15", "2023-01-01"]
 
 
-@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_writes_years_as_whole_numbers():
     # Confirms years come out as whole numbers (2014, never "2014.0"), even when
     # the column arrives as floats because one value is missing.
@@ -79,7 +77,6 @@ def test_map_to_occurrence_public_writes_years_as_whole_numbers():
     assert pd.isna(result["record_year"].iloc[1])
 
 
-@patch("etl.reconciliation.map_to_schema.MODIFIED_COLUMN", "modified_date")
 def test_map_to_occurrence_public_does_not_modify_original_dataframe():
     # Confirms the input dataframe is left completely unchanged (mutation check).
     # Expects the original dataframe to lack the new mapped columns, else fails.

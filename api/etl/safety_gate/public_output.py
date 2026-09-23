@@ -7,6 +7,8 @@ and dropping unlocatable records before data reaches the public dashboard.
 import logging
 import pandas as pd
 
+import etl.columns as C
+
 from etl.safety_gate.location import os_grid_square
 
 logger = logging.getLogger(__name__)
@@ -14,15 +16,15 @@ logger = logging.getLogger(__name__)
 # Matches occurrence_public schema and the API contract's public fields
 # (e.g., species_id, precision_metres).
 PUBLIC_COLUMNS = [
-    "unique_no",
-    "species_no",  # public - shown as speciesId in the contract
-    "scientific_name",
-    "record_type",
+    C.UNIQUE_NO,
+    C.SPECIES_NO,  # public - shown as speciesId in the contract
+    C.SCIENTIFIC_NAME,
+    C.RECORD_TYPE,
     "longitude",
     "latitude",
     "coarse_locality",
     "effective_resolution_m",  # public - shown as precisionMetres in the contract
-    "date_of_record",
+    C.DATE_OF_RECORD,
     "record_year",  # public - derived from date_of_record, else source_year
     "is_legacy",
 ]
@@ -31,13 +33,13 @@ PUBLIC_COLUMNS = [
 FORBIDDEN_COLUMNS = {
     "place",
     "comments",
-    "easting",
-    "northing",
+    C.EASTING,
+    C.NORTHING,
     "grid_reference",
     "recorder_name",
     "sensitivity_reason",
     "is_sensitive",
-    "nbn_number",
+    C.NBN_NUMBER,
 }
 
 

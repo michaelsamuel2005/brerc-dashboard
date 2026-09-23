@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 import logging
 import time
 
+import etl.columns as C
+from etl.columns import to_pipeline_names
 from etl.profiling.cleaning import clean_data
 from etl.reconciliation.reconcile import reconcile
 from etl.aggregation.counts import build_public_aggregation
@@ -22,13 +24,25 @@ logger = logging.getLogger(__name__)
 
 CONFIG = load_safety_config()
 
-VERIFIED_COLUMN = CONFIG["columns"]["verified"]
-EASTING_COLUMN = CONFIG["columns"]["eastings"]
-NORTHING_COLUMN = CONFIG["columns"]["northings"]
-DATE_COLUMN = CONFIG["columns"]["record_date"]
-SPECIES_COLUMN = CONFIG["columns"]["species_number"]
-NBN_COLUMN = CONFIG["columns"]["nbn_number"]
-SCIENTIFIC_NAME_COLUMN = CONFIG["columns"]["scientific_name"]
+
+def prepare_records(df):
+    """Cleans source records and translates them to pipeline column names."""
+    return to_pipeline_names(
+        clean_data(df),
+        "columns",
+        required=C.RECORD_COLUMNS_REQUIRED,
+        what="the source records",
+    )
+
+
+def prepare_dictionary(df):
+    """Cleans the species dictionary and translates it to pipeline column names."""
+    return to_pipeline_names(
+        clean_data(df),
+        "dictionary_columns",
+        required=C.DICTIONARY_COLUMNS_REQUIRED,
+        what="the species dictionary",
+    )
 
 
 def run_pipeline(
@@ -79,8 +93,10 @@ def run_pipeline(
         # Step 1: Clean raw column names and formats
         logger.info("SOURCE columns: %s", sorted(source_df.columns.tolist()))
         logger.info("Cleaning source and dictionary dataframes...")
-        cleaned_source = clean_data(source_df)
-        cleaned_dictionary = clean_data(dictionary_df)
+        # From here on only the pipeline's own column names exist; every
+        # column safety.yaml does not map has been dropped.
+        cleaned_source = prepare_records(source_df)
+        cleaned_dictionary = prepare_dictionary(dictionary_df)
         logger.info("CLEANED columns: %s", sorted(cleaned_source.columns.tolist()))
 
         # Step 2: Match and resolve species identifiers (species_no)
@@ -88,9 +104,6 @@ def run_pipeline(
         resolved_source = resolve_species_numbers(
             cleaned_source,
             cleaned_dictionary,
-            species_column=SPECIES_COLUMN,
-            nbn_column=NBN_COLUMN,
-            scientific_name_column=SCIENTIFIC_NAME_COLUMN,
         )
         logger.info("RESOLVED columns: %s", sorted(resolved_source.columns.tolist()))
 
@@ -101,11 +114,8 @@ def run_pipeline(
             resolved_aggregation_source = resolved_source
         else:
             resolved_aggregation_source = resolve_species_numbers(
-                clean_data(aggregation_source_df),
+                prepare_records(aggregation_source_df),
                 cleaned_dictionary,
-                species_column=SPECIES_COLUMN,
-                nbn_column=NBN_COLUMN,
-                scientific_name_column=SCIENTIFIC_NAME_COLUMN,
             )
 
         # Step 3: Build derived public aggregation layers
@@ -115,10 +125,6 @@ def run_pipeline(
         )
         aggregation_outputs = build_public_aggregation(
             resolved_aggregation_source,
-            verified_column=VERIFIED_COLUMN,
-            easting_column=EASTING_COLUMN,
-            northing_column=NORTHING_COLUMN,
-            date_column=DATE_COLUMN,
         )
 
         # Step 4: Persist species index and suppression counts.
