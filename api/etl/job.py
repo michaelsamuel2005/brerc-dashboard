@@ -229,11 +229,23 @@ def nightly_job():
                         source_connection,
                         watermark_date=watermark_date,
                     )
+
+                    # The map cells and species index are rebuilt from scratch
+                    # every run, so they need every record even when only the
+                    # changed ones are being reconciled.
+                    if watermark_date is None:
+                        aggregation_source_df = source_df
+                    else:
+                        aggregation_source_df = load_source_data(
+                            source_connection,
+                            watermark_date=None,
+                        )
                     dictionary_df = load_species_dictionary(
                         source_connection
                     )
             else:
                 source_df = load_source_data(watermark_date=None)
+                aggregation_source_df = source_df
                 dictionary_df = load_species_dictionary()
 
             ui_map = get_current_ui_map(connection)
@@ -246,6 +258,7 @@ def nightly_job():
                 ui_map,
                 connection,
                 load_mode,
+                aggregation_source_df=aggregation_source_df,
             )
 
             # Read back the Load_date that upsert_provenance() just committed,

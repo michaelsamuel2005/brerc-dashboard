@@ -37,6 +37,7 @@ def run_pipeline(
     ui_map,
     connection,
     load_mode,
+    aggregation_source_df=None,
 ):
     """
     Executes the complete end-to-end ETL pipeline sequence:
@@ -49,6 +50,12 @@ def run_pipeline(
 
     The load_mode ('initial' or 'incremental') is stamped onto every row written
     during this execution via the 'Load' and 'Load_date' audit metadata columns.
+
+    source_df feeds reconciliation (step 6); on an incremental run it holds only
+    the records changed since the last load. The map cells and species index
+    (steps 3-4) are REPLACED every run, so they must be built from every record:
+    pass the full source as aggregation_source_df. Left as None, source_df is
+    used for both, which is right only when source_df is already complete.
     """
 
     start_time = time.time()
@@ -87,10 +94,27 @@ def run_pipeline(
         )
         logger.info("RESOLVED columns: %s", sorted(resolved_source.columns.tolist()))
 
+        # The aggregation input: every record, not just this run's changes.
+        # Building it from the incremental slice replaced the whole public map
+        # with only the records edited since the last run (none, on a quiet night).
+        if aggregation_source_df is None:
+            resolved_aggregation_source = resolved_source
+        else:
+            resolved_aggregation_source = resolve_species_numbers(
+                clean_data(aggregation_source_df),
+                cleaned_dictionary,
+                species_column=SPECIES_COLUMN,
+                nbn_column=NBN_COLUMN,
+                scientific_name_column=SCIENTIFIC_NAME_COLUMN,
+            )
+
         # Step 3: Build derived public aggregation layers
-        logger.info("Building public aggregation layer...")
+        logger.info(
+            "Building public aggregation layer from %d records...",
+            len(resolved_aggregation_source),
+        )
         aggregation_outputs = build_public_aggregation(
-            resolved_source,
+            resolved_aggregation_source,
             verified_column=VERIFIED_COLUMN,
             easting_column=EASTING_COLUMN,
             northing_column=NORTHING_COLUMN,
