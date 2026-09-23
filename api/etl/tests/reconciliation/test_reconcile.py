@@ -11,6 +11,12 @@ from etl.reconciliation.reconcile import (
 # --- make_safe_for_publishing tests ---
 
 
+
+def _fixed_year(df, *args, **kwargs):
+    # Stands in for derive_record_year(): every record is from 2024
+    return pd.Series(2024, index=df.index, dtype="Int64")
+
+
 def test_make_safe_for_publishing_returns_empty_schema_when_input_empty():
     # Confirms an empty input dataframe bypasses the safety pipeline entirely.
     # Expects an empty dataframe with the exact occurrence_public schema, else fails.
@@ -34,6 +40,7 @@ def test_make_safe_for_publishing_returns_empty_schema_when_input_empty():
     ]
 
 
+@patch("etl.reconciliation.reconcile.derive_record_year", new=_fixed_year)
 @patch("etl.reconciliation.reconcile.filter_accepted_records")
 @patch("etl.reconciliation.reconcile.resolve_species_numbers")
 @patch("etl.reconciliation.reconcile.classify_chunk")
@@ -64,7 +71,9 @@ def test_make_safe_for_publishing_executes_pipeline(
 
     # Setup the mock return values representing the data at each stage of the pipeline
     mock_filter.return_value = pd.DataFrame({"id": [1]})
-    mock_resolve.return_value = pd.DataFrame({"id": [1], "species_no": ["A123"]})
+    mock_resolve.return_value = pd.DataFrame(
+        {"id": [1], "species_no": ["A123"], "record_year": [2024]}
+    )
     mock_classify.return_value = pd.DataFrame({"id": [1]})
     mock_generalise.return_value = pd.DataFrame({"id": [1]})
 
@@ -108,6 +117,7 @@ def test_make_safe_for_publishing_executes_pipeline(
     assert result["date_mdb_modified"].tolist() == ["2026-08-09"]
 
 
+@patch("etl.reconciliation.reconcile.derive_record_year", new=_fixed_year)
 @patch("etl.reconciliation.reconcile.filter_accepted_records")
 @patch("etl.reconciliation.reconcile.resolve_species_numbers")
 @patch("etl.reconciliation.reconcile.classify_chunk")
@@ -123,7 +133,7 @@ def test_make_safe_for_publishing_drops_unresolved_species(
         mock_filter.return_value = df
         # One record resolves successfully, the other has NaN for species_no
         mock_resolve.return_value = pd.DataFrame(
-            {"id": [1, 2], "species_no": ["A123", None]}
+            {"id": [1, 2], "species_no": ["A123", None], "record_year": [2024, 2024]}
         )
         mock_classify.return_value = pd.DataFrame({"id": [1], "species_no": ["A123"]})
 
@@ -150,6 +160,51 @@ def test_make_safe_for_publishing_drops_unresolved_species(
     assert len(passed_to_classify) == 1
     assert passed_to_classify["species_no"].tolist() == ["A123"]
 
+
+
+@patch("etl.reconciliation.reconcile.derive_record_year", new=_fixed_year)
+@patch("etl.reconciliation.reconcile.filter_accepted_records")
+@patch("etl.reconciliation.reconcile.resolve_species_numbers")
+@patch("etl.reconciliation.reconcile.classify_chunk")
+def test_make_safe_for_publishing_drops_records_without_a_year(
+    mock_classify, mock_resolve, mock_filter, caplog
+):
+    # Confirms a record with no readable date and no source year is skipped and
+    # logged, rather than failing the whole run on record_year NOT NULL.
+    with caplog.at_level(logging.WARNING):
+        df = pd.DataFrame({"id": [1, 2]})
+        connection = MagicMock()
+
+        mock_filter.return_value = df
+        mock_resolve.return_value = pd.DataFrame(
+            {
+                "id": [1, 2],
+                "species_no": ["A123", "B456"],
+                "record_year": pd.array([2024, pd.NA], dtype="Int64"),
+            }
+        )
+        mock_classify.return_value = pd.DataFrame({"id": [1], "species_no": ["A123"]})
+
+        with patch("etl.reconciliation.reconcile.generalise_locations", create=True), patch(
+            "etl.reconciliation.reconcile.add_coarse_locality",
+            return_value=pd.DataFrame({"unique_no": [], "content_hash": [], "date_mdb_modified": []}),
+            create=True,
+        ), patch(
+            "etl.reconciliation.reconcile.prepare_public_output",
+            return_value=pd.DataFrame({"unique_no": []}),
+            create=True,
+        ), patch(
+            "etl.reconciliation.reconcile.map_to_occurrence_public",
+            return_value=pd.DataFrame(),
+            create=True,
+        ):
+
+            make_safe_for_publishing(df, pd.DataFrame(), connection)
+
+    assert "1 records excluded from public load: no readable date" in caplog.text
+
+    passed_to_classify = mock_classify.call_args[0][0]
+    assert passed_to_classify["species_no"].tolist() == ["A123"]
 
 # --- reconcile tests ---
 

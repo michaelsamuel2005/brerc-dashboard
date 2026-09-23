@@ -90,6 +90,7 @@ def test_prepare_public_output_returns_only_public_columns():
         "coarse_locality": "TQ27",
         "effective_resolution_m": 1000,
         "date_of_record": "2024-01-01",
+        "record_year": 2024,
         "is_legacy": False,
         "comments": "Secret",
         "easting": 529090,
@@ -134,6 +135,7 @@ def test_prepare_public_output_drops_rows_with_missing_longitude():
         "coarse_locality": "TQ27",
         "effective_resolution_m": 1000,
         "date_of_record": "2024-01-01",
+        "record_year": 2024,
         "is_legacy": False,
     }
 
@@ -157,6 +159,7 @@ def test_prepare_public_output_drops_rows_with_missing_latitude():
         "coarse_locality": "TQ27",
         "effective_resolution_m": 1000,
         "date_of_record": "2024-01-01",
+        "record_year": 2024,
         "is_legacy": False,
     }
 
@@ -180,6 +183,7 @@ def test_prepare_public_output_preserves_valid_record():
         "coarse_locality": "TQ27",
         "effective_resolution_m": 1000,
         "date_of_record": "2024-01-01",
+        "record_year": 2024,
         "is_legacy": False,
     }
 

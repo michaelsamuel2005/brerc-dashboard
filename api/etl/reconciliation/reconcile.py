@@ -23,6 +23,7 @@ from etl.reconciliation.streaming import (
 # Imports functions which makes the records safe to view in public dashboard
 from etl.aggregation.cell_filtering import filter_accepted_records
 from etl.load.loader import load_safety_config
+from etl.profiling.record_year import derive_record_year
 
 # ETL load metadata ("Load" / "Load_date")
 from etl.load.metadata import add_load_metadata
@@ -86,6 +87,11 @@ def make_safe_for_publishing(
     if DATE_COLUMN != "date_of_record":
         df = df.rename(columns={DATE_COLUMN: "date_of_record"})
 
+    # Worked out here, while the source's own year column is still present —
+    # prepare_public_output() drops it further down.
+    df = df.copy()
+    df["record_year"] = derive_record_year(df, "date_of_record")
+
     # Drop unverified or rejected records prior to classification and generalisation
     filtered = filter_accepted_records(df, verified_column=VERIFIED_COLUMN)
 
@@ -111,6 +117,17 @@ def make_safe_for_publishing(
         )
 
     resolved = resolved.dropna(subset=["species_no"])
+
+    # occurrence_public.record_year is NOT NULL, so a record with no readable
+    # date and no source year cannot be loaded. Skip it rather than fail the run.
+    missing_year = resolved["record_year"].isna()
+    if missing_year.any():
+        logger.warning(
+            "%d records excluded from public load: no readable date or source year.",
+            missing_year.sum(),
+        )
+
+    resolved = resolved.loc[~missing_year]
 
     # Classify sensitivity and determine blur thresholds
     classified = classify_chunk(

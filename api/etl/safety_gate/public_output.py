@@ -23,6 +23,7 @@ PUBLIC_COLUMNS = [
     "coarse_locality",
     "effective_resolution_m",  # public - shown as precisionMetres in the contract
     "date_of_record",
+    "record_year",  # public - derived from date_of_record, else source_year
     "is_legacy",
 ]
 # Genuinely never allowed past the boundary: precise coordinates, free text,

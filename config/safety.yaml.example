@@ -97,6 +97,8 @@ columns:
   northings: northing            # PRECISE — generalised, never published
   record_date: date_of_record    # free text: "14/05/2024", "June 2023"
   modified_date: date_mdb_modified  # drives incremental loading
+  source_year: year_end          # the year when record_date is vague
+                                 # ("February 2007"); end year for ranges
 
   # Reserved for future use; not read by the code yet.
   unique_no: unique_no           # the code uses a column literally named
@@ -105,7 +107,6 @@ columns:
   sensitive: sensitive           # 'Yes' is blurred to 1 km, per BRERC. The
                                  # safety gate currently finds this column by
                                  # its name, not through this map.
-  source_year: year_end          # for dates that are vague or before 1900
   abundance: abundance           # hashed, never published
   sex_stage: sex_stage           # hashed, never published
   vitality: vitality             # hashed, never published

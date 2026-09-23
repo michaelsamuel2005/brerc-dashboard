@@ -186,6 +186,9 @@ unlicensed text.
   **species × year × grid cell × published precision**.
 - Suppressing a map cell while leaving the same records in a table, chart or total does not
   protect the information. Suppression must be consistent across all public outputs.
+- The public year of a record comes from its date when readable, otherwise from BRERC's own
+  `YearEnd` (`columns.source_year` in safety.yaml). Vague dates ("February 2007", "1985-1990")
+  therefore take the **end** year of their range. Pending BRERC confirmation.
 
 ### Proposed safe interim
 

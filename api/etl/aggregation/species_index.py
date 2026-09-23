@@ -6,6 +6,7 @@ in the filtered records, rather than from the full species dictionary.
 import pandas as pd
 
 from etl.load.loader import load_safety_config
+from etl.profiling.record_year import derive_record_year
 
 CONFIG = load_safety_config()
 
@@ -65,11 +66,7 @@ def build_species_index(
 
     # Convert dates into years so we can find the
     # earliest and latest recorded years per species.
-    df["record_year"] = pd.to_datetime(
-        df[DATE_COLUMN],
-        dayfirst=True,
-        errors="coerce",
-    ).dt.year.astype("Int64")
+    df["record_year"] = derive_record_year(df, DATE_COLUMN)
 
     # Groups records belonging to the same species.
     # Each group represents one species entry in the species table.

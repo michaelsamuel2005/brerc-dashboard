@@ -1,5 +1,7 @@
 """Aggregates occurrence records into public spatial and temporal grids with privacy suppression."""
 
+import logging
+
 import pandas as pd
 
 from etl.safety_gate.location import os_grid_square
@@ -9,7 +11,10 @@ from etl.aggregation.cell_filtering import (
     ACCEPTED_VERIFIED_VALUES,
 )
 from etl.aggregation.species_index import build_species_index
+from etl.profiling.record_year import derive_record_year
 from etl.load.loader import load_safety_config
+
+logger = logging.getLogger(__name__)
 
 CONFIG = load_safety_config()
 
@@ -78,14 +83,18 @@ def aggregate_counts(
     df["cell_sw_easting"] = (df[easting_column] // cell_size_m) * cell_size_m
     df["cell_sw_northing"] = (df[northing_column] // cell_size_m) * cell_size_m
 
-    # Extract observation year
-    df["year"] = pd.to_datetime(
-        df[date_column],
-        dayfirst=True,
-        errors="coerce",
-    ).dt.year
+    # Extract observation year. Logged here, once per run, because this is
+    # the step that sees every accepted record.
+    df["year"] = derive_record_year(df, date_column, log=True)
 
-    df = df.dropna(subset=["year"])
+    missing_year = df["year"].isna()
+    if missing_year.any():
+        logger.warning(
+            "%d records left out of the map cells: no readable date or source year.",
+            missing_year.sum(),
+        )
+
+    df = df.loc[~missing_year]
 
     # Determine verification status
     sample_val = (
