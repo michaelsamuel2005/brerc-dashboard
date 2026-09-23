@@ -171,14 +171,6 @@ def reconcile(
     # Compares the UI with the new source data using date_mdb_modified
     changes = diff_id_modified_maps(source_modified_map, ui_map)
 
-    logger.info(
-        "Reconciliation Breakdown — Inserts: %d | Updates: %d | Deletes: %d | Unchanged: %d",
-        len(changes["inserts"]),
-        len(changes["updates"]),
-        len(changes["deletes"]),
-        len(changes["unchanged"]),
-    )
-
     insert_ids = changes["inserts"]
     update_ids = changes["updates"]
 
@@ -211,13 +203,18 @@ def reconcile(
     else:
         delete_ids = set()
         if changes["deletes"]:
-            logger.warning(
-                "Incremental run: %d records are absent from the source window. "
-                "NOT deleting them — on an incremental load absence means "
-                "unchanged, not withdrawn. Genuine deletions need a full id "
-                "comparison (see the note in reconcile.py).",
+            logger.info(
+                "Incremental run: keeping the %d records not in this batch "
+                "(NOT deleting them — see the note in reconcile.py).",
                 len(changes["deletes"]),
             )
+
+    logger.info(
+        "Reconciliation — Inserts: %d | Updates: %d | Deletes: %d",
+        len(insert_ids),
+        len(update_ids),
+        len(delete_ids),
+    )
 
     # Content hash map — built separately, used only to populate the stored
     # content_hash column on written rows (audit/debug), NOT for change detection.
@@ -294,4 +291,6 @@ def reconcile(
         delete_records(delete_ids, connection)
     logger.info("Reconciliation pass completed successfully.")
 
-    return changes
+    # Report what was actually deleted, not what the comparison flagged:
+    # on an incremental run those are kept, so the summary must say 0.
+    return {**changes, "deletes": delete_ids}

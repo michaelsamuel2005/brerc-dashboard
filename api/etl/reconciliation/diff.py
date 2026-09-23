@@ -117,17 +117,11 @@ def diff_id_modified_maps(source_map: dict, ui_map: dict):
     unchanged = possible_updates - updates
 
     logger.info(
-        "Reconciliation diff complete: %d records to insert, %d to update, %d to delete.",
+        "Compared with the dashboard: %d new, %d changed, %d not in this batch.",
         len(inserts),
         len(updates),
         len(deletes),
     )
-
-    if deletes:
-        logger.warning(
-            "Reconciliation: Identified %d obsolete records to delete from the UI database.",
-            len(deletes),
-        )
 
     return {
         "inserts": inserts,
