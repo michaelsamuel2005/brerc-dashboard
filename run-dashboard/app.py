@@ -78,6 +78,7 @@ _OPTIONAL_COLUMNS = (
     "inserts",
     "updates",
     "deletes",
+    "total_records",
 )
 
 

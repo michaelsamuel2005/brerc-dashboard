@@ -267,6 +267,11 @@ def nightly_job():
                 provenance_row = cur.fetchone()
                 db_load_date = provenance_row["Load_date"] if provenance_row else None
 
+                # How many records the public dashboard holds after this run,
+                # so a sudden drop stands out on the run-history dashboard.
+                cur.execute(f"SELECT COUNT(*) AS total FROM {table_name}")
+                total_records = cur.fetchone()["total"]
+
         reconciliation_summary = result.get("reconciliation", {})
         insert_count = len(reconciliation_summary.get("inserts", []))
         update_count = len(reconciliation_summary.get("updates", []))
@@ -287,6 +292,7 @@ def nightly_job():
             inserts=insert_count,
             updates=update_count,
             deletes=delete_count,
+            total_records=total_records,
         )
 
         return result

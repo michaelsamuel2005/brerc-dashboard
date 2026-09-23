@@ -24,6 +24,7 @@ _ADDED_COLUMNS = (
     ("inserts", "INTEGER"),
     ("updates", "INTEGER"),
     ("deletes", "INTEGER"),
+    ("total_records", "INTEGER"),
 )
 
 
@@ -94,6 +95,7 @@ def _finish_run(
     inserts: int | None,
     updates: int | None,
     deletes: int | None,
+    total_records: int | None = None,
 ) -> None:
     """Shared by mark_run_successful/mark_run_failed: updates status, load_no,
     the failure reason (technical and plain-English), the record counts from
@@ -112,7 +114,8 @@ def _finish_run(
 
         connection.execute(
             "UPDATE runs SET status = ?, load_no = ?, duration_seconds = ?, "
-            "error_message = ?, error_summary = ?, inserts = ?, updates = ?, deletes = ? "
+            "error_message = ?, error_summary = ?, inserts = ?, updates = ?, deletes = ?, "
+            "total_records = ? "
             "WHERE run_number = ?",
             (
                 status,
@@ -123,6 +126,7 @@ def _finish_run(
                 inserts,
                 updates,
                 deletes,
+                total_records,
                 run_number,
             ),
         )
@@ -137,10 +141,11 @@ def mark_run_successful(
     inserts: int | None = None,
     updates: int | None = None,
     deletes: int | None = None,
+    total_records: int | None = None,
 ) -> None:
     """Updates a run's row in place to 'successful', stamping its load_no,
-    duration, and the counts of records inserted/updated/deleted during
-    reconciliation."""
+    duration, the counts of records inserted/updated/deleted during
+    reconciliation, and how many records the public dashboard holds after it."""
     _finish_run(
         run_number,
         "successful",
@@ -150,6 +155,7 @@ def mark_run_successful(
         inserts=inserts,
         updates=updates,
         deletes=deletes,
+        total_records=total_records,
     )
 
 

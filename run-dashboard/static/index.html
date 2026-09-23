@@ -194,6 +194,7 @@
           <th>Job type</th>
           <th>Date</th>
           <th>Duration</th>
+          <th>Total records</th>
           <th>Status</th>
           <th>Reason</th>
         </tr>
@@ -285,6 +286,7 @@
       <td>${escapeHtml(run.job_type)}</td>
       <td>${escapeHtml(run.load_no || run.date) || "—"}</td>
       <td>${formatDuration(run.duration_seconds)}</td>
+      <td>${run.total_records === null || run.total_records === undefined ? "—" : run.total_records.toLocaleString()}</td>
       <td><span class="badge ${status}">${escapeHtml(run.status)}</span></td>
       <td class="reason">${renderReason(run, expandable)}</td>
     `;
@@ -293,7 +295,7 @@
 
     const detailRow = document.createElement("tr");
     detailRow.className = `detail-row${isExpanded ? "" : " hidden"}`;
-    detailRow.innerHTML = `<td colspan="7">${renderCounts(run)}</td>`;
+    detailRow.innerHTML = `<td colspan="8">${renderCounts(run)}</td>`;
 
     tr.addEventListener("click", (event) => {
       // Don't hijack clicks on the Reason column's own "Technical details"
