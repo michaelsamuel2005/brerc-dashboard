@@ -19,6 +19,21 @@ SPECIES_COLUMN = "species_no"
 SCIENTIFIC_NAME_COLUMN = "scientific_name"
 
 
+def _most_common(values: pd.Series):
+    """
+    Returns the value that appears most often, ignoring blanks. Ties go to the
+    alphabetically first value so the result is the same on every run.
+    Returns None if every value is blank.
+    """
+    counts = values.dropna().value_counts()
+
+    if counts.empty:
+        return None
+
+    top = counts[counts == counts.max()]
+    return sorted(top.index)[0]
+
+
 def build_species_index(
     df: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -58,18 +73,24 @@ def build_species_index(
 
     # Groups records belonging to the same species.
     # Each group represents one species entry in the species table.
+    #
+    # Grouped by species number and scientific name only. Common name and
+    # group are typed per record, so one species can carry several spellings
+    # ("dragonflies" vs "a dragonfly ... (unidentified)"); grouping on them
+    # split a species into duplicate rows and failed the whole run. Each
+    # species now takes its most common spelling instead.
     species_index = (
         df.groupby(
             [
                 SPECIES_COLUMN,
                 SCIENTIFIC_NAME_COLUMN,
-                "common_name",
-                "taxanb",
             ],
-            # Keep species even if some fields like common names are missing
+            # Keep species even if the scientific name is missing
             dropna=False,
         )
         .agg(
+            common_name=("common_name", _most_common),
+            taxanb=("taxanb", _most_common),
             # Count how many occurrence records belong to this species.
             record_count=("unique_no", "count"),
             # Find the earliest year this species was recorded.
@@ -90,7 +111,8 @@ def build_species_index(
         )
     )
 
-    # Ensure each species_id is completely unique; duplicates mean bad data.
+    # Ensure each species_id is completely unique. A duplicate now means one
+    # species number carries two different scientific names: bad data.
     if species_index["species_id"].duplicated().any():
         raise ValueError("Species index contains duplicate species IDs")
 
