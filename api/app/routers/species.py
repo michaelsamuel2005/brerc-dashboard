@@ -19,15 +19,28 @@ None — the front end should then show a named placeholder, never a broken imag
 """
 
 from typing import Literal
+import re
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app import config, species_info
 from app.db import get_connection
-from app.models import SpeciesList, SpeciesListItem, SpeciesDetail
+# from app.models import SpeciesList, SpeciesListItem, SpeciesDetail
+from app.models import GroupFacet, SpeciesFacets, SpeciesList, SpeciesListItem
+ 
 
 router = APIRouter(prefix="/api", tags=["species"])
+def _slug(name: str | None, species_id: str) -> str:
+    """URL-friendly name: lowercase letters/digits joined by single hyphens."""
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") 
+    if s:
+        return s
+    return "species-" + (re.sub(r"[^a-z0-9]+", "-", str(species_id).lower()).strip("-") or "unknown")
 
+def _text_or_none(value: str | None) -> str | None:
+    """The front end rejects empty strings; send null instead.""" 
+    value = (value or "").strip()
+    return value or None
 
 # FOR THE MAINTAINER: this is a WHITELIST, and it is the only reason it is safe
 # to put a sort column into the SQL text.
@@ -104,6 +117,13 @@ def list_species(
 
             cur.execute(count_sql, filter_params)
             total = cur.fetchone()["total"]
+            cur.execute("SELECT TRIM(species_group) AS grp, COUNT(*) AS n "
+                        "FROM public_species "
+                        "WHERE species_group IS NOT NULL AND TRIM(species_group) <> '' "
+                        "GROUP BY TRIM(species_group) ORDER BY TRIM(species_group);")
+            group_facets = [
+                GroupFacet(value=r["grp"], label=r["grp"], speciesCount=r["n"])
+                for r in cur.fetchall()]
 
     # hasImage means "the detail endpoint can give you a picture". Two ways that
     # can be true: the database says so (a curated image), or the proxy already
@@ -114,30 +134,88 @@ def list_species(
         [row["scientific_name"] for row in rows]
     )
 
+    # items = [
+    #     SpeciesListItem(
+    #         speciesId=row["species_id"],
+    #         scientificName=row["scientific_name"],
+    #         commonName=row["common_name"],
+    #         group=row["species_group"],
+    #         recordCount=row["record_count"],
+    #         firstYear=row["first_year"],
+    #         lastYear=row["last_year"],
+    #         hasImage=row["has_image"] or row["scientific_name"] in cached_images,
+    #     )
+    #     for row in rows
+    # ]
+    # return SpeciesList(items=items, total=total, page=page, pageSize=pageSize)
     items = [
         SpeciesListItem(
             speciesId=row["species_id"],
+            slug=_slug(row["scientific_name"], row["species_id"]),
             scientificName=row["scientific_name"],
-            commonName=row["common_name"],
-            group=row["species_group"],
+            commonName=_text_or_none(row["common_name"]),
+            group=_text_or_none(row["species_group"]),
             recordCount=row["record_count"],
-            firstYear=row["first_year"],
-            lastYear=row["last_year"],
+            firstYear=row["first_year"] if row["record_count"] else None,
+            lastYear=row["last_year"] if row["record_count"] else None,
             hasImage=row["has_image"] or row["scientific_name"] in cached_images,
         )
         for row in rows
     ]
-    return SpeciesList(items=items, total=total, page=page, pageSize=pageSize)
+    return SpeciesList(
+        releaseId=config.RELEASE_ID,
+        datasetVersion=config.DATASET_VERSION,
+        items=items,
+        total=total,
+        page=page,
+        pageSize=pageSize,
+        facets=SpeciesFacets(groups=group_facets),
+    )
 
 
-@router.get("/species/{species_id}", response_model=SpeciesDetail)
-def species_detail(species_id: str) -> SpeciesDetail:
+# @router.get("/species/{species_id}", response_model=SpeciesDetail)
+# def species_detail(species_id: str) -> SpeciesDetail:
+#     with get_connection() as conn:
+#         with conn.cursor() as cur:
+#             cur.execute(
+#                 """
+#                 SELECT species_id, scientific_name, common_name, species_group,
+#                        record_count, first_year, last_year, has_image
+#                 FROM public_species
+#                 WHERE species_id = %s
+#                 LIMIT 1;
+#                 """,
+#                 (species_id,),
+#             )
+#             row = cur.fetchone()
+
+#     if row is None:
+#         raise HTTPException(status_code=404, detail="Species not found")
+
+#     # Cached, licence-checked, and guaranteed not to raise: if the proxy is off or
+#     # the sources are unreachable, both fields come back None and this endpoint
+#     # still returns 200 with honest stats.
+#     info = species_info.get_species_info(row["scientific_name"])
+
+#     return SpeciesDetail(
+#         speciesId=row["species_id"],
+#         scientificName=row["scientific_name"],
+#         commonName=row["common_name"],
+#         group=row["species_group"],
+#         recordCount=row["record_count"],
+#         firstYear=row["first_year"],
+#         lastYear=row["last_year"],
+#         image=info.image,
+#         description=info.description,
+#     )
+@router.get("/species/{species_id}")
+def species_detail(species_id: str) -> dict:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT species_id, scientific_name, common_name, species_group,
-                       record_count, first_year, last_year, has_image
+                       record_count, first_year, last_year
                 FROM public_species
                 WHERE species_id = %s
                 LIMIT 1;
@@ -145,23 +223,29 @@ def species_detail(species_id: str) -> SpeciesDetail:
                 (species_id,),
             )
             row = cur.fetchone()
-
+ 
     if row is None:
         raise HTTPException(status_code=404, detail="Species not found")
-
-    # Cached, licence-checked, and guaranteed not to raise: if the proxy is off or
-    # the sources are unreachable, both fields come back None and this endpoint
-    # still returns 200 with honest stats.
-    info = species_info.get_species_info(row["scientific_name"])
-
-    return SpeciesDetail(
-        speciesId=row["species_id"],
-        scientificName=row["scientific_name"],
-        commonName=row["common_name"],
-        group=row["species_group"],
-        recordCount=row["record_count"],
-        firstYear=row["first_year"],
-        lastYear=row["last_year"],
-        image=info.image,
-        description=info.description,
-    )
+ 
+    has_records = bool(row["record_count"])
+    # Returned as a plain dict because the front end needs some keys left OUT
+    # entirely (description, image) rather than sent as null.
+    # imagePublication "fallback-only" = no image is published, so the front end
+    # shows its named placeholder. The image proxy's output uses a different
+    # shape from the one the front end's contract needs, so it isn't used here.
+    return {
+        "releaseId": config.RELEASE_ID,
+        "datasetVersion": config.DATASET_VERSION,
+        "speciesId": row["species_id"],
+        "slug": _slug(row["scientific_name"], row["species_id"]),
+        "scientificName": row["scientific_name"],
+        "commonName": _text_or_none(row["common_name"]),
+        "group": _text_or_none(row["species_group"]),
+        "imagePublication": "fallback-only",
+        "stats": {
+            "recordCount": row["record_count"],
+            "yearRange": [row["first_year"], row["last_year"]] if has_records else None,
+            "verificationAvailable": False,
+            "verifiedCount": None,
+        },
+    }

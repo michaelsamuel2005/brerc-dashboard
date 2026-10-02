@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { gridRefPrecisionMetres, precisionLabel } from "./gridref";
+import corpus from "../../../../contracts/gridref-validation-corpus.json";
 
 describe("gridRefPrecisionMetres", () => {
+  it("matches the shared backend/browser validation corpus", () => {
+    expect(corpus).toHaveLength(19);
+    for (const testCase of corpus) {
+      expect(gridRefPrecisionMetres(testCase.ref), testCase.ref).toBe(testCase.precisionMetres);
+    }
+  });
+
   it("parses each OS resolution correctly", () => {
     expect(gridRefPrecisionMetres("ST59")).toBe(10000);       // 2 digits -> 10km
     expect(gridRefPrecisionMetres("ST5972")).toBe(1000);      // 4-figure -> 1km

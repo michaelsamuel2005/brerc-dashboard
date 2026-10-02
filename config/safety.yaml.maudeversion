@@ -1,0 +1,209 @@
+# =============================================================================
+# BRERC ETL — safety.yaml   (Shankar's local setup)
+# =============================================================================
+# Everything lives in ONE database, "postgres", in two schemas:
+#   brerc_source  — the mock BRERC source (views vw_occurrences, vw_species_dictionary)
+#   brerc_ui      — the dashboard tables and public_* views
+#
+# This file holds real passwords. config/safety.yaml is gitignored — never
+# commit it, and never copy these values into safety.yaml.example.
+# =============================================================================
+ 
+ 
+# -----------------------------------------------------------------------------
+# DATABASE CONNECTIONS
+# -----------------------------------------------------------------------------
+# For each block, fill in BOTH user and password (or leave both empty to fall
+# back to the matching URL in api/.env). A user with an empty password stops
+# the run with "block is incomplete".
+ 
+# BRERC's source data. The ETL only ever SELECTs from it.
+connection:
+  dbhostname: localhost
+  port: 5432
+  dbname: postgres        # was: postgres
+  user: postgres
+  password: "grasshopper"
+ 
+# The dashboard tables — the ETL's everyday write connection.
+destination:
+  dbhostname: localhost
+  port: 5432
+  dbname: postgres
+  user: postgres
+  password: "grasshopper"
+  schema: brerc_ui
+  table: occurrence_public
+ 
+# Same database as 'destination'. Used only for schema rebuilds.
+admin:
+  dbhostname: localhost
+  port: 5432
+  dbname: postgres
+  user: postgres
+  password: "grasshopper"
+ 
+# The public API's read-only connection.
+api_readonly:
+  dbhostname: localhost
+  port: 5432
+  dbname: postgres
+  user: postgres
+  password: "grasshopper"
+ 
+# -----------------------------------------------------------------------------
+# SOURCE
+# -----------------------------------------------------------------------------
+source:
+  mode: "database"            # or "csv"
+ 
+  # database mode: the views created by api/scripts/local_db/01_brerc_source.sql
+  records_query: "SELECT * FROM brerc_source.vw_occurrences"
+  dictionary_query: "SELECT * FROM brerc_source.vw_species_dictionary"
+ 
+  # csv mode only
+  records_path: "../data/records.csv"
+  dictionary_path: "../data/full_dictionary.csv"
+ 
+ 
+# -----------------------------------------------------------------------------
+# COLUMNS — the ONLY place BRERC's column names appear
+# -----------------------------------------------------------------------------
+# Left: the pipeline's name (fixed). Right: the column name in the source view.
+# Every column not listed here is dropped straight after reading.
+# Right-hand names are matched after cleaning (lowercased, spaces as "_").
+columns:
+  unique_no: unique_no
+  scientific_name: scientific_name
+  common_name: common_name
+  species_no: species_no
+  record_type: record_type
+  verified: verified
+  easting: easting                  # PRECISE — generalised, never published
+  northing: northing                # PRECISE — generalised, never published
+  date_of_record: date_of_record    # free text: "14/05/2024", "June 2023"
+  modified_date: date_mdb_modified  # drives incremental loading (DateMDBmodified in the export)
+  source_year: year_end             # YearEnd in the export; used when the date is vague
+  sensitive: sensitive              # 'Yes' is blurred to 1 km, per BRERC
+  abundance: abundance              # hashed, never published
+  sex_stage: sex_stage              # hashed, never published
+  vitality: vitality                # hashed, never published
+ 
+# Species dictionary. All required.
+dictionary_columns:
+  scientific_name: scientific
+  species_no: species_no
+  nbn_number: nbn_number
+  common_name: common_nam
+  taxon_group: taxanb               # shown as the species group on the dashboard
+ 
+# BRERC's sensitive-species list (files.sensitive_species). All required.
+sensitive_species_columns:
+  species_no: species_no
+  nbn_number: nbn_number
+ 
+ 
+# -----------------------------------------------------------------------------
+# FILES
+# -----------------------------------------------------------------------------
+files:
+  sensitive_species:
+    # Relative to the repo root (brerc-dashboard). The job refuses to run without it.
+    path: "data/sensitive_species.csv"
+ 
+ 
+# -----------------------------------------------------------------------------
+# LOADING
+# -----------------------------------------------------------------------------
+load:
+  # true: after the first load, only new, changed and removed records are
+  # written. false: every run is a full rebuild.
+  incremental_check: true
+ 
+reconciliation:
+  # Pipeline names (left-hand side of 'columns:').
+  hash_columns:
+    - scientific_name
+    - abundance
+    - sex_stage
+    - record_type
+    - vitality
+    - verified
+    - easting
+    - northing
+  chunk_size: 5000
+ 
+ 
+# -----------------------------------------------------------------------------
+# PUBLICATION RULES
+# -----------------------------------------------------------------------------
+generalisation:
+  d0_floor_m: 100                       # nothing is ever published finer than this
+  default_sensitive_resolution_m: 1000  # BRERC: sensitive records "reduced to 1km squares"
+ 
+aggregation:
+  suppression_threshold: 2              # BRERC to confirm
+  cell_size_m: 1000
+ 
+species_resolutions: {}
+ 
+verified_values:
+  # BRERC write an EN DASH ("Accepted – correct"); dashes are normalised.
+  accepted:
+    - "Accepted - correct"
+    - "Accepted - considered correct"
+    - "Accepted"          # older records written before the NBN terms
+  legacy:
+    - "BRERC"
+ 
+# Record types that make a record sensitive whatever the species. EXACT match.
+# Still to confirm against BRERC's live data.
+flagged_record_types:
+  - trapped at actinic light
+  - trapped at light
+  - trapped at mercury vapour light
+  - night roost
+  - tagged night roost
+  - plant count
+  - maternity roost
+  - flower count
+  - photographed
+  - summer roost
+  - hibernation
+  - daylight site visit
+  - day roost
+  - rosette count
+  # for bat roost and plant
+  - field record
+  - field record (bat roost sensitive record)
+  - field record (plant sensitive record)
+  - bat detector
+  - box survey
+  - hibernation roost
+  - earth
+  - droppings
+  - handled
+  - burrow
+  - pre-parturition roost
+  - netted
+  - breeding
+  - roost
+  - emergence count
+  - tagged day roost
+  - grounded
+  - possibly breeding
+  - nest
+  - holt
+  - bedding
+  - bat roost
+  - lie-up
+  - DNA or eDNA testing
+  - AI or programme analysis
+  - Beaver Lodge
+  - Acoustic audio recording
+  - Acoustic audio record
+  - found dead
+  - dam
+  - gnawed timber
+ 
+ 
