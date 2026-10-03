@@ -68,6 +68,14 @@ MAX_CELLS = int(os.getenv("MAX_CELLS", "5000"))
 MAX_YEAR_BUCKETS = int(os.getenv("MAX_YEAR_BUCKETS", "300"))
 MAX_GROUPS = int(os.getenv("MAX_GROUPS", "50"))
 
+# Release identity stamped on every response. The front end requires
+
+# releaseId to be a UUID and checks every response carries the same one.
+
+RELEASE_ID = os.getenv("RELEASE_ID", "00000000-0000-4000-8000-000000000001")
+
+DATASET_VERSION = os.getenv("DATASET_VERSION", "local-dev")
+ 
 
 # ---------------------------------------------------------------------------
 # Species image + description proxy (B8). See app/species_info.py.

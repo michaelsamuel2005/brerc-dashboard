@@ -30,10 +30,25 @@ class TopGroup(BaseModel):
     count: int
 
 
+# class Summary(BaseModel):
+#     totalRecords: int
+#     totalSpecies: int
+#     yearRange: list[int]  # [minYear, maxYear]
+#     recordsByYear: list[YearCount]
+#     topGroups: list[TopGroup]
+#     coverageCaveat: str
+
+class YearRange(BaseModel):
+    min: int
+    max: int
+ 
+ 
 class Summary(BaseModel):
+    releaseId: str
+    datasetVersion: str
     totalRecords: int
     totalSpecies: int
-    yearRange: list[int]  # [minYear, maxYear]
+    yearRange: YearRange | None  # {"min": .., "max": ..}, or null when no records
     recordsByYear: list[YearCount]
     topGroups: list[TopGroup]
     coverageCaveat: str
@@ -47,22 +62,52 @@ class Summary(BaseModel):
 # raises a ValidationError — a 500 — on the first genuinely non-numeric one.
 # Michael's Zod schema also expects a string, so this is the shape all three
 # sides of the project agree on.
+# class SpeciesListItem(BaseModel):
+#     speciesId: str
+#     scientificName: str
+#     commonName: str | None
+#     group: str
+#     recordCount: int
+#     firstYear: int
+#     lastYear: int
+#     hasImage: bool
+
 class SpeciesListItem(BaseModel):
     speciesId: str
+    slug: str                      # NEW
     scientificName: str
     commonName: str | None
-    group: str
+    group: str | None              # was: str
     recordCount: int
-    firstYear: int
-    lastYear: int
+    firstYear: int | None          # was: int
+    lastYear: int | None           # was: int
     hasImage: bool
 
 
+class GroupFacet(BaseModel):
+    value: str
+    label: str
+    speciesCount: int
+ 
+ 
+class SpeciesFacets(BaseModel):
+    groups: list[GroupFacet]
+
+
+# class SpeciesList(BaseModel):
+#     items: list[SpeciesListItem]
+#     total: int
+#     page: int
+#     pageSize: int
+
 class SpeciesList(BaseModel):
+    releaseId: str
+    datasetVersion: str
     items: list[SpeciesListItem]
     total: int
     page: int
     pageSize: int
+    facets: SpeciesFacets
 
 
 class SpeciesImage(BaseModel):
@@ -101,7 +146,12 @@ class GeoJSONFeatureCollection(BaseModel):
     type: str = "FeatureCollection"
     features: list[GeoJSONFeature]
 
-
+class CellDistribution(BaseModel):
+    releaseId: str
+    datasetVersion: str
+    verificationAvailable: bool
+    cells: list[CellProperties]
+    
 # ---- /api/records ----------------------------------------------------------
 class RecordItem(BaseModel):
     recordId: str           # TEXT — see the note above SpeciesListItem

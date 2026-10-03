@@ -28,7 +28,8 @@ def summary() -> Summary:
                 "SELECT MIN(record_year) AS lo, MAX(record_year) AS hi FROM public_records;"
             )
             span = cur.fetchone()
-            year_range = [span["lo"], span["hi"]] if span["lo"] is not None else [0, 0]
+            # year_range = [span["lo"], span["hi"]] if span["lo"] is not None else [0, 0]
+            year_range = ({"min": span["lo"], "max": span["hi"]} if span["lo"] is not None else None)
 
             # Records per year (for the year chart). LIMIT is a safety cap only
             # — see MAX_YEAR_BUCKETS in app/config.py. One row per year, so real
@@ -57,6 +58,8 @@ def summary() -> Summary:
             ]
 
     return Summary(
+        releaseId=config.RELEASE_ID,
+        datasetVersion=config.DATASET_VERSION,
         totalRecords=total_records,
         totalSpecies=total_species,
         yearRange=year_range,

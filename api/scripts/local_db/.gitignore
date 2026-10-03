@@ -1,0 +1,4 @@
+# Data exports and CSVs live here only for local testing - never commit them.
+*.csv
+*.xls
+*.xlsx

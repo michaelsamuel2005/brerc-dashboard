@@ -1,0 +1,21 @@
+[
+  { "ref": "ST59", "precisionMetres": 10000 },
+  { "ref": "ST5972", "precisionMetres": 1000 },
+  { "ref": "ST 597727", "precisionMetres": 100 },
+  { "ref": "st59722885", "precisionMetres": 10 },
+  { "ref": "ST6674588734", "precisionMetres": 1 },
+  { "ref": "SV00", "precisionMetres": 10000 },
+  { "ref": "HP00", "precisionMetres": 10000 },
+  { "ref": "TV9999", "precisionMetres": 1000 },
+  { "ref": "S1245", "precisionMetres": null },
+  { "ref": "SI1234", "precisionMetres": null },
+  { "ref": "IS1234", "precisionMetres": null },
+  { "ref": "AA1234", "precisionMetres": null },
+  { "ref": "WA1234", "precisionMetres": null },
+  { "ref": "ZZ1234", "precisionMetres": null },
+  { "ref": "ST597", "precisionMetres": null },
+  { "ref": "ST123456789012", "precisionMetres": null },
+  { "ref": "ST", "precisionMetres": null },
+  { "ref": "ST57A", "precisionMetres": null },
+  { "ref": "not-a-ref", "precisionMetres": null }
+]
